@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { useT } from '../lib/i18n';
 
 export function Modal({
   open,
@@ -13,6 +14,7 @@ export function Modal({
   width?: string;
   title?: ReactNode;
 }) {
+  const t = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -31,7 +33,7 @@ export function Modal({
         {title && (
           <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
             <div className="text-lg font-semibold">{title}</div>
-            <button className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700" onClick={onClose} aria-label="Close">
+            <button className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700" onClick={onClose} aria-label={t('common.close')}>
               ✕
             </button>
           </div>

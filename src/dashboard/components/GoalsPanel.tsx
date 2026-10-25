@@ -2,26 +2,34 @@ import { useState } from 'react';
 import { api, qs, type BreakdownRow } from '../lib/api';
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo, fmtDateTime, fmtDuration, fmtNumber, fmtPct, shortId } from '../lib/format';
+import { useT } from '../lib/i18n';
 import { useApi } from '../lib/useApi';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 
 type Tab = 'goal' | 'funnel' | 'user' | 'journey';
 
 export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('journey');
   const [search, setSearch] = useState('');
+  const tabLabel: Record<Tab, string> = {
+    goal: t('goals.tab.goals'),
+    funnel: t('goals.tab.funnel'),
+    user: t('goals.tab.users'),
+    journey: t('goals.tab.journey'),
+  };
   return (
     <div className="card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
         <div className="tabs">
-          {(['goal', 'funnel', 'user', 'journey'] as const).map((t) => (
-            <button key={t} className={`tab capitalize ${tab === t ? 'tab-active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'journey' ? 'Journey' : t === 'user' ? 'Users' : t === 'goal' ? 'Goals' : 'Funnel'}
+          {(['goal', 'funnel', 'user', 'journey'] as const).map((tb) => (
+            <button key={tb} className={`tab ${tab === tb ? 'tab-active' : ''}`} onClick={() => setTab(tb)}>
+              {tabLabel[tb]}
             </button>
           ))}
         </div>
         {(tab === 'user' || tab === 'journey') && (
-          <input className="input max-w-[240px] py-1.5" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input max-w-[240px] py-1.5" placeholder={t('goals.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
       </div>
       {tab === 'goal' && <Goals totalVisitors={totalVisitors} />}
@@ -34,29 +42,30 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
 
 function Goals({ totalVisitors }: { totalVisitors: number }) {
   const { site, q, reloadKey, money, addFilter } = useDash();
+  const t = useT();
   const { data } = useApi<BreakdownRow[]>(`/api/sites/${site.id}/breakdown?${qs(q, { dim: 'goal' })}`, reloadKey);
   if (!data) return <div className="h-40 animate-pulse" />;
   if (!data.length)
     return (
       <div className="p-8 text-center text-sm text-stone-500">
-        No goals yet. Add <code className="rounded bg-stone-100 px-1">data-ml-goal="signup_click"</code> to any button, or call{' '}
-        <code className="rounded bg-stone-100 px-1">window.minilytics('goal', 'signup')</code>.
+        {t('goals.empty.prefix')} <code className="rounded bg-stone-100 px-1">data-ml-goal="signup_click"</code> {t('goals.empty.middle')}{' '}
+        <code className="rounded bg-stone-100 px-1">window.minilytics('goal', 'signup')</code>{t('goals.empty.suffix')}
       </div>
     );
   return (
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-stone-500">
-          <th className="px-3 pb-2 font-medium">Goal</th>
-          <th className="pb-2 text-right font-medium">Visitors</th>
-          <th className="pb-2 text-right font-medium">Completions</th>
-          <th className="pb-2 text-right font-medium">Conversion</th>
-          <th className="px-3 pb-2 text-right font-medium">Revenue</th>
+          <th className="px-3 pb-2 font-medium">{t('goals.col.goal')}</th>
+          <th className="pb-2 text-right font-medium">{t('common.visitors')}</th>
+          <th className="pb-2 text-right font-medium">{t('goals.col.completions')}</th>
+          <th className="pb-2 text-right font-medium">{t('common.conversion')}</th>
+          <th className="px-3 pb-2 text-right font-medium">{t('common.revenue')}</th>
         </tr>
       </thead>
       <tbody>
         {data.map((g) => (
-          <tr key={g.label} className="cursor-pointer border-t border-stone-100 hover:bg-stone-50" onClick={() => addFilter('goal', g.label ?? '')} title="Filter by visitors who completed this goal">
+          <tr key={g.label} className="cursor-pointer border-t border-stone-100 hover:bg-stone-50" onClick={() => addFilter('goal', g.label ?? '')} title={t('goals.filterByGoal')}>
             <td className="px-3 py-2.5 font-medium">🎯 {g.label}</td>
             <td className="py-2.5 text-right">{fmtNumber(g.visitors)}</td>
             <td className="py-2.5 text-right">{fmtNumber(g.pageviews ?? 0)}</td>
@@ -77,6 +86,7 @@ interface FunnelDef {
 
 function Funnels() {
   const { site, q, reloadKey } = useDash();
+  const t = useT();
   const [version, setVersion] = useState(0);
   const { data: funnels } = useApi<FunnelDef[]>(`/api/sites/${site.id}/funnels`, version);
   const [selected, setSelected] = useState<string | null>(null);
@@ -112,19 +122,19 @@ function Funnels() {
           ))}
         </select>
         <button className="btn py-1.5" onClick={() => setCreating(true)}>
-          + New funnel
+          {t('goals.funnel.newFunnel')}
         </button>
         {current && (
           <button
             className="btn py-1.5 text-red-600"
             onClick={async () => {
-              if (!confirm(`Delete funnel "${current.name}"?`)) return;
+              if (!confirm(t('goals.funnel.deleteConfirm', { name: current.name }))) return;
               await api(`/api/sites/${site.id}/funnels/${current.id}`, { method: 'DELETE' });
               setSelected(null);
               setVersion((v) => v + 1);
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         )}
       </div>
@@ -142,9 +152,9 @@ function Funnels() {
                 {s.value}
               </div>
               <div className="text-sm text-stone-600">
-                {fmtNumber(s.visitors)} visitors · {fmtPct(pct)}
+                {t('goals.funnel.visitorsDot', { n: fmtNumber(s.visitors) })} · {fmtPct(pct)}
               </div>
-              {i > 0 && <div className="text-xs text-red-500">−{prev ? fmtPct(1 - s.visitors / prev) : '0%'} drop-off</div>}
+              {i > 0 && <div className="text-xs text-red-500">{t('goals.funnel.dropoff', { pct: prev ? fmtPct(1 - s.visitors / prev) : '0%' })}</div>}
             </div>
           );
         })}
@@ -155,7 +165,8 @@ function Funnels() {
 
 function FunnelForm({ onDone, canCancel }: { onDone: (id?: string) => void; canCancel: boolean }) {
   const { site } = useDash();
-  const [name, setName] = useState('Signup funnel');
+  const t = useT();
+  const [name, setName] = useState(t('goals.funnel.defaultName'));
   const [steps, setSteps] = useState<FunnelDef['steps']>([
     { type: 'page', value: '/' },
     { type: 'page', value: '/pricing' },
@@ -177,15 +188,15 @@ function FunnelForm({ onDone, canCancel }: { onDone: (id?: string) => void; canC
         }
       }}
     >
-      <p className="text-sm text-stone-500">Steps are counted in order per visitor. Page paths support wildcards like <code>/blog/*</code>.</p>
-      <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Funnel name" />
+      <p className="text-sm text-stone-500">{t('goals.funnel.stepsHelp', { wildcard: '/blog/*' })}</p>
+      <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('goals.funnel.namePlaceholder')} />
       {steps.map((s, i) => (
         <div key={i} className="flex gap-2">
           <select className="input w-28" value={s.type} onChange={(e) => set(i, { type: e.target.value as 'page' | 'goal' })}>
-            <option value="page">Page</option>
-            <option value="goal">Goal</option>
+            <option value="page">{t('goals.funnel.typePage')}</option>
+            <option value="goal">{t('goals.funnel.typeGoal')}</option>
           </select>
-          <input className="input" value={s.value} onChange={(e) => set(i, { value: e.target.value })} placeholder={s.type === 'page' ? '/pricing' : 'signup'} />
+          <input className="input" value={s.value} onChange={(e) => set(i, { value: e.target.value })} placeholder={s.type === 'page' ? t('goals.funnel.pagePlaceholder') : t('goals.funnel.goalPlaceholder')} />
           <button type="button" className="btn px-3" onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} disabled={steps.length <= 2}>
             ✕
           </button>
@@ -193,12 +204,12 @@ function FunnelForm({ onDone, canCancel }: { onDone: (id?: string) => void; canC
       ))}
       <div className="flex gap-2">
         <button type="button" className="btn" onClick={() => setSteps((s) => [...s, { type: 'page', value: '' }])} disabled={steps.length >= 10}>
-          + Step
+          {t('goals.funnel.addStep')}
         </button>
-        <button className="btn-dark">Save funnel</button>
+        <button className="btn-dark">{t('goals.funnel.save')}</button>
         {canCancel && (
           <button type="button" className="btn" onClick={() => onDone()}>
-            Cancel
+            {t('common.cancel')}
           </button>
         )}
       </div>
@@ -208,12 +219,13 @@ function FunnelForm({ onDone, canCancel }: { onDone: (id?: string) => void; canC
 }
 
 function VisitorCell({ id, name, email, country, city, device, os, browser, badge }: Record<string, any>) {
+  const t = useT();
   return (
     <div className="flex items-center gap-3">
       <Avatar id={id} size={44} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium">{name || email || `Visitor ${shortId(id)}`}</span>
+          <span className="truncate font-medium">{name || email || t('goals.visitorFallback', { id: shortId(id) })}</span>
           {badge}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-stone-500">
@@ -245,23 +257,25 @@ function matches(r: Record<string, any>, search: string) {
 }
 
 function ShowAll({ total, shown, onClick }: { total: number; shown: number; onClick: () => void }) {
+  const t = useT();
   if (total <= shown) return null;
   return (
     <button className="mx-auto mt-3 block text-xs font-semibold uppercase tracking-wider text-stone-500 hover:text-ink" onClick={onClick}>
-      Show all {total}
+      {t('goals.showAll', { total })}
     </button>
   );
 }
 
-const MATCH_LABELS: Record<string, string> = {
-  return_page: 'return page',
-  customer: 'earlier payment',
-  email: 'email',
-  timing: 'checkout click timing',
+const MATCH_KEYS: Record<string, string> = {
+  return_page: 'goals.match.return_page',
+  customer: 'goals.match.customer',
+  email: 'goals.match.email',
+  timing: 'goals.match.timing',
 };
 
 function Journey({ search }: { search: string }) {
   const { site, q, reloadKey, money, openVisitor } = useDash();
+  const t = useT();
   const [all, setAll] = useState(false);
   const [version, setVersion] = useState(0);
   const [rematch, setRematch] = useState<string | null>(null);
@@ -269,16 +283,16 @@ function Journey({ search }: { search: string }) {
   const { data } = useApi<any[]>(`/api/sites/${site.id}/customers?${qs(q)}`, reloadKey + version);
   if (!data) return <div className="h-40 animate-pulse" />;
   if (!data.length)
-    return <div className="p-8 text-center text-sm text-stone-500">No payments in this period. Connect Dodo Payments in site settings to see who paid and where they came from.</div>;
+    return <div className="p-8 text-center text-sm text-stone-500">{t('goals.journey.empty')}</div>;
   const unmatched = data.filter((r) => !r.visitor_id).length;
   return (
     <div className="overflow-x-auto">
       {unmatched > 0 && (
         <div className="mx-3 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span>
-            {unmatched} payment{unmatched > 1 ? 's' : ''} not linked to a visitor yet.{' '}
+            {unmatched > 1 ? t('goals.journey.unmatchedPlural', { n: unmatched }) : t('goals.journey.unmatched', { n: unmatched })}{' '}
             <a className="underline" href={`/site/${site.id}/settings`}>
-              Why?
+              {t('goals.journey.why')}
             </a>
           </span>
           <button
@@ -289,18 +303,18 @@ function Journey({ search }: { search: string }) {
               const r = await api<{ matched: number; checked: number; details: typeof reasons }>(`/api/sites/${site.id}/rematch`, {
                 method: 'POST',
               });
-              setRematch(`Matched ${r.matched} of ${r.checked}`);
+              setRematch(t('goals.journey.matched', { matched: r.matched, checked: r.checked }));
               setReasons(r.details ?? []);
               setVersion((v) => v + 1);
             }}
           >
-            {rematch === 'working' ? 'Matching…' : rematch ?? 'Try matching again'}
+            {rematch === 'working' ? t('goals.journey.matching') : rematch ?? t('goals.journey.tryMatch')}
           </button>
           {reasons.length > 0 && (
             <ul className="w-full space-y-1 border-t border-amber-200 pt-2 text-xs">
               {reasons.map((r) => (
                 <li key={r.id}>
-                  <b>{r.name ?? r.id}</b>: {r.matched ? '✓ matched' : '✗ not matched'}
+                  <b>{r.name ?? r.id}</b>: {r.matched ? t('goals.journey.matchedYes') : t('goals.journey.matchedNo')}
                   {r.reason ? ` · ${r.reason}` : ''}
                 </li>
               ))}
@@ -311,11 +325,11 @@ function Journey({ search }: { search: string }) {
       <table className="w-full min-w-[760px] text-[15px]">
         <thead>
           <tr className="text-left text-sm text-stone-500">
-            <th className="px-3 pb-3 font-medium">Visitor</th>
-            <th className="pb-3 font-medium">Source</th>
-            <th className="pb-3 font-medium">Spent</th>
-            <th className="pb-3 font-medium">Time to complete</th>
-            <th className="pb-3 font-medium">Completed at</th>
+            <th className="px-3 pb-3 font-medium">{t('goals.journey.col.visitor')}</th>
+            <th className="pb-3 font-medium">{t('goals.journey.col.source')}</th>
+            <th className="pb-3 font-medium">{t('goals.journey.col.spent')}</th>
+            <th className="pb-3 font-medium">{t('goals.journey.col.timeToComplete')}</th>
+            <th className="pb-3 font-medium">{t('goals.journey.col.completedAt')}</th>
           </tr>
         </thead>
         <tbody>
@@ -340,7 +354,7 @@ function Journey({ search }: { search: string }) {
                     browser={r.browser}
                     badge={
                       <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">
-                        {r.renewal ? 'Returning' : 'Customer'}
+                        {r.renewal ? t('goals.journey.badge.returning') : t('goals.journey.badge.customer')}
                       </span>
                     }
                   />
@@ -353,22 +367,22 @@ function Journey({ search }: { search: string }) {
                         <div>{r.source}</div>
                         {(r.utm_campaign || r.ref) && <div className="text-xs text-stone-500">{r.utm_campaign || r.ref}</div>}
                         {r.matched_by && r.matched_by !== 'metadata' && (
-                          <div className="text-xs text-stone-400" title="How this payment was linked to the visitor">
-                            matched by {MATCH_LABELS[r.matched_by] ?? r.matched_by}
+                          <div className="text-xs text-stone-400" title={t('goals.journey.matchedByHint')}>
+                            {t('goals.journey.matchedBy', { reason: MATCH_KEYS[r.matched_by] ? t(MATCH_KEYS[r.matched_by]) : r.matched_by })}
                           </div>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <span className="text-stone-400" title="No visitor id in the payment metadata, and no return-page, email or timing match">
-                      Not attributed
+                    <span className="text-stone-400" title={t('goals.journey.notAttributedHint')}>
+                      {t('goals.journey.notAttributed')}
                     </span>
                   )}
                 </td>
                 <td className="py-4 font-medium">{money(r.amount)}</td>
                 <td className="py-4">
                   {r.first_seen ? fmtAgo(r.ts - r.first_seen) : '—'}
-                  {r.visits > 0 && <div className="text-xs text-stone-500">{r.visits} visit{r.visits > 1 ? 's' : ''}</div>}
+                  {r.visits > 0 && <div className="text-xs text-stone-500">{r.visits > 1 ? t('goals.journey.visits', { n: r.visits }) : t('goals.journey.visit', { n: r.visits })}</div>}
                 </td>
                 <td className="py-4">{fmtDateTime(r.ts, site.timezone)}</td>
               </tr>
@@ -382,22 +396,23 @@ function Journey({ search }: { search: string }) {
 
 function Users({ search }: { search: string }) {
   const { site, q, reloadKey, money, openVisitor } = useDash();
+  const t = useT();
   const [all, setAll] = useState(false);
   const { data } = useApi<any[]>(`/api/sites/${site.id}/visitors?${qs(q)}`, reloadKey);
   if (!data) return <div className="h-40 animate-pulse" />;
-  if (!data.length) return <div className="p-8 text-center text-sm text-stone-500">No visitors in this period.</div>;
+  if (!data.length) return <div className="p-8 text-center text-sm text-stone-500">{t('goals.users.empty')}</div>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-[15px]">
         <thead>
           <tr className="text-left text-sm text-stone-500">
-            <th className="px-3 pb-3 font-medium">Visitor</th>
-            <th className="pb-3 font-medium">Source</th>
-            <th className="pb-3 text-right font-medium">Visits</th>
-            <th className="pb-3 text-right font-medium">Pages</th>
-            <th className="pb-3 text-right font-medium">Time</th>
-            <th className="pb-3 text-right font-medium">Spent</th>
-            <th className="px-3 pb-3 text-right font-medium">Last seen</th>
+            <th className="px-3 pb-3 font-medium">{t('goals.journey.col.visitor')}</th>
+            <th className="pb-3 font-medium">{t('goals.journey.col.source')}</th>
+            <th className="pb-3 text-right font-medium">{t('goals.users.col.visits')}</th>
+            <th className="pb-3 text-right font-medium">{t('goals.users.col.pages')}</th>
+            <th className="pb-3 text-right font-medium">{t('goals.users.col.time')}</th>
+            <th className="pb-3 text-right font-medium">{t('goals.journey.col.spent')}</th>
+            <th className="px-3 pb-3 text-right font-medium">{t('goals.users.col.lastSeen')}</th>
           </tr>
         </thead>
         <tbody>
@@ -416,7 +431,7 @@ function Users({ search }: { search: string }) {
                     device={r.device}
                     os={r.os}
                     browser={r.browser}
-                    badge={r.spent > 0 ? <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">Customer</span> : null}
+                    badge={r.spent > 0 ? <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">{t('goals.users.badge.customer')}</span> : null}
                   />
                 </td>
                 <td className="py-3">
@@ -428,7 +443,7 @@ function Users({ search }: { search: string }) {
                 <td className="py-3 text-right">{r.pageviews}</td>
                 <td className="py-3 text-right">{fmtDuration(r.duration)}</td>
                 <td className="py-3 text-right">{r.spent ? money(r.spent) : '—'}</td>
-                <td className="px-3 py-3 text-right text-stone-500">{fmtAgo(Date.now() - r.last_seen)} ago</td>
+                <td className="px-3 py-3 text-right text-stone-500">{t('common.ago', { time: fmtAgo(Date.now() - r.last_seen) })}</td>
               </tr>
             ))}
         </tbody>

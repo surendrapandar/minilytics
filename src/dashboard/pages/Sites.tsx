@@ -5,8 +5,10 @@ import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
 import { api, type Site } from '../lib/api';
 import { fmtNumber } from '../lib/format';
+import { useT } from '../lib/i18n';
 
 export function Sites() {
+  const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -28,15 +30,15 @@ export function Sites() {
         <Logo />
         <div className="flex gap-2">
           <button className="btn" onClick={logout}>
-            Log out
+            {t('sites.logOut')}
           </button>
           <button className="btn-dark" onClick={() => setAdding(true)}>
-            + Add website
+            {t('sites.addWebsiteBtn')}
           </button>
         </div>
       </div>
 
-      <h1 className="mt-10 text-2xl font-semibold">Your websites</h1>
+      <h1 className="mt-10 text-2xl font-semibold">{t('sites.yourWebsites')}</h1>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sites?.map((s) => (
           <button key={s.id} onClick={() => navigate(`/site/${s.id}`)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
@@ -50,17 +52,17 @@ export function Sites() {
             <div className="mt-5 flex items-end justify-between">
               <div>
                 <div className="text-2xl font-semibold">{fmtNumber(s.visitors24h ?? 0)}</div>
-                <div className="text-xs text-stone-500">visitors in the last 24h</div>
+                <div className="text-xs text-stone-500">{t('sites.visitors24h')}</div>
               </div>
               <div className="flex items-center gap-1.5 text-sm text-stone-600">
                 <span className={`h-2 w-2 rounded-full ${s.online ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} />
-                {s.online} online
+                {t('sites.online', { n: s.online ?? 0 })}
               </div>
             </div>
           </button>
         ))}
         {sites && !sites.length && (
-          <div className="card col-span-full p-10 text-center text-stone-500">No websites yet. Add your first one to get a tracking snippet.</div>
+          <div className="card col-span-full p-10 text-center text-stone-500">{t('sites.empty')}</div>
         )}
       </div>
       <AddSite open={adding} onClose={() => setAdding(false)} />
@@ -68,9 +70,10 @@ export function Sites() {
   );
 }
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'SGD', 'JPY', 'BRL'];
+const CURRENCIES = ['MXN', 'USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'SGD', 'JPY', 'BRL'];
 
 function AddSite({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const [domain, setDomain] = useState('');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
@@ -89,24 +92,24 @@ function AddSite({ open, onClose }: { open: boolean; onClose: () => void }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add a website" width="max-w-md">
+    <Modal open={open} onClose={onClose} title={t('sites.addWebsite')} width="max-w-md">
       <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="label">Domain</label>
-          <input className="input" placeholder="example.com" value={domain} onChange={(e) => setDomain(e.target.value)} autoFocus />
-          <p className="mt-1 text-xs text-stone-500">Subdomains (app.example.com) are tracked under the same site.</p>
+          <label className="label">{t('sites.domain')}</label>
+          <input className="input" placeholder={t('sites.domainPlaceholder')} value={domain} onChange={(e) => setDomain(e.target.value)} autoFocus />
+          <p className="mt-1 text-xs text-stone-500">{t('sites.subdomainsNote')}</p>
         </div>
         <div>
-          <label className="label">Name</label>
-          <input className="input" placeholder="My SaaS" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="label">{t('sites.name')}</label>
+          <input className="input" placeholder={t('sites.namePlaceholder')} value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Timezone</label>
+            <label className="label">{t('sites.timezone')}</label>
             <input className="input" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           </div>
           <div>
-            <label className="label">Revenue currency</label>
+            <label className="label">{t('sites.currency')}</label>
             <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
               {CURRENCIES.map((c) => (
                 <option key={c}>{c}</option>
@@ -116,7 +119,7 @@ function AddSite({ open, onClose }: { open: boolean; onClose: () => void }) {
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button className="btn-dark w-full" disabled={!domain}>
-          Add website
+          {t('sites.addWebsiteSubmit')}
         </button>
       </form>
     </Modal>

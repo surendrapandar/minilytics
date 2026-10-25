@@ -2,25 +2,26 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { navigate } from '../App';
 import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
+import { useI18n, LANGUAGES } from '../lib/i18n';
 import { Favicon } from './Icons';
 
-export const PERIODS: { value: string; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
-  { value: '24h', label: 'Last 24 hours' },
-  { value: '48h', label: 'Last 2 days' },
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-  { value: '12m', label: 'Last 12 months' },
-  { value: 'all', label: 'All time' },
+export const PERIODS: { value: string; tKey: string }[] = [
+  { value: 'today', tKey: 'period.today' },
+  { value: 'yesterday', tKey: 'period.yesterday' },
+  { value: '24h', tKey: 'period.24h' },
+  { value: '48h', tKey: 'period.48h' },
+  { value: '7d', tKey: 'period.7d' },
+  { value: '30d', tKey: 'period.30d' },
+  { value: '90d', tKey: 'period.90d' },
+  { value: '12m', tKey: 'period.12m' },
+  { value: 'all', tKey: 'period.all' },
 ];
 
 const GRANULARITIES = [
-  { value: 'hour', label: 'Hourly' },
-  { value: 'day', label: 'Daily' },
-  { value: 'week', label: 'Weekly' },
-  { value: 'month', label: 'Monthly' },
+  { value: 'hour', tKey: 'granularity.hour' },
+  { value: 'day', tKey: 'granularity.day' },
+  { value: 'week', tKey: 'granularity.week' },
+  { value: 'month', tKey: 'granularity.month' },
 ];
 
 export function Dropdown({ button, children, align = 'left' }: { button: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right' }) {
@@ -73,15 +74,19 @@ export function Toolbar({
   onRefresh: () => void;
   loading: boolean;
 }) {
+  const { t, lang, setLang } = useI18n();
   const [from, setFrom] = useState(q.from ?? '');
   const [to, setTo] = useState(q.to ?? '');
 
+  const period = PERIODS.find((p) => p.value === q.period);
   const label =
     q.period === 'custom'
       ? q.from === q.to
-        ? new Date(q.from + 'T00:00:00Z').toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+        ? new Date(q.from + 'T00:00:00Z').toLocaleDateString(lang, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
         : `${q.from} → ${q.to}`
-      : PERIODS.find((p) => p.value === q.period)?.label ?? 'Last 30 days';
+      : period
+        ? t(period.tKey)
+        : t('period.30d');
 
   function shift(dir: -1 | 1) {
     if (!overview) return;
@@ -121,17 +126,25 @@ export function Toolbar({
             ))}
             <div className="my-1 border-t border-stone-100" />
             <button className={itemCls(false)} onClick={() => navigate(`/site/${site.id}/settings`)}>
-              ⚙️ Site settings & install
+              {t('toolbar.settings')}
             </button>
             <button className={itemCls(false)} onClick={() => navigate('/')}>
-              ＋ All websites
+              {t('toolbar.allWebsites')}
             </button>
+            <div className="my-1 border-t border-stone-100" />
+            <div className="px-3 pb-1 pt-1 text-xs font-medium text-stone-400">{t('toolbar.language')}</div>
+            {LANGUAGES.map((l) => (
+              <button key={l.value} className={itemCls(l.value === lang)} onClick={() => setLang(l.value)}>
+                {l.value === lang ? '✓ ' : '　'}
+                {l.label}
+              </button>
+            ))}
           </>
         )}
       </Dropdown>
 
       <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
-        <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
+        <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label={t('toolbar.prevPeriod')}>
           ‹
         </button>
         <Dropdown
@@ -152,7 +165,7 @@ export function Toolbar({
                     update({ period: p.value, granularity: undefined });
                   }}
                 >
-                  {p.label}
+                  {t(p.tKey)}
                 </button>
               ))}
               <div className="my-1 border-t border-stone-100" />
@@ -165,10 +178,10 @@ export function Toolbar({
                   update({ period: 'custom', from, to: to < from ? from : to, granularity: undefined });
                 }}
               >
-                <div className="text-xs font-medium text-stone-500">Custom range</div>
+                <div className="text-xs font-medium text-stone-500">{t('toolbar.customRange')}</div>
                 <input type="date" className="input py-1.5" value={from} onChange={(e) => setFrom(e.target.value)} />
                 <input type="date" className="input py-1.5" value={to} onChange={(e) => setTo(e.target.value)} />
-                <button className="btn-dark w-full py-1.5">Apply</button>
+                <button className="btn-dark w-full py-1.5">{t('toolbar.apply')}</button>
               </form>
             </>
           )}
@@ -177,7 +190,7 @@ export function Toolbar({
           className="rounded-r-xl px-3 text-xl text-stone-500 hover:bg-stone-50 disabled:opacity-30"
           onClick={() => shift(1)}
           disabled={!canForward}
-          aria-label="Next period"
+          aria-label={t('toolbar.nextPeriod')}
         >
           ›
         </button>
@@ -186,7 +199,11 @@ export function Toolbar({
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">
-            {GRANULARITIES.find((g) => g.value === (q.granularity ?? overview?.range.granularity))?.label ?? 'Daily'} <Chevron />
+            {(() => {
+              const g = GRANULARITIES.find((g) => g.value === (q.granularity ?? overview?.range.granularity));
+              return g ? t(g.tKey) : t('granularity.day');
+            })()}{' '}
+            <Chevron />
           </button>
         }
       >
@@ -200,13 +217,13 @@ export function Toolbar({
                 update({ granularity: g.value });
               }}
             >
-              {g.label}
+              {t(g.tKey)}
             </button>
           ))
         }
       </Dropdown>
 
-      <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label="Refresh">
+      <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label={t('toolbar.refresh')}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>
           <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
           <path d="M21 3v5h-5" />

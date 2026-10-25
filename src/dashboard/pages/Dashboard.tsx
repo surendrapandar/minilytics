@@ -8,30 +8,32 @@ import { VisitorModal } from '../components/VisitorModal';
 import { qs, type Overview, type Site } from '../lib/api';
 import { DashContext, type Dash } from '../lib/context';
 import { fmtMoney } from '../lib/format';
+import { useT } from '../lib/i18n';
 import { useApi } from '../lib/useApi';
 import { useQueryState } from '../lib/useQueryState';
 
-const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
-  channel: { label: 'Channel', dim: 'channel' },
-  source: { label: 'Referrer', dim: 'source' },
-  utm_campaign: { label: 'Campaign', dim: 'campaign' },
-  utm_term: { label: 'Keyword', dim: 'keyword' },
-  utm_source: { label: 'UTM source', dim: 'utm_source' },
-  utm_medium: { label: 'UTM medium', dim: 'utm_medium' },
-  ref: { label: 'Ref', dim: 'ref' },
-  country: { label: 'Country', dim: 'country' },
-  region: { label: 'Region', dim: 'region' },
-  city: { label: 'City', dim: 'city' },
-  browser: { label: 'Browser', dim: 'browser' },
-  os: { label: 'OS', dim: 'os' },
-  device: { label: 'Device', dim: 'device' },
-  page: { label: 'Visited page', dim: 'page' },
-  entry_page: { label: 'Entry page', dim: 'entry_page' },
-  hostname: { label: 'Hostname', dim: 'hostname' },
-  goal: { label: 'Completed goal', dim: 'goal' },
+const FILTER_LABELS: Record<string, { tKey: string; dim: string }> = {
+  channel: { tKey: 'dashboard.filter.channel', dim: 'channel' },
+  source: { tKey: 'dashboard.filter.source', dim: 'source' },
+  utm_campaign: { tKey: 'dashboard.filter.utm_campaign', dim: 'campaign' },
+  utm_term: { tKey: 'dashboard.filter.utm_term', dim: 'keyword' },
+  utm_source: { tKey: 'dashboard.filter.utm_source', dim: 'utm_source' },
+  utm_medium: { tKey: 'dashboard.filter.utm_medium', dim: 'utm_medium' },
+  ref: { tKey: 'dashboard.filter.ref', dim: 'ref' },
+  country: { tKey: 'dashboard.filter.country', dim: 'country' },
+  region: { tKey: 'dashboard.filter.region', dim: 'region' },
+  city: { tKey: 'dashboard.filter.city', dim: 'city' },
+  browser: { tKey: 'dashboard.filter.browser', dim: 'browser' },
+  os: { tKey: 'dashboard.filter.os', dim: 'os' },
+  device: { tKey: 'dashboard.filter.device', dim: 'device' },
+  page: { tKey: 'dashboard.filter.page', dim: 'page' },
+  entry_page: { tKey: 'dashboard.filter.entry_page', dim: 'entry_page' },
+  hostname: { tKey: 'dashboard.filter.hostname', dim: 'hostname' },
+  goal: { tKey: 'dashboard.filter.goal', dim: 'goal' },
 };
 
 export function Dashboard({ siteId }: { siteId: string }) {
+  const t = useT();
   const [q, update] = useQueryState();
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
@@ -62,9 +64,9 @@ export function Dashboard({ siteId }: { siteId: string }) {
   if (sites && !site) {
     return (
       <div className="p-10 text-center">
-        Site not found.{' '}
+        {t('dashboard.siteNotFound')}{' '}
         <button className="underline" onClick={() => navigate('/')}>
-          Back to websites
+          {t('dashboard.backToWebsites')}
         </button>
       </div>
     );
@@ -80,15 +82,15 @@ export function Dashboard({ siteId }: { siteId: string }) {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {Object.entries(q.filters).map(([k, v]) => (
               <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
-                <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
-                <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
-                <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label="Remove filter">
+                <span className="text-stone-500">{FILTER_LABELS[k] ? t(FILTER_LABELS[k].tKey) : k} {t('dashboard.filterIs')}</span>
+                <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null }, t)}</span>
+                <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label={t('common.removeFilter')}>
                   ✕
                 </button>
               </span>
             ))}
             <button className="text-sm text-stone-500 underline-offset-2 hover:underline" onClick={() => update({ filters: {} })}>
-              Clear all
+              {t('common.clearAll')}
             </button>
           </div>
         )}
@@ -100,32 +102,32 @@ export function Dashboard({ siteId }: { siteId: string }) {
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <Panel
             tabs={[
-              { label: 'Channel', dim: 'channel', filter: 'channel' },
-              { label: 'Referrer', dim: 'source', filter: 'source' },
-              { label: 'Campaign', dim: 'campaign', filter: 'utm_campaign' },
-              { label: 'Keyword', dim: 'keyword', filter: 'utm_term' },
+              { tKey: 'panel.tab.channel', dim: 'channel', filter: 'channel' },
+              { tKey: 'panel.tab.source', dim: 'source', filter: 'source' },
+              { tKey: 'panel.tab.campaign', dim: 'campaign', filter: 'utm_campaign' },
+              { tKey: 'panel.tab.keyword', dim: 'keyword', filter: 'utm_term' },
             ]}
           />
           <Panel
             tabs={[
-              { label: 'Country', dim: 'country', filter: 'country' },
-              { label: 'Region', dim: 'region', filter: 'region' },
-              { label: 'City', dim: 'city', filter: 'city' },
+              { tKey: 'panel.tab.country', dim: 'country', filter: 'country' },
+              { tKey: 'panel.tab.region', dim: 'region', filter: 'region' },
+              { tKey: 'panel.tab.city', dim: 'city', filter: 'city' },
             ]}
           />
           <Panel
             tabs={[
-              { label: 'Page', dim: 'page', filter: 'page' },
-              { label: 'Entry page', dim: 'entry_page', filter: 'entry_page' },
-              { label: 'Exit link', dim: 'exit_link' },
-              { label: 'Hostname', dim: 'hostname', filter: 'hostname' },
+              { tKey: 'panel.tab.page', dim: 'page', filter: 'page' },
+              { tKey: 'panel.tab.entry_page', dim: 'entry_page', filter: 'entry_page' },
+              { tKey: 'panel.tab.exit_link', dim: 'exit_link' },
+              { tKey: 'panel.tab.hostname', dim: 'hostname', filter: 'hostname' },
             ]}
           />
           <Panel
             tabs={[
-              { label: 'Browser', dim: 'browser', filter: 'browser' },
-              { label: 'OS', dim: 'os', filter: 'os' },
-              { label: 'Device', dim: 'device', filter: 'device' },
+              { tKey: 'panel.tab.browser', dim: 'browser', filter: 'browser' },
+              { tKey: 'panel.tab.os', dim: 'os', filter: 'os' },
+              { tKey: 'panel.tab.device', dim: 'device', filter: 'device' },
             ]}
           />
         </div>
@@ -135,9 +137,9 @@ export function Dashboard({ siteId }: { siteId: string }) {
         </div>
 
         <p className="mt-8 text-center text-xs text-stone-400">
-          Times in {site.timezone} · Revenue in {site.currency} ·{' '}
+          {t('dashboard.timesIn', { tz: site.timezone })} · {t('dashboard.revenueIn', { currency: site.currency })} ·{' '}
           <button className="underline-offset-2 hover:underline" onClick={() => navigate(`/site/${site.id}/settings`)}>
-            Settings & install
+            {t('dashboard.settingsInstall')}
           </button>
         </p>
       </div>

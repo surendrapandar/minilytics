@@ -3,6 +3,7 @@ import { Area, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, 
 import type { Kpis, Overview } from '../lib/api';
 import { useDash } from '../lib/context';
 import { bucketLabel, fmtDuration, fmtNumber, fmtPct } from '../lib/format';
+import { useT } from '../lib/i18n';
 
 type Metric = 'visitors' | 'revenue';
 
@@ -21,18 +22,19 @@ function Change({ cur, prev, invert = false }: { cur: number; prev: number; inve
 
 export function OverviewCard({ data }: { data: Overview | null }) {
   const { money } = useDash();
+  const t = useT();
   const [hidden, setHidden] = useState<Record<Metric, boolean>>({ visitors: false, revenue: false });
   const c = data?.current;
   const p = data?.previous;
 
   const kpis: { key: keyof Kpis | 'online'; label: string; value: string; invert?: boolean; metric?: Metric; dot?: string }[] = c
     ? [
-        { key: 'visitors', label: 'Visitors', value: fmtNumber(c.visitors), metric: 'visitors', dot: 'bg-visitors' },
-        { key: 'revenue', label: 'Revenue', value: money(c.revenue, true), metric: 'revenue', dot: 'bg-revenue' },
-        { key: 'conversionRate', label: 'Conversion rate', value: fmtPct(c.conversionRate, c.conversionRate >= 0.1 ? 0 : 2) },
-        { key: 'revenuePerVisitor', label: 'Revenue/visitor', value: money(c.revenuePerVisitor) },
-        { key: 'bounceRate', label: 'Bounce rate', value: fmtPct(c.bounceRate), invert: true },
-        { key: 'avgDuration', label: 'Session time', value: fmtDuration(c.avgDuration) },
+        { key: 'visitors', label: t('metric.visitors'), value: fmtNumber(c.visitors), metric: 'visitors', dot: 'bg-visitors' },
+        { key: 'revenue', label: t('metric.revenue'), value: money(c.revenue, true), metric: 'revenue', dot: 'bg-revenue' },
+        { key: 'conversionRate', label: t('metric.conversionRate'), value: fmtPct(c.conversionRate, c.conversionRate >= 0.1 ? 0 : 2) },
+        { key: 'revenuePerVisitor', label: t('overview.revenuePerVisitor'), value: money(c.revenuePerVisitor) },
+        { key: 'bounceRate', label: t('metric.bounceRate'), value: fmtPct(c.bounceRate), invert: true },
+        { key: 'avgDuration', label: t('metric.sessionTime'), value: fmtDuration(c.avgDuration) },
       ]
     : [];
 
@@ -46,7 +48,7 @@ export function OverviewCard({ data }: { data: Overview | null }) {
             key={k.key}
             className={`border-stone-100 px-5 py-4 text-left lg:border-r ${k.metric ? 'hover:bg-stone-50' : 'cursor-default'}`}
             onClick={() => k.metric && setHidden((h) => ({ ...h, [k.metric!]: !h[k.metric!] }))}
-            title={k.metric ? 'Show/hide on chart' : undefined}
+            title={k.metric ? t('overview.showHide') : undefined}
           >
             <div className="flex items-center gap-1.5 text-sm text-stone-500">
               {k.dot && <span className={`h-2.5 w-2.5 rounded-sm ${k.dot} ${hidden[k.metric!] ? 'opacity-25' : ''}`} />}
@@ -59,7 +61,7 @@ export function OverviewCard({ data }: { data: Overview | null }) {
         {data && (
           <div className="px-5 py-4">
             <div className="flex items-center gap-1.5 text-sm text-stone-500">
-              Online <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+              {t('overview.online')} <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
             </div>
             <div className="mt-1 text-[28px] font-semibold leading-tight">{data.online}</div>
           </div>
@@ -115,10 +117,10 @@ export function OverviewCard({ data }: { data: Overview | null }) {
                   return (
                     <div className="card min-w-[180px] px-4 py-3 text-sm">
                       <div className="mb-2 font-medium">{bucketLabel(d.bucket, g, true)}</div>
-                      <Row color="bg-visitors" label="Visitors" value={fmtNumber(d.visitors)} />
-                      <Row color="bg-stone-300" label="Pageviews" value={fmtNumber(d.pageviews)} />
-                      <Row color="bg-revenue" label="Revenue" value={money(d.revenue)} />
-                      {d.payments > 0 && <Row color="bg-revenueSoft" label="Payments" value={String(d.payments)} />}
+                      <Row color="bg-visitors" label={t('common.visitors')} value={fmtNumber(d.visitors)} />
+                      <Row color="bg-stone-300" label={t('common.pageviews')} value={fmtNumber(d.pageviews)} />
+                      <Row color="bg-revenue" label={t('common.revenue')} value={money(d.revenue)} />
+                      {d.payments > 0 && <Row color="bg-revenueSoft" label={t('visitor.payments')} value={String(d.payments)} />}
                     </div>
                   );
                 }}

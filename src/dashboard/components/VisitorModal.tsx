@@ -1,5 +1,6 @@
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo, fmtDateTime, fmtDuration, shortId } from '../lib/format';
+import { useT } from '../lib/i18n';
 import { useApi } from '../lib/useApi';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 import { Modal } from './Modal';
@@ -13,6 +14,7 @@ interface Profile {
 
 export function VisitorModal({ visitorId, onClose }: { visitorId: string | null; onClose: () => void }) {
   const { site, money } = useDash();
+  const t = useT();
   // The parent remounts this per visitor (key), so `data` always belongs to `visitorId`.
   const { data: p } = useApi<Profile>(visitorId ? `/api/sites/${site.id}/visitors/${visitorId}` : null);
   const last = p?.sessions[0];
@@ -28,14 +30,14 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
   }
 
   return (
-    <Modal open={!!visitorId} onClose={onClose} width="max-w-3xl" title="Visitor profile">
+    <Modal open={!!visitorId} onClose={onClose} width="max-w-3xl" title={t('visitor.profile')}>
       {!p && <div className="h-60 animate-pulse rounded-xl bg-stone-50" />}
       {p && (
         <div>
           <div className="flex items-center gap-4">
             <Avatar id={visitorId!} size={64} />
             <div className="min-w-0">
-              <div className="truncate text-xl font-semibold">{p.visitor?.name || p.visitor?.email || `Visitor ${shortId(visitorId!)}`}</div>
+              <div className="truncate text-xl font-semibold">{p.visitor?.name || p.visitor?.email || t('visitor.fallback', { id: shortId(visitorId!) })}</div>
               {p.visitor?.email && p.visitor.name && <div className="text-sm text-stone-500">{p.visitor.email}</div>}
               {last && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-stone-500">
@@ -58,11 +60,11 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="First source" value={firstSession?.source ?? '—'} />
-            <Stat label="Visits" value={String(p.sessions.length)} />
-            <Stat label="Total spent" value={money(paid)} accent={paid > 0} />
+            <Stat label={t('visitor.stat.firstSource')} value={firstSession?.source ?? '—'} />
+            <Stat label={t('visitor.stat.visits')} value={String(p.sessions.length)} />
+            <Stat label={t('visitor.stat.totalSpent')} value={money(paid)} accent={paid > 0} />
             <Stat
-              label="Time to first payment"
+              label={t('visitor.stat.timeToFirstPayment')}
               value={firstPayment && p.visitor ? fmtAgo(firstPayment.ts - p.visitor.first_seen) : '—'}
             />
           </div>
@@ -80,8 +82,8 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                       <SourceIcon source={s.source} domain={s.referrer_domain} size={14} /> {s.source}
                     </span>
                     {s.referrer && <span className="max-w-[260px] truncate text-stone-500">{s.referrer}</span>}
-                    {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">campaign: {s.utm_campaign}</span>}
-                    {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">ref: {s.ref}</span>}
+                    {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">{t('visitor.campaign', { value: s.utm_campaign })}</span>}
+                    {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">{t('visitor.ref', { value: s.ref })}</span>}
                     <span className="text-stone-400">{fmtDuration(s.duration)}</span>
                   </div>
                   <ol className="mt-2 space-y-1 text-sm">
@@ -93,10 +95,10 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                         {e.type === 'pageview' && <span className="text-stone-700">📄 {e.path}</span>}
                         {e.type === 'goal' && (
                           <span className="font-medium text-violet-700">
-                            🎯 {e.name} <span className="font-normal text-stone-400">on {e.path}</span>
+                            🎯 {e.name} <span className="font-normal text-stone-400">{t('visitor.goalOn', { path: e.path })}</span>
                           </span>
                         )}
-                        {e.type === 'outbound' && <span className="text-stone-600">↗ Left to {e.name?.replace(/^https?:\/\//, '')}</span>}
+                        {e.type === 'outbound' && <span className="text-stone-600">↗ {t('visitor.leftTo', { target: e.name?.replace(/^https?:\/\//, '') ?? '' })}</span>}
                       </li>
                     ))}
                     {pays.map((x) => (
@@ -104,7 +106,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                         <span className="w-14 shrink-0 text-xs leading-5 text-stone-400">
                           {new Intl.DateTimeFormat('en', { timeZone: site.timezone, hour: 'numeric', minute: '2-digit' }).format(x.ts)}
                         </span>
-                        <span className="font-semibold text-revenue">💰 {x.kind === 'refund' ? 'Refund' : 'Paid'} {money(x.amount)}</span>
+                        <span className="font-semibold text-revenue">💰 {x.kind === 'refund' ? t('visitor.refund') : t('visitor.paid')} {money(x.amount)}</span>
                       </li>
                     ))}
                   </ol>
@@ -113,11 +115,11 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
             })}
             {p.payments.length > 0 && (
               <div className="rounded-xl bg-revenueSoft/40 p-4 text-sm">
-                <div className="mb-2 font-semibold">Payments</div>
+                <div className="mb-2 font-semibold">{t('visitor.payments')}</div>
                 {p.payments.map((x) => (
                   <div key={x.id} className="flex justify-between py-0.5">
                     <span>
-                      {fmtDateTime(x.ts, site.timezone)} · {x.kind === 'refund' ? 'Refund' : x.renewal ? 'Renewal' : 'Payment'}
+                      {fmtDateTime(x.ts, site.timezone)} · {x.kind === 'refund' ? t('visitor.refund') : x.renewal ? t('visitor.renewal') : t('visitor.payment')}
                     </span>
                     <span className="font-medium">{money(x.amount)}</span>
                   </div>

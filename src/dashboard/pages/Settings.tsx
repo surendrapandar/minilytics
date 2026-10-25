@@ -3,6 +3,7 @@ import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
+import { useT } from '../lib/i18n';
 
 function Section({ title, desc, children }: { title: string; desc?: ReactNode; children: ReactNode }) {
   return (
@@ -15,6 +16,7 @@ function Section({ title, desc, children }: { title: string; desc?: ReactNode; c
 }
 
 function Code({ children }: { children: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <div className="relative">
@@ -27,13 +29,14 @@ function Code({ children }: { children: string }) {
           setTimeout(() => setCopied(false), 1500);
         }}
       >
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? t('common.copied') : t('common.copy')}
       </button>
     </div>
   );
 }
 
 export function Settings({ siteId }: { siteId: string }) {
+  const t = useT();
   const [site, setSite] = useState<Site | null>(null);
   const [form, setForm] = useState<Partial<Site>>({});
   const [saved, setSaved] = useState('');
@@ -47,7 +50,7 @@ export function Settings({ siteId }: { siteId: string }) {
     });
   }, [siteId]);
 
-  async function save(patch: Partial<Site>, msg = 'Saved') {
+  async function save(patch: Partial<Site>, msg = t('settings.saved')) {
     setError('');
     try {
       const s = await api<Site>(`/api/sites/${siteId}`, { method: 'PATCH', json: patch });
@@ -67,7 +70,7 @@ export function Settings({ siteId }: { siteId: string }) {
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:py-12">
       <div className="flex items-center justify-between">
         <button className="btn" onClick={() => navigate(`/site/${site.id}`)}>
-          ← Dashboard
+          {t('settings.backDashboard')}
         </button>
         <div className="flex items-center gap-2 font-semibold">
           <Favicon domain={site.domain} size={22} /> {site.name}
@@ -76,10 +79,10 @@ export function Settings({ siteId }: { siteId: string }) {
 
       <AiSetup site={site} origin={origin} />
 
-      <Section title="1. Install the tracking script" desc={<>Paste this in the <code>&lt;head&gt;</code> of every page on {site.domain} (and its subdomains).</>}>
+      <Section title={t('settings.s1.title')} desc={<>{t('settings.s1.descPre')} <code>&lt;head&gt;</code> {t('settings.s1.descPost', { domain: site.domain })}</>}>
         <Code>{snippet}</Code>
         <details className="mt-4 text-sm">
-          <summary className="cursor-pointer font-medium">Next.js / React example</summary>
+          <summary className="cursor-pointer font-medium">{t('settings.s1.nextjsExample')}</summary>
           <div className="mt-3">
             <Code>{`// app/layout.tsx
 import Script from 'next/script';
@@ -90,10 +93,9 @@ import Script from 'next/script';
           </div>
         </details>
         <details className="mt-3 text-sm">
-          <summary className="cursor-pointer font-medium">Beat ad blockers (recommended for accuracy)</summary>
+          <summary className="cursor-pointer font-medium">{t('settings.s1.beatAdblockers')}</summary>
           <p className="mt-2 text-stone-600">
-            Ad blockers can block third-party analytics domains. Serve the script and endpoint from your own domain with a rewrite, then point the
-            script at it:
+            {t('settings.s1.beatAdblockersDesc')}
           </p>
           <div className="mt-3">
             <Code>{`// next.config.js
@@ -108,11 +110,11 @@ async rewrites() {
           </div>
         </details>
         <p className="mt-4 text-sm text-stone-500">
-          Exclude your own visits: open <code>https://{site.domain}/?ml_ignore=true</code> once in each browser you use.
+          {t('settings.s1.excludePre')} <code>https://{site.domain}/?ml_ignore=true</code> {t('settings.s1.excludePost')}
         </p>
       </Section>
 
-      <Section title="2. Track button clicks & goals" desc="Goals show up in the Goals tab and can be used in funnels and filters.">
+      <Section title={t('settings.s2.title')} desc={t('settings.s2.desc')}>
         <Code>{`<!-- Any element: a click sends the goal -->
 <button data-ml-goal="signup_click">Get started</button>
 
@@ -126,39 +128,39 @@ async rewrites() {
   // After login: attach a name/email to the visitor
   window.minilytics('identify', { user_id: '123', email: 'jane@acme.com', name: 'Jane' });
 </script>`}</Code>
-        <p className="mt-3 text-sm text-stone-500">Outbound link clicks are tracked automatically (Exit link tab).</p>
+        <p className="mt-3 text-sm text-stone-500">{t('settings.s2.outbound')}</p>
       </Section>
 
       <Section
-        title="3. Connect Dodo Payments (revenue attribution)"
-        desc="Payments are linked to the visitor who paid and credited to the source that brought them."
+        title={t('settings.s3.title')}
+        desc={t('settings.s3.desc')}
       >
         <ol className="list-decimal space-y-4 pl-5 text-sm">
           <li>
-            In Dodo Payments → <b>Developer → Webhooks</b>, add this endpoint and subscribe to <code>payment.succeeded</code> and{' '}
-            <code>refund.succeeded</code>:
+            {t('settings.s3.step1Pre')} <b>{t('settings.s3.step1DevWebhooks')}</b>{t('settings.s3.step1Mid')} <code>payment.succeeded</code> {t('settings.s3.step1And')}{' '}
+            <code>refund.succeeded</code>{t('settings.s3.step1End')}
             <div className="mt-2">
               <Code>{webhookUrl}</Code>
             </div>
           </li>
           <li>
-            Paste the webhook's <b>signing secret</b> (starts with <code>whsec_</code>):
+            {t('settings.s3.step2Pre')} <b>{t('settings.s3.step2SigningSecret')}</b> {t('settings.s3.step2Mid')} <code>whsec_</code>{t('settings.s3.step2End')}
             <div className="mt-2 flex gap-2">
               <input
                 className="input font-mono"
                 type="password"
-                placeholder="whsec_..."
+                placeholder={t('settings.s3.secretPlaceholder')}
                 value={form.dodo_webhook_secret ?? ''}
                 onChange={(e) => setForm({ ...form, dodo_webhook_secret: e.target.value })}
               />
-              <button className="btn-dark" onClick={() => save({ dodo_webhook_secret: form.dodo_webhook_secret ?? '' }, 'Webhook secret saved')}>
-                Save
+              <button className="btn-dark" onClick={() => save({ dodo_webhook_secret: form.dodo_webhook_secret ?? '' }, t('settings.s3.secretSaved'))}>
+                {t('common.save')}
               </button>
             </div>
-            {site.dodo_webhook_secret && <p className="mt-1 text-xs text-emerald-600">✓ Secret configured</p>}
+            {site.dodo_webhook_secret && <p className="mt-1 text-xs text-emerald-600">{t('settings.s3.secretConfigured')}</p>}
           </li>
           <li>
-            Pass the visitor cookies as metadata when you create a checkout (this is what makes attribution exact):
+            {t('settings.s3.step3')}
             <div className="mt-2">
               <Code>{`import DodoPayments from 'dodopayments';
 import { cookies } from 'next/headers';
@@ -176,35 +178,51 @@ const session = await dodo.checkoutSessions.create({
 });`}</Code>
             </div>
             <p className="mt-2 text-stone-500">
-              Using Dodo <b>payment links</b> (checkout.dodopayments.com/buy/…) instead? The script adds the metadata to those links
-              automatically when clicked, but it doesn't always reach the payment, so also set the return URL (step 4). In the browser you can also read the ids with <code>window.minilytics.attribution()</code>.
+              {t('settings.s3.step3NotePre')} <b>{t('settings.s3.step3NotePaymentLinks')}</b> {t('settings.s3.step3NoteMid')} <code>window.minilytics.attribution()</code>{t('settings.s3.step3NoteEnd')}
             </p>
             <p className="mt-2 text-stone-500">
-              If metadata is missing, Minilytics still links the payment when the buyer lands back on your site, when their email matches a
-              visitor you <code>identify()</code>, when it's a renewal of an earlier payment, or when exactly one visitor clicked a checkout link
-              shortly before paying. The Journey tab shows how each payment was matched.
+              {(() => {
+                const parts = t('settings.s3.step3Note2').split('{identify}');
+                return (
+                  <>
+                    {parts[0]}
+                    <code>identify()</code>
+                    {parts[1] ?? ''}
+                  </>
+                );
+              })()}
             </p>
           </li>
           <li>
-            <b>Recommended:</b> set your product's <b>return / redirect URL</b> in Dodo to a page on your site, e.g.{' '}
-            <code>https://{site.domain}/thanks</code>. Dodo adds <code>?payment_id=…</code> to it, which lets Minilytics link the payment to
-            the exact visitor even when metadata doesn't come through (for example with payment links).
+            <b>{t('settings.s3.step4Recommended')}</b> {t('settings.s3.step4Mid')} <b>{t('settings.s3.step4ReturnUrl')}</b>{' '}
+            {(() => {
+              const parts = t('settings.s3.step4End').split(/\{url\}|\{param\}/);
+              return (
+                <>
+                  {parts[0]}
+                  <code>https://{site.domain}/thanks</code>
+                  {parts[1]}
+                  <code>?payment_id=…</code>
+                  {parts[2] ?? ''}
+                </>
+              );
+            })()}
           </li>
         </ol>
       </Section>
 
-      <Section title="Other payment providers / server-side API" desc="Send payments or goals from your backend using this site's API key.">
+      <Section title={t('settings.api.title')} desc={t('settings.api.desc')}>
         <div className="mb-3 flex gap-2">
           <input className="input font-mono" readOnly value={site.api_key} />
           <button
             className="btn"
             onClick={async () => {
-              if (!confirm('Rotate the API key? The old key stops working immediately.')) return;
+              if (!confirm(t('settings.api.rotateConfirm'))) return;
               const r = await api<{ api_key: string }>(`/api/sites/${siteId}/rotate-key`, { method: 'POST' });
               setSite({ ...site, api_key: r.api_key });
             }}
           >
-            Rotate
+            {t('common.rotate')}
           </button>
         </div>
         <Code>{`curl -X POST ${origin}/api/v1/payments \\
@@ -220,27 +238,27 @@ curl -X POST ${origin}/api/v1/goals \\
 
       <LinkBuilder domain={site.domain} />
 
-      <Section title="General">
+      <Section title={t('settings.general.title')}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="label">Name</label>
+            <label className="label">{t('settings.general.name')}</label>
             <input className="input" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
-            <label className="label">Domain</label>
+            <label className="label">{t('settings.general.domain')}</label>
             <input className="input" value={form.domain ?? ''} onChange={(e) => setForm({ ...form, domain: e.target.value })} />
           </div>
           <div>
-            <label className="label">Timezone</label>
+            <label className="label">{t('settings.general.timezone')}</label>
             <input className="input" value={form.timezone ?? ''} onChange={(e) => setForm({ ...form, timezone: e.target.value })} />
           </div>
           <div>
-            <label className="label">Revenue currency</label>
+            <label className="label">{t('settings.general.currency')}</label>
             <input className="input" value={form.currency ?? ''} maxLength={3} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
           </div>
         </div>
         <button className="btn-dark mt-4" onClick={() => save({ name: form.name, domain: form.domain, timezone: form.timezone, currency: form.currency })}>
-          Save changes
+          {t('settings.general.saveChanges')}
         </button>
       </Section>
 
@@ -250,16 +268,16 @@ curl -X POST ${origin}/api/v1/goals \\
         </div>
       )}
 
-      <Section title="Danger zone">
+      <Section title={t('settings.danger.title')}>
         <button
           className="btn border-red-200 text-red-600"
           onClick={async () => {
-            if (prompt(`Type ${site.domain} to delete this site and all of its data`) !== site.domain) return;
+            if (prompt(t('settings.danger.deleteConfirm', { domain: site.domain })) !== site.domain) return;
             await api(`/api/sites/${siteId}`, { method: 'DELETE' });
             navigate('/');
           }}
         >
-          Delete site and all data
+          {t('settings.danger.delete')}
         </button>
       </Section>
     </div>
@@ -268,6 +286,7 @@ curl -X POST ${origin}/api/v1/goals \\
 
 /** One-click prompt for the owner's coding AI, so it can install everything in their codebase. */
 function AiSetup({ site, origin }: { site: Site; origin: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
   const prompt = buildAiPrompt(site, origin);
@@ -275,10 +294,9 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
     <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
+          <h2 className="text-lg font-semibold">{t('settings.ai.title')}</h2>
           <p className="mt-1 max-w-lg text-sm text-stone-600">
-            Copy this prompt into Claude Code, Cursor or any coding AI opened in your project. It installs the script, connects Dodo Payments
-            attribution, identifies users and adds button goals, using this site's real values. It asks you only what it can't find in your code.
+            {t('settings.ai.desc')}
           </p>
         </div>
         <button
@@ -289,15 +307,15 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
             setTimeout(() => setCopied(false), 2000);
           }}
         >
-          {copied ? '✓ Copied' : 'Copy AI prompt'}
+          {copied ? t('settings.ai.copied') : t('settings.ai.copy')}
         </button>
       </div>
       <button className="mt-3 text-sm font-medium text-violet-700 hover:underline" onClick={() => setOpen((o) => !o)}>
-        {open ? 'Hide prompt' : 'Preview prompt'}
+        {open ? t('settings.ai.hidePrompt') : t('settings.ai.previewPrompt')}
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
       <p className="mt-3 text-xs text-stone-500">
-        The AI handles the code. You still connect the Dodo webhook yourself (step 3 below), because that's done in Dodo's dashboard.
+        {t('settings.ai.note')}
       </p>
     </section>
   );
@@ -315,6 +333,7 @@ const PRESETS = [
 
 /** Build a tagged link per tweet / article, so each one shows up separately in Campaign. */
 function LinkBuilder({ domain }: { domain: string }) {
+  const t = useT();
   const [url, setUrl] = useState(`https://${domain}/`);
   const [preset, setPreset] = useState(PRESETS[0]);
   const [campaign, setCampaign] = useState('');
@@ -328,16 +347,16 @@ function LinkBuilder({ domain }: { domain: string }) {
   } catch {}
   return (
     <Section
-      title="Link builder"
-      desc="X, Medium and others hide which exact post sent a visitor. Use a tagged link in each post and it shows up by name in Referrer → Campaign, including the revenue it made."
+      title={t('settings.link.title')}
+      desc={t('settings.link.desc')}
     >
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="sm:col-span-3">
-          <label className="label">Page</label>
+          <label className="label">{t('settings.link.page')}</label>
           <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
         <div>
-          <label className="label">Where you post it</label>
+          <label className="label">{t('settings.link.whereYouPost')}</label>
           <select className="input" value={preset.label} onChange={(e) => setPreset(PRESETS.find((p) => p.label === e.target.value)!)}>
             {PRESETS.map((p) => (
               <option key={p.label}>{p.label}</option>
@@ -345,8 +364,8 @@ function LinkBuilder({ domain }: { domain: string }) {
           </select>
         </div>
         <div className="sm:col-span-2">
-          <label className="label">Post name (campaign)</label>
-          <input className="input" placeholder="launch-tweet, seo-guide-article…" value={campaign} onChange={(e) => setCampaign(e.target.value)} />
+          <label className="label">{t('settings.link.postName')}</label>
+          <input className="input" placeholder={t('settings.link.postNamePlaceholder')} value={campaign} onChange={(e) => setCampaign(e.target.value)} />
         </div>
       </div>
       {built && (
@@ -355,7 +374,7 @@ function LinkBuilder({ domain }: { domain: string }) {
         </div>
       )}
       <p className="mt-2 text-xs text-stone-500">
-        Shorter alternative: <code>?ref=launch-tweet</code> also works and shows up as the referrer.
+        {t('settings.link.shorterPre')} <code>?ref=launch-tweet</code> {t('settings.link.shorterPost')}
       </p>
     </Section>
   );
