@@ -13,6 +13,14 @@ const AUTH_DAYS = 30;
 const MAX_FAILURES = 10;
 const LOCKOUT_MS = 15 * 60_000;
 
+// API responses are never sniffed, and (except the tracking endpoint) never cached.
+// Headers for the static dashboard live in public/_headers.
+app.use('/api/*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  if (c.req.path !== '/api/event') c.header('Cache-Control', 'no-store');
+});
+
 // ---------- public: tracking, webhooks, server-side API
 
 app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
@@ -23,37 +31,52 @@ app.post('/api/v1/goals', handleGoalApi);
 
 // ---------- login
 
-async function isLoggedIn(c: Context<AppEnv>) {
-  if (!c.env.SESSION_SECRET) return false;
+/**
+ * The id of the logged-in dashboard session, or null. The cookie must be correctly signed, unexpired
+ * AND still listed in admin_sessions, so logging out really ends the session on the server.
+ */
+async function sessionId(c: Context<AppEnv>): Promise<string | null> {
+  if (!c.env.SESSION_SECRET) return null;
   const value = await verifyToken(c.env.SESSION_SECRET, getCookie(c, AUTH_COOKIE));
-  return !!value && Number(value.split('.')[1]) > Date.now();
+  const [id, expires] = value?.split('.') ?? [];
+  const now = Date.now();
+  if (!id || !(Number(expires) > now)) return null;
+  const row = await c.env.DB.prepare('SELECT 1 AS ok FROM admin_sessions WHERE id = ? AND expires_at > ?').bind(id, now).first();
+  return row ? id : null;
 }
+
+const isLoggedIn = async (c: Context<AppEnv>) => (await sessionId(c)) !== null;
 
 app.post('/api/auth/login', async (c) => {
   if (!c.env.ADMIN_PASSWORD || !c.env.SESSION_SECRET) {
     return c.json({ error: 'Set ADMIN_PASSWORD and SESSION_SECRET (see README).' }, 500);
   }
   // Lock an IP out after too many wrong passwords, so a public dashboard can't be brute-forced.
+  // Every attempt is counted BEFORE the password is checked, in one atomic batch: checking first and
+  // recording afterwards would let a burst of parallel guesses all slip under the limit.
   const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
   const now = Date.now();
-  const recent = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?')
-    .bind(ip, now - LOCKOUT_MS)
-    .first<{ n: number }>();
-  if ((recent?.n ?? 0) >= MAX_FAILURES) {
-    return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
+  const [, , attempts] = await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
+    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
+    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(ip, now - LOCKOUT_MS),
+  ]);
+  if ((attempts.results[0] as { n: number }).n > MAX_FAILURES) {
+    return c.json({ error: 'Too many attempts. Try again in 15 minutes.' }, 429);
   }
   const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
   if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
-    await c.env.DB.batch([
-      c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
-      c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
-    ]);
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: 'Wrong password' }, 401);
   }
-  await c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip).run();
-  const expires = Date.now() + AUTH_DAYS * 86_400_000;
-  setCookie(c, AUTH_COOKIE, await signToken(c.env.SESSION_SECRET, `admin.${expires}`), {
+  const id = randomId(16);
+  const expires = now + AUTH_DAYS * 86_400_000;
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip),
+    c.env.DB.prepare('DELETE FROM admin_sessions WHERE expires_at < ?').bind(now),
+    c.env.DB.prepare('INSERT INTO admin_sessions (id, created_at, expires_at) VALUES (?, ?, ?)').bind(id, now, expires),
+  ]);
+  setCookie(c, AUTH_COOKIE, await signToken(c.env.SESSION_SECRET, `${id}.${expires}`), {
     httpOnly: true,
     secure: new URL(c.req.url).protocol === 'https:',
     sameSite: 'Lax',
@@ -63,7 +86,9 @@ app.post('/api/auth/login', async (c) => {
   return c.json({ ok: true });
 });
 
-app.post('/api/auth/logout', (c) => {
+app.post('/api/auth/logout', async (c) => {
+  const id = await sessionId(c);
+  if (id) await c.env.DB.prepare('DELETE FROM admin_sessions WHERE id = ?').bind(id).run();
   deleteCookie(c, AUTH_COOKIE, { path: '/' });
   return c.json({ ok: true });
 });
@@ -76,6 +101,13 @@ const requireAuth = async (c: Context<AppEnv>, next: Next) => {
   if (!(await isLoggedIn(c))) return c.json({ error: 'unauthorized' }, 401);
   await next();
 };
+
+// End every dashboard session on every device (e.g. after a stolen cookie or laptop).
+app.post('/api/auth/logout-all', requireAuth, async (c) => {
+  await c.env.DB.prepare('DELETE FROM admin_sessions').run();
+  deleteCookie(c, AUTH_COOKIE, { path: '/' });
+  return c.json({ ok: true });
+});
 app.use('/api/sites', requireAuth);
 app.use('/api/sites/*', requireAuth);
 

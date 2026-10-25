@@ -183,6 +183,40 @@ for (const g of ['hour', 'day', 'week', 'month']) {
   assert(res.status === 200, `granularity ${g} -> ${res.body.range.granularity}`);
 }
 
+// identify() is fill-only: a later call can't rewrite the identity that is already stored
+await event(site.id, { t: 'identify', u: 'https://app.smoke-test.com/pricing', p: { email: 'attacker@evil.com', name: 'Mallory' }, vid, sid });
+const identified = (await call(`/api/sites/${site.id}/visitors/${vid}`)).body.visitor;
+assert(identified.email === 'jane@acme.com' && identified.name === 'Jane Doe', 'second identify() does not overwrite email or name');
+
 await call(`/api/sites/${site.id}`, { method: 'DELETE' });
 assert((await call(`/api/sites/${site.id}`)).status === 404, 'site deleted');
+
+// --- Auth hardening ---
+const login = (headers = {}, password = PASSWORD) =>
+  call('/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ password }) });
+
+// Parallel guesses can't all slip under the lockout (a fake client IP keeps the real bucket clean).
+const ip = { 'cf-connecting-ip': `203.0.113.${1 + Math.floor(Math.random() * 250)}` };
+const burst = await Promise.all(Array.from({ length: 25 }, () => login(ip, 'wrong-' + crypto.randomUUID())));
+const locked = burst.filter((b) => b.status === 429).length;
+assert(locked >= 10, `parallel wrong passwords get locked out (${locked}/25 answered 429)`);
+assert((await login(ip)).status === 429, 'correct password is refused while the IP is locked out');
+
+// Logging out ends the session on the server: replaying the old cookie no longer works.
+assert((await login()).status === 200, 'login again');
+const oldCookie = cookie;
+assert((await call('/api/sites')).status === 200, 'session works');
+await call('/api/auth/logout', { method: 'POST' });
+cookie = oldCookie;
+assert((await call('/api/sites')).status === 401, 'cookie is revoked after logout');
+
+// Log out everywhere ends every other session too.
+await login();
+const laptop = cookie;
+await login();
+assert((await call('/api/auth/logout-all', { method: 'POST' })).status === 200, 'logout-all');
+cookie = laptop;
+assert((await call('/api/sites')).status === 401, 'other sessions are revoked by logout-all');
+assert((await call('/api/auth/logout-all', { method: 'POST' })).status === 401, 'logout-all needs a login');
+
 console.log('\nAll smoke tests passed');

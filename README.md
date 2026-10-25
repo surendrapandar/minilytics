@@ -96,7 +96,7 @@ At 5–10k visitors a month you'll use a few percent of this. If you outgrow it,
 ```
 
 - **Button clicks / goals:** `<button data-ml-goal="signup_click">`, or `window.minilytics('goal', 'signup', { plan: 'pro' })`
-- **Identify logged-in users:** `window.minilytics('identify', { user_id, email, name })`
+- **Identify logged-in users:** `window.minilytics('identify', { user_id, email, name })`. The first value stored for each field wins; later `identify` calls only fill fields that are still empty.
 - **Ignore your own visits:** open `https://yoursite.com/?ml_ignore=true` once per browser
 - **Single-page apps** (Next.js, React Router…) are handled automatically
 - **Subdomains:** `app.yoursite.com` and `yoursite.com` share the same visitor, because the cookie is set on the root domain

@@ -124,11 +124,14 @@ export async function ingest(
 
   if (t === 'identify') {
     const p = body.p ?? {};
+    // Fill-only: the first value stored for each field wins and later identify() calls can't rewrite it.
+    // This endpoint is public, and payments are matched to visitors by email, so identity must not be
+    // overwritable (payments already fill these same columns the same way).
     await db.batch([
       db.prepare('INSERT OR IGNORE INTO visitors (site_id, id, first_seen) VALUES (?, ?, ?)').bind(site.id, vid, now),
       db
         .prepare(
-          'UPDATE visitors SET user_id = COALESCE(?, user_id), email = COALESCE(?, email), name = COALESCE(?, name) WHERE site_id = ? AND id = ?',
+          'UPDATE visitors SET user_id = COALESCE(user_id, ?), email = COALESCE(email, ?), name = COALESCE(name, ?) WHERE site_id = ? AND id = ?',
         )
         .bind(clip(p.user_id, 128), clip(p.email, 200)?.toLowerCase() ?? null, clip(p.name, 128), site.id, vid),
     ]);
