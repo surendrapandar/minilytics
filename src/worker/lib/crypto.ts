@@ -57,6 +57,28 @@ export async function verifyStandardWebhook(
     .some((sig) => safeEqual(sig, expected));
 }
 
+/** Stripe signs the exact raw body with the entire endpoint secret, not a base64-decoded key. */
+export async function verifyStripeWebhook(
+  secret: string,
+  signature: string | null,
+  body: string,
+  now = Date.now(),
+): Promise<boolean> {
+  if (!secret || !signature) return false;
+  const parts = signature.split(',').map((part) => part.trim());
+  const timestamps = parts.filter((part) => part.startsWith('t='));
+  if (timestamps.length !== 1) return false;
+  const timestamp = timestamps[0].slice(2);
+  if (!/^\d+$/.test(timestamp)) return false;
+  const ts = Number(timestamp);
+  if (!Number.isSafeInteger(ts) || Math.abs(now / 1000 - ts) > 300) return false;
+  const signatures = parts.filter((part) => /^v1=[a-f0-9]{64}$/.test(part));
+  if (!signatures.length) return false;
+  const digest = await hmac(enc.encode(secret), `${timestamp}.${body}`);
+  const expected = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return signatures.some((part) => safeEqual(part.slice(3), expected));
+}
+
 /** Sign a value for the dashboard login cookie. */
 export async function signToken(secret: string, value: string): Promise<string> {
   const sig = bytesToB64(await hmac(enc.encode(secret), value)).replace(/=+$/, '');
