@@ -277,6 +277,18 @@ before the payment). The Journey tab shows how each payment was matched, and **T
 older payments.
 Refunds are subtracted from revenue.
 
+### PaywallProject (WordPress)
+
+[PaywallProject](https://github.com/paywallproject/paywall-project) has a built-in Minilytics integration. In WordPress,
+open **Paywall Project → Settings → Minilytics**, tick **Enable Minilytics** and fill in your Minilytics address, the
+site's ID and its API key (all shown in the site's settings here). The plugin then:
+
+- adds the tracking script to every page (untick that if you already add it yourself), and `identify()`s logged-in readers;
+- saves each reader's visitor id on their WordPress account while they browse, so payments confirmed later by Stripe
+  webhooks are still credited to the right visitor;
+- sends every paid checkout, renewal and gift purchase, and every refund (partial ones too), to `/api/v1/payments` in
+  the background.
+
 ### Other providers (API)
 
 Any other provider can use the generic API (the key is in site settings):

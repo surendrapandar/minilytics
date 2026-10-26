@@ -231,7 +231,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
   );
 }
 
-type Provider = 'dodo' | 'stripe' | 'polar' | 'api';
+type Provider = 'dodo' | 'stripe' | 'polar' | 'paywallproject' | 'api';
 
 interface RevenueProps {
   site: Site;
@@ -252,6 +252,7 @@ function Revenue(props: RevenueProps) {
     { id: 'dodo', label: 'Dodo Payments', icon: <Favicon domain="dodopayments.com" size={18} />, connected: !!site.dodo_webhook_secret },
     { id: 'stripe', label: 'Stripe', icon: <Favicon domain="stripe.com" size={18} />, connected: !!site.stripe_webhook_secret },
     { id: 'polar', label: 'Polar', icon: <Favicon domain="polar.sh" size={18} />, connected: !!site.polar_webhook_secret },
+    { id: 'paywallproject', label: 'PaywallProject', icon: <Favicon domain="paywallproject.com" size={18} /> },
     { id: 'api', label: 'Other / API', icon: <span className="font-mono text-xs text-stone-500">{'{ }'}</span> },
   ];
   return (
@@ -274,6 +275,7 @@ function Revenue(props: RevenueProps) {
       {provider === 'dodo' && <DodoSetup {...props} />}
       {provider === 'stripe' && <StripeSetup {...props} />}
       {provider === 'polar' && <PolarSetup {...props} />}
+      {provider === 'paywallproject' && <PaywallProjectSetup {...props} />}
       {provider === 'api' && <ApiSetup {...props} />}
     </Section>
   );
@@ -476,6 +478,34 @@ await polar.checkouts.create({
         </Step>
       </Steps>
       <ProviderFooter anchor="polar" />
+    </>
+  );
+}
+
+function PaywallProjectSetup({ site, origin }: RevenueProps) {
+  return (
+    <>
+      <p className="mb-3 text-sm text-stone-500">
+        The PaywallProject WordPress plugin sends every membership payment, renewal and refund here, and adds the tracking script for
+        you.
+      </p>
+      <ol className="list-decimal space-y-3 pl-5 text-sm">
+        <li>
+          In WordPress, open <b>Paywall Project → Settings → Minilytics</b> and tick <b>Enable Minilytics</b>.
+        </li>
+        <li>
+          Fill in these values and save:
+          <div className="mt-2">
+            <Code>{`Minilytics address: ${origin}
+Website ID:         ${site.id}
+API key:            ${site.api_key}`}</Code>
+          </div>
+        </li>
+        <li>
+          If the tracking script is already on the site another way, untick <b>Add the Minilytics tracking script to every page</b> there so visits aren't counted
+          twice.
+        </li>
+      </ol>
     </>
   );
 }
