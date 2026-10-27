@@ -89,3 +89,14 @@ export async function verifyToken(secret: string, token: string | undefined): Pr
 export function passwordsMatch(a: string, b: string): boolean {
   return safeEqual(a, b);
 }
+
+/**
+ * Verify a Razorpay webhook: `X-Razorpay-Signature` is the hex HMAC-SHA256 of the raw body, keyed with the
+ * webhook secret typed in Razorpay → Settings → Webhooks.
+ */
+export async function verifyRazorpaySignature(secret: string, signature: string | null, body: string): Promise<boolean> {
+  if (!secret || !signature) return false;
+  const mac = await hmac(enc.encode(secret), body);
+  const expected = Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
+  return safeEqual(signature.trim().toLowerCase(), expected);
+}

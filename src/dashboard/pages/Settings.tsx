@@ -117,6 +117,8 @@ export function Settings({ siteId }: { siteId: string }) {
         dodo_webhook_secret: s.dodo_webhook_secret ?? '',
         dodo_product_ids: s.dodo_product_ids ?? '',
         stripe_webhook_secret: s.stripe_webhook_secret ?? '',
+        razorpay_webhook_secret: s.razorpay_webhook_secret ?? '',
+        razorpay_filter_ids: s.razorpay_filter_ids ?? '',
       });
     });
   }, [siteId]);
@@ -229,7 +231,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
   );
 }
 
-type Provider = 'dodo' | 'stripe' | 'api';
+type Provider = 'dodo' | 'stripe' | 'razorpay' | 'api';
 
 interface RevenueProps {
   site: Site;
@@ -243,15 +245,18 @@ interface RevenueProps {
 /** Revenue attribution: pick the payment provider, see only its setup. */
 function Revenue(props: RevenueProps) {
   const { site } = props;
-  const [provider, setProvider] = useState<Provider>(site.stripe_webhook_secret && !site.dodo_webhook_secret ? 'stripe' : 'dodo');
+  const [provider, setProvider] = useState<Provider>(
+    site.dodo_webhook_secret ? 'dodo' : site.stripe_webhook_secret ? 'stripe' : site.razorpay_webhook_secret ? 'razorpay' : 'dodo',
+  );
   const tabs: { id: Provider; label: string; icon: ReactNode; connected?: boolean }[] = [
     { id: 'dodo', label: 'Dodo Payments', icon: <Favicon domain="dodopayments.com" size={18} />, connected: !!site.dodo_webhook_secret },
     { id: 'stripe', label: 'Stripe', icon: <Favicon domain="stripe.com" size={18} />, connected: !!site.stripe_webhook_secret },
+    { id: 'razorpay', label: 'Razorpay', icon: <Favicon domain="razorpay.com" size={18} />, connected: !!site.razorpay_webhook_secret },
     { id: 'api', label: 'Other / API', icon: <span className="font-mono text-xs text-stone-500">{'{ }'}</span> },
   ];
   return (
     <Section title="3. Connect payments" desc="Each payment is linked to the visitor who paid and the source that brought them.">
-      <div className="mb-5 grid grid-cols-3 gap-2">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -268,6 +273,7 @@ function Revenue(props: RevenueProps) {
       </div>
       {provider === 'dodo' && <DodoSetup {...props} />}
       {provider === 'stripe' && <StripeSetup {...props} />}
+      {provider === 'razorpay' && <RazorpaySetup {...props} />}
       {provider === 'api' && <ApiSetup {...props} />}
     </Section>
   );
@@ -422,6 +428,65 @@ await stripe.checkout.sessions.create({
         </Step>
       </Steps>
       <ProviderFooter anchor="stripe" />
+    </>
+  );
+}
+
+function RazorpaySetup({ site, origin, form, set, save }: RevenueProps) {
+  return (
+    <>
+      <Steps>
+        <Step
+          n={1}
+          title={
+            <>
+              In Razorpay → <b>Account &amp; Settings → Webhooks</b>, add this URL with <code>payment.captured</code>,{' '}
+              <code>order.paid</code>, <code>payment_link.paid</code>, <code>subscription.charged</code> and{' '}
+              <code>refund.processed</code>:
+            </>
+          }
+        >
+          <CopyField value={`${origin}/api/webhooks/razorpay/${site.id}`} />
+        </Step>
+        <Step n={2} title="Paste the secret you typed in Razorpay:">
+          <SecretField
+            value={form.razorpay_webhook_secret ?? ''}
+            configured={!!site.razorpay_webhook_secret}
+            onChange={(v) => set({ razorpay_webhook_secret: v })}
+            onSave={() => save({ razorpay_webhook_secret: form.razorpay_webhook_secret ?? '' }, 'Razorpay connected')}
+          />
+        </Step>
+        <Step n={3} title="Pass the visitor as notes on the order, payment link or subscription:">
+          <Code label="checkout.ts">{`const jar = await cookies(); // next/headers
+const notes = {
+  ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+  ml_session_id: jar.get('ml_sid')?.value ?? '',
+  ml_site_id: '${site.id}', // needed if one Razorpay account sells several sites' products
+};
+
+await razorpay.orders.create({ amount: 49900, currency: 'INR', notes });
+// Payment links: razorpay.paymentLink.create({ ...,  notes,
+//   callback_url: 'https://${site.domain}/thanks', callback_method: 'get' })`}</Code>
+          <p className="text-stone-500">
+            Razorpay Checkout in the browser? Put the same keys in its <code>notes</code> option, reading the ids with{' '}
+            <code>window.minilytics.attribution()</code>. Amounts are in paise, so set this site's currency to INR.
+          </p>
+        </Step>
+        <Step n={4} title={<>Optional: count only some payment links (<code>plink_…</code>) or plans (<code>plan_…</code>)</>}>
+          <div className="flex gap-2">
+            <input
+              className="input font-mono"
+              placeholder="plink_abc123, plan_def456"
+              value={form.razorpay_filter_ids ?? ''}
+              onChange={(e) => set({ razorpay_filter_ids: e.target.value })}
+            />
+            <button className="btn-dark" onClick={() => save({ razorpay_filter_ids: form.razorpay_filter_ids ?? '' }, 'Filter saved')}>
+              Save
+            </button>
+          </div>
+        </Step>
+      </Steps>
+      <ProviderFooter anchor="razorpay" />
     </>
   );
 }

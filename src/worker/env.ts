@@ -41,6 +41,8 @@ export interface Site {
   owner_id?: string | null;
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
+  razorpay_webhook_secret?: string | null;
+  razorpay_filter_ids?: string | null;
 }
 
 /** A site plus its owner's plan, used to stop recording when a hosted plan lapses. */

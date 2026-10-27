@@ -222,13 +222,37 @@ clicked (unless you already set your own). Set the link's confirmation page to r
 
 Subscription renewals (`invoice.paid`) are credited to the visitor who first subscribed. Refunds are subtracted.
 
+### Razorpay
+
+1. In Razorpay → Account & Settings → Webhooks, add `https://YOUR-HOST/api/webhooks/razorpay/SITE_ID`, type a secret,
+   and select `payment.captured`, `order.paid`, `payment_link.paid`, `subscription.charged` and `refund.processed`.
+   Paste the same secret into the site settings. Set the site's currency to INR (Razorpay amounts are in paise).
+2. Pass the visitor cookies as **notes** on the order, payment link or subscription (or the Checkout `notes` option):
+
+```ts
+const jar = await cookies(); // next/headers
+await razorpay.orders.create({
+  amount: 49900, currency: 'INR',
+  notes: { ml_visitor_id: jar.get('ml_vid')?.value ?? '', ml_session_id: jar.get('ml_sid')?.value ?? '', ml_site_id: 'SITE_ID' },
+});
+```
+
+Notes are read from the payment, order, payment link and subscription, and one payment firing several events
+(`payment.captured` + `order.paid`) is counted once. For **payment links**, set `callback_url` to a page on your site
+with `callback_method: 'get'`: Razorpay adds `?razorpay_payment_id=…`, which links the payment even without notes.
+Clicks on `rzp.io` / `razorpay.com` links also feed the timing fallback.
+
+One Razorpay account selling several sites' products? Every webhook receives every payment, so add `ml_site_id` to the
+notes, or list the site's `plink_…` / `plan_…` ids in settings. International payments use Razorpay's settled INR
+`base_amount`; a partial refund of one is counted as a full refund.
+
 ### How credit is given
 
 A payment goes to the paying visitor's last visit that came from a real source (last non-direct
 touch). So "clicked a tweet, came back directly 17 days later and paid" is credited to the tweet. If metadata is
-missing, Minilytics tries, in order: the return page (`?payment_id=` / `?session_id=`), an earlier payment by the same customer
-(renewals), an email you `identify()`'d, and finally checkout timing (used only when exactly one visitor clicked a Dodo or
-Stripe checkout link in the 3 hours before the payment). The Journey tab shows how each payment was matched, and **Try
+missing, Minilytics tries, in order: the return page (`?payment_id=` / `?session_id=` / `?razorpay_payment_id=`), an earlier payment by the same customer
+(renewals), an email you `identify()`'d, and finally checkout timing (used only when exactly one visitor clicked a Dodo,
+Stripe or Razorpay checkout link in the 3 hours before the payment). The Journey tab shows how each payment was matched, and **Try
 matching again** re-runs this for older payments.
 Refunds are subtracted from revenue.
 

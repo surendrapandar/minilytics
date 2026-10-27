@@ -6,6 +6,7 @@ import { clearSession, currentUser, googleCallback, googleStart, isHosted, requi
 import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
+import { handleRazorpayWebhook } from './razorpay';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
@@ -18,6 +19,7 @@ app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], max
 app.post('/api/event', handleEvent);
 app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
+app.post('/api/webhooks/razorpay/:siteId', handleRazorpayWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
 
@@ -106,7 +108,12 @@ function validTimezone(tz: string) {
 }
 
 const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
-const publicSite = (s: Site) => ({ ...s, dodo_webhook_secret: mask(s.dodo_webhook_secret), stripe_webhook_secret: mask(s.stripe_webhook_secret) });
+const publicSite = (s: Site) => ({
+  ...s,
+  dodo_webhook_secret: mask(s.dodo_webhook_secret),
+  stripe_webhook_secret: mask(s.stripe_webhook_secret),
+  razorpay_webhook_secret: mask(s.razorpay_webhook_secret),
+});
 
 app.get('/api/sites', async (c) => {
   const now = Date.now();
@@ -177,12 +184,20 @@ app.patch('/api/sites/:id', async (c) => {
   if (typeof b.stripe_webhook_secret === 'string' && !b.stripe_webhook_secret.includes('•')) {
     next.stripe_webhook_secret = b.stripe_webhook_secret.trim() || null;
   }
+  if (typeof b.razorpay_webhook_secret === 'string' && !b.razorpay_webhook_secret.includes('•')) {
+    next.razorpay_webhook_secret = b.razorpay_webhook_secret.trim() || null;
+  }
+  if (typeof b.razorpay_filter_ids === 'string') {
+    const ids = b.razorpay_filter_ids.split(/[\s,]+/).filter((x) => /^(plink|plan)_[\w-]+$/.test(x));
+    next.razorpay_filter_ids = ids.join(',') || null;
+  }
   if (typeof b.dodo_product_ids === 'string') {
     const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
     next.dodo_product_ids = ids.join(',') || null;
   }
   await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ? WHERE id = ?',
+    `UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ?,
+       razorpay_webhook_secret = ?, razorpay_filter_ids = ? WHERE id = ?`,
   )
     .bind(
       next.name,
@@ -192,6 +207,8 @@ app.patch('/api/sites/:id', async (c) => {
       next.dodo_webhook_secret,
       next.dodo_product_ids ?? null,
       next.stripe_webhook_secret ?? null,
+      next.razorpay_webhook_secret ?? null,
+      next.razorpay_filter_ids ?? null,
       site.id,
     )
     .run();

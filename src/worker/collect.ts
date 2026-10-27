@@ -203,13 +203,13 @@ export async function ingest(
 }
 
 /**
- * Dodo sends buyers back to your return URL with ?payment_id=pay_... and Stripe with ?session_id=cs_...
- * (when the success URL has {CHECKOUT_SESSION_ID}). Seeing that on a pageview tells us exactly which
+ * Dodo sends buyers back to your return URL with ?payment_id=pay_..., Stripe with ?session_id=cs_...
+ * (when the success URL has {CHECKOUT_SESSION_ID}) and Razorpay payment links with ?razorpay_payment_id=pay_... . Seeing that on a pageview tells us exactly which
  * visitor made the payment, even when the checkout had no metadata.
  */
 function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now: number): D1PreparedStatement[] {
   const q = url.searchParams;
-  const paymentId = q.get('payment_id') ?? q.get('subscription_id') ?? q.get('session_id');
+  const paymentId = q.get('payment_id') ?? q.get('razorpay_payment_id') ?? q.get('subscription_id') ?? q.get('session_id');
   if (!paymentId || !/^(pay|sub)_[\w-]{4,64}$|^cs_(test|live)_\w{4,200}$/.test(paymentId)) return [];
   return [
     db

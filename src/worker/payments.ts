@@ -10,7 +10,7 @@ export function currencyDecimals(currency: string): number {
   }
 }
 
-interface PaymentInput {
+export interface PaymentInput {
   id: string;
   provider: string;
   ts: number;
@@ -42,7 +42,7 @@ export function creditedSessionSql() {
  *  2. return_page  the visitor landed on your return URL with ?payment_id= (Dodo) or ?session_id= (Stripe)
  *  3. customer   the same customer paid before (renewals)
  *  4. email      the email matches a visitor you identify()'d
- *  5. timing     exactly one visitor clicked a Dodo/Stripe checkout link (or a checkout goal) shortly before the payment
+ *  5. timing     exactly one visitor clicked a Dodo/Stripe/Razorpay checkout link (or a checkout goal) shortly before the payment
  * Credit goes to the last non-direct visit, so "saw a tweet, came back directly 17 days later and paid"
  * is credited to the tweet.
  */
@@ -110,7 +110,8 @@ async function matchByTiming(db: D1Database, site: Site, p: PaymentInput): Promi
     .prepare(
       `SELECT e.visitor_id, MAX(e.ts) AS last_click FROM events e
        WHERE e.site_id = ? AND e.ts BETWEEN ? AND ?
-         AND ((e.type = 'outbound' AND (e.name LIKE '%dodopayments.com%' OR e.name LIKE '%buy.stripe.com%' OR e.name LIKE '%checkout.stripe.com%'))
+         AND ((e.type = 'outbound' AND (e.name LIKE '%dodopayments.com%' OR e.name LIKE '%buy.stripe.com%' OR e.name LIKE '%checkout.stripe.com%'
+                                        OR e.name LIKE '%rzp.io%' OR e.name LIKE '%razorpay.com%' OR e.name LIKE '%razorpay.me%'))
               OR (e.type = 'goal' AND (e.name LIKE '%checkout%' OR e.name LIKE '%buy%' OR e.name LIKE '%purchase%')))
          AND NOT EXISTS (SELECT 1 FROM payments o WHERE o.site_id = e.site_id AND o.visitor_id = e.visitor_id
                          AND o.kind = 'payment' AND o.id != ? AND o.ts BETWEEN ? AND ?)
