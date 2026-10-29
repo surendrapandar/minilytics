@@ -77,7 +77,9 @@ export function TrendSparkline({ values, buckets, name, metric }: Props) {
   const max = Math.max(1, ...values, ...rendered);
   const { line, area, points } = makePaths(rendered, max);
   const empty = !values.length || values.every((value) => value === 0);
-  const focus = active === null ? null : points[Math.round((active / Math.max(1, values.length - 1)) * (points.length - 1))];
+  // A new period may have fewer buckets before the effect clears the previous hover index.
+  const safeActive = active !== null && active < values.length ? active : null;
+  const focus = safeActive === null ? null : points[Math.round((safeActive / Math.max(1, values.length - 1)) * (points.length - 1))];
 
   if (empty) return <div className="flex h-20 items-center justify-center rounded-xl bg-stone-50 text-xs text-stone-400">No {metric} in this period</div>;
 
@@ -93,9 +95,9 @@ export function TrendSparkline({ values, buckets, name, metric }: Props) {
           <button key={index} type="button" className="h-full min-w-0 flex-1 cursor-crosshair bg-transparent" aria-label={`${buckets[index] ?? 'Period'}: ${value} ${metric}`} onPointerEnter={() => setActive(index)} onFocus={() => setActive(index)} onBlur={() => setActive(null)} onClick={() => setActive(index)} />
         ))}
       </div>
-      {active !== null && (
-        <div className="pointer-events-none absolute -top-9 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-stone-800 px-2 py-1 text-xs text-white shadow-sm" style={{ left: `${Math.max(18, Math.min(82, ((active + 0.5) / values.length) * 100))}%` }}>
-          {buckets[active]} · {values[active].toLocaleString()} {metric}
+      {safeActive !== null && (
+        <div className="pointer-events-none absolute -top-9 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-stone-800 px-2 py-1 text-xs text-white shadow-sm" style={{ left: `${Math.max(18, Math.min(82, ((safeActive + 0.5) / values.length) * 100))}%` }}>
+          {buckets[safeActive]} · {values[safeActive].toLocaleString()} {metric}
         </div>
       )}
     </div>
