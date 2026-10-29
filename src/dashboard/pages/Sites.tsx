@@ -48,17 +48,20 @@ export function Sites() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
-      <div className="flex items-center justify-between">
-        <Logo />
-        <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="sm:hidden"><Logo small /></div>
+        <div className="hidden sm:block"><Logo /></div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {me.hosted && me.user && (
             <button className="hidden items-center gap-2 rounded-xl px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 sm:flex" onClick={() => navigate('/billing')} title="Plan & billing">
               {me.user.avatar ? <img src={me.user.avatar} alt="" className="h-7 w-7 rounded-full" referrerPolicy="no-referrer" /> : null}
               {me.user.email}
             </button>
           )}
-          <button className="btn" onClick={logout}>Log out</button>
-          <button className="btn-dark" onClick={() => setAdding(true)}>+ Add website</button>
+          <button className="btn px-2.5 sm:px-3.5" onClick={logout}>Log out</button>
+          <button className="btn-dark px-2.5 sm:px-4" onClick={() => setAdding(true)}>
+            <span className="sm:hidden">+ Add</span><span className="hidden sm:inline">+ Add website</span>
+          </button>
         </div>
       </div>
 
@@ -111,7 +114,18 @@ export function Sites() {
                   <div className="text-xs text-stone-500">pageviews in period</div>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between gap-2"><label htmlFor={`metric-${s.id}`} className="text-xs text-stone-500">Trend</label><select id={`metric-${s.id}`} aria-label={`${s.name} trend metric`} className="input w-auto py-1 text-xs" value={metric} onChange={(event) => setMetrics((previous) => ({ ...previous, [s.id]: event.target.value as TrendMetric }))}>{TREND_METRICS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <label htmlFor={`metric-${s.id}`} className="text-xs text-stone-500">Trend</label>
+                <select
+                  id={`metric-${s.id}`}
+                  aria-label={`${s.name} trend metric`}
+                  className="input w-auto min-w-0 max-w-[70%] py-1 text-xs"
+                  value={metric}
+                  onChange={(event) => setMetrics((previous) => ({ ...previous, [s.id]: event.target.value as TrendMetric }))}
+                >
+                  {TREND_METRICS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
               <div className="mt-2" aria-busy={loading}>
                 {!ready ? (
                   <div className="h-20 animate-pulse rounded-xl bg-stone-100" />
