@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { usePref } from '../lib/prefs';
 import { api, qs, type BreakdownRow } from '../lib/api';
 import { displayName } from '../../shared/names';
@@ -15,7 +15,7 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
   return (
     <div className="card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-        <div className="tabs">
+        <div className="tabs flex-wrap">
           {(['goal', 'funnel', 'user', 'journey'] as const).map((t) => (
             <button key={t} className={`tab capitalize ${tab === t ? 'tab-active' : ''}`} onClick={() => setTab(t)}>
               {t === 'journey' ? 'Journey' : t === 'user' ? 'Users' : t === 'goal' ? 'Goals' : 'Funnel'}
@@ -23,7 +23,7 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
           ))}
         </div>
         {(tab === 'user' || tab === 'journey') && (
-          <input className="input max-w-[240px] py-1.5" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input w-full py-1.5 sm:max-w-[240px]" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
       </div>
       {tab === 'goal' && <Goals totalVisitors={totalVisitors} />}
@@ -47,7 +47,7 @@ function Goals({ totalVisitors }: { totalVisitors: number }) {
     );
   return (
     <table className="w-full text-sm">
-      <thead>
+      <thead className="hidden sm:table-header-group">
         <tr className="text-left text-stone-500">
           <th className="px-3 pb-2 font-medium">Goal</th>
           <th className="pb-2 text-right font-medium">Visitors</th>
@@ -58,12 +58,39 @@ function Goals({ totalVisitors }: { totalVisitors: number }) {
       </thead>
       <tbody>
         {data.map((g) => (
-          <tr key={g.label} className="cursor-pointer border-t border-stone-100 hover:bg-stone-50" onClick={() => addFilter('goal', g.label ?? '')} title="Filter by visitors who completed this goal">
-            <td className="px-3 py-2.5 font-medium">🎯 {g.label}</td>
-            <td className="py-2.5 text-right">{fmtNumber(g.visitors)}</td>
-            <td className="py-2.5 text-right">{fmtNumber(g.pageviews ?? 0)}</td>
-            <td className="py-2.5 text-right">{totalVisitors ? fmtPct(g.visitors / totalVisitors, 1) : '—'}</td>
-            <td className="px-3 py-2.5 text-right">{money(g.revenue)}</td>
+          <tr
+            key={g.label}
+            className="block cursor-pointer border-t border-stone-100 py-3 hover:bg-stone-50 focus-visible:bg-stone-100 sm:table-row sm:py-0"
+            onClick={() => addFilter('goal', g.label ?? '')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.currentTarget.click();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            title="Filter by visitors who completed this goal"
+          >
+            <td className="block px-1 font-medium sm:table-cell sm:px-3 sm:py-2.5">
+              <span className="break-words">🎯 {g.label}</span>
+            </td>
+            <td className="mt-1 flex items-baseline justify-between gap-4 px-1 sm:mt-0 sm:table-cell sm:py-2.5 sm:text-right">
+              <span className="text-stone-500 sm:hidden">Visitors</span>
+              {fmtNumber(g.visitors)}
+            </td>
+            <td className="flex items-baseline justify-between gap-4 px-1 sm:table-cell sm:py-2.5 sm:text-right">
+              <span className="text-stone-500 sm:hidden">Completions</span>
+              {fmtNumber(g.pageviews ?? 0)}
+            </td>
+            <td className="flex items-baseline justify-between gap-4 px-1 sm:table-cell sm:py-2.5 sm:text-right">
+              <span className="text-stone-500 sm:hidden">Conversion</span>
+              {totalVisitors ? fmtPct(g.visitors / totalVisitors, 1) : '—'}
+            </td>
+            <td className="flex items-baseline justify-between gap-4 px-1 sm:table-cell sm:px-3 sm:py-2.5 sm:text-right">
+              <span className="text-stone-500 sm:hidden">Revenue</span>
+              {money(g.revenue)}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -130,27 +157,35 @@ function Funnels() {
           </button>
         )}
       </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(1, stats?.length ?? 1)}, minmax(0, 1fr))` }}>
-        {stats?.map((s, i) => {
-          const pct = top ? s.visitors / top : 0;
-          const prev = i ? stats[i - 1].visitors : s.visitors;
-          return (
-            <div key={i} className="min-w-0">
-              <div className="flex h-48 items-end rounded-xl bg-stone-50">
-                <div className="w-full rounded-xl bg-visitors/70 transition-all" style={{ height: `${Math.max(pct * 100, 2)}%` }} />
+      <div
+        className="-mx-3 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0"
+        tabIndex={stats && stats.length > 2 ? 0 : undefined}
+        role={stats && stats.length > 2 ? 'region' : undefined}
+        aria-label={stats && stats.length > 2 ? 'Funnel steps, scroll sideways to see every step' : undefined}
+      >
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(1, stats?.length ?? 1)}, minmax(130px, 1fr))` }}>
+          {stats?.map((s, i) => {
+            const pct = top ? s.visitors / top : 0;
+            const prev = i ? stats[i - 1].visitors : s.visitors;
+            return (
+              <div key={i} className="min-w-0">
+                <div className="flex h-48 items-end rounded-xl bg-stone-50">
+                  <div className="w-full rounded-xl bg-visitors/70 transition-all" style={{ height: `${Math.max(pct * 100, 2)}%` }} />
+                </div>
+                <div className="mt-2 break-words text-sm font-medium" title={s.value}>
+                  {i + 1}. {s.type === 'goal' ? '🎯 ' : ''}
+                  {s.value}
+                </div>
+                <div className="text-sm text-stone-600">
+                  {fmtNumber(s.visitors)} visitors · {fmtPct(pct)}
+                </div>
+                {i > 0 && <div className="text-xs text-red-500">−{prev ? fmtPct(1 - s.visitors / prev) : '0%'} drop-off</div>}
               </div>
-              <div className="mt-2 truncate text-sm font-medium" title={s.value}>
-                {i + 1}. {s.type === 'goal' ? '🎯 ' : ''}
-                {s.value}
-              </div>
-              <div className="text-sm text-stone-600">
-                {fmtNumber(s.visitors)} visitors · {fmtPct(pct)}
-              </div>
-              {i > 0 && <div className="text-xs text-red-500">−{prev ? fmtPct(1 - s.visitors / prev) : '0%'} drop-off</div>}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+      {stats && stats.length > 2 && <p className="mt-2 text-xs text-stone-400 sm:hidden">Swipe sideways to see every step.</p>}
     </div>
   );
 }
@@ -262,6 +297,47 @@ const MATCH_LABELS: Record<string, string> = {
   timing: 'checkout click timing',
 };
 
+function MobileStat({ label, value, className = '' }: { label: string; value: ReactNode; className?: string }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${className}`}>
+      <dt className="shrink-0 text-stone-500">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-medium text-stone-700" title={typeof value === 'string' ? value : undefined}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function SourceInfo({ r }: { r: Record<string, any> }) {
+  if (!r.session_id) {
+    return (
+      <span className="text-stone-400" title="No visitor id in the payment metadata, and no return-page, email or timing match">
+        Not attributed
+      </span>
+    );
+  }
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <SourceIcon source={r.source} domain={r.referrer_domain} />
+      <div className="min-w-0">
+        <div className="break-words" title={r.source ?? undefined}>
+          {r.source}
+        </div>
+        {(r.utm_campaign || r.ref) && (
+          <div className="break-words text-xs text-stone-500" title={r.utm_campaign || r.ref}>
+            {r.utm_campaign || r.ref}
+          </div>
+        )}
+        {r.matched_by && r.matched_by !== 'metadata' && (
+          <div className="break-words text-xs text-stone-400" title="How this payment was linked to the visitor">
+            matched by {MATCH_LABELS[r.matched_by] ?? r.matched_by}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Journey({ search }: { search: string }) {
   const { site, q, reloadKey, money, openVisitor } = useDash();
   const [all, setAll] = useState(false);
@@ -310,8 +386,8 @@ function Journey({ search }: { search: string }) {
           )}
         </div>
       )}
-      <table className="w-full min-w-[760px] text-[15px]">
-        <thead>
+      <table className="w-full text-[15px] sm:min-w-[760px]">
+        <thead className="hidden sm:table-header-group">
           <tr className="text-left text-sm text-stone-500">
             <th className="px-3 pb-3 font-medium">Visitor</th>
             <th className="pb-3 font-medium">Source</th>
@@ -327,10 +403,24 @@ function Journey({ search }: { search: string }) {
             .map((r) => (
               <tr
                 key={r.id}
-                className={`border-t border-stone-100 ${r.visitor_id ? 'cursor-pointer hover:bg-stone-50' : ''}`}
+                className={`block border-t border-stone-100 py-3 sm:table-row sm:py-0 ${
+                  r.visitor_id ? 'cursor-pointer hover:bg-stone-50 focus-visible:bg-stone-100' : ''
+                }`}
                 onClick={() => r.visitor_id && openVisitor(r.visitor_id)}
+                onKeyDown={
+                  r.visitor_id
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.currentTarget.click();
+                        }
+                      }
+                    : undefined
+                }
+                role={r.visitor_id ? 'button' : undefined}
+                tabIndex={r.visitor_id ? 0 : undefined}
               >
-                <td className="px-3 py-4">
+                <td className="block px-1 sm:table-cell sm:px-3 sm:py-4">
                   <VisitorCell
                     id={r.visitor_id ?? r.id}
                     name={r.name ?? r.pay_name}
@@ -346,33 +436,25 @@ function Journey({ search }: { search: string }) {
                       </span>
                     }
                   />
+                  <div className="mt-3 text-sm sm:hidden">
+                    <SourceInfo r={r} />
+                  </div>
+                  <dl className="mt-2 space-y-1 text-sm sm:hidden">
+                    <MobileStat label="Spent" value={money(r.amount)} />
+                    <MobileStat label="Time to complete" value={r.first_seen ? fmtAgo(r.ts - r.first_seen) : '—'} />
+                    <MobileStat label="Completed at" value={fmtDateTime(r.ts, site.timezone)} />
+                    {r.visits > 0 && <MobileStat label="Visits" value={r.visits} />}
+                  </dl>
                 </td>
-                <td className="py-4">
-                  {r.session_id ? (
-                    <div className="flex items-center gap-2">
-                      <SourceIcon source={r.source} domain={r.referrer_domain} />
-                      <div>
-                        <div>{r.source}</div>
-                        {(r.utm_campaign || r.ref) && <div className="text-xs text-stone-500">{r.utm_campaign || r.ref}</div>}
-                        {r.matched_by && r.matched_by !== 'metadata' && (
-                          <div className="text-xs text-stone-400" title="How this payment was linked to the visitor">
-                            matched by {MATCH_LABELS[r.matched_by] ?? r.matched_by}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-stone-400" title="No visitor id in the payment metadata, and no return-page, email or timing match">
-                      Not attributed
-                    </span>
-                  )}
+                <td className="hidden py-4 sm:table-cell">
+                  <SourceInfo r={r} />
                 </td>
-                <td className="py-4 font-medium">{money(r.amount)}</td>
-                <td className="py-4">
+                <td className="hidden py-4 font-medium sm:table-cell">{money(r.amount)}</td>
+                <td className="hidden py-4 sm:table-cell">
                   {r.first_seen ? fmtAgo(r.ts - r.first_seen) : '—'}
                   {r.visits > 0 && <div className="text-xs text-stone-500">{r.visits} visit{r.visits > 1 ? 's' : ''}</div>}
                 </td>
-                <td className="py-4">{fmtDateTime(r.ts, site.timezone)}</td>
+                <td className="hidden py-4 sm:table-cell">{fmtDateTime(r.ts, site.timezone)}</td>
               </tr>
             ))}
         </tbody>
@@ -390,8 +472,8 @@ function Users({ search }: { search: string }) {
   if (!data.length) return <div className="p-8 text-center text-sm text-stone-500">No visitors in this period.</div>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-[15px]">
-        <thead>
+      <table className="w-full text-[15px] sm:min-w-[760px]">
+        <thead className="hidden sm:table-header-group">
           <tr className="text-left text-sm text-stone-500">
             <th className="px-3 pb-3 font-medium">Visitor</th>
             <th className="pb-3 font-medium">Source</th>
@@ -407,8 +489,20 @@ function Users({ search }: { search: string }) {
             .filter((r) => matches(r, search))
             .slice(0, all || search ? undefined : 10)
             .map((r) => (
-              <tr key={r.visitor_id} className="cursor-pointer border-t border-stone-100 hover:bg-stone-50" onClick={() => openVisitor(r.visitor_id)}>
-                <td className="px-3 py-3">
+              <tr
+                key={r.visitor_id}
+                className="block cursor-pointer border-t border-stone-100 py-3 hover:bg-stone-50 focus-visible:bg-stone-100 sm:table-row sm:py-0"
+                onClick={() => openVisitor(r.visitor_id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.currentTarget.click();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <td className="block px-1 sm:table-cell sm:px-3 sm:py-3">
                   <VisitorCell
                     id={r.visitor_id}
                     name={r.name}
@@ -420,17 +514,30 @@ function Users({ search }: { search: string }) {
                     browser={r.browser}
                     badge={r.spent > 0 ? <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">Customer</span> : null}
                   />
+                  <div className="mt-3 flex min-w-0 items-center gap-2 text-sm text-stone-600 sm:hidden">
+                    <SourceIcon source={r.source} domain={r.referrer_domain} />
+                    <span className="truncate" title={r.source}>
+                      {r.source}
+                    </span>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:hidden">
+                    <MobileStat label="Visits" value={r.sessions} />
+                    <MobileStat label="Pages" value={r.pageviews} />
+                    <MobileStat label="Time" value={fmtDuration(r.duration)} />
+                    <MobileStat label="Spent" value={r.spent ? money(r.spent) : '—'} />
+                    <MobileStat label="Last seen" value={`${fmtAgo(Date.now() - r.last_seen)} ago`} className="col-span-2" />
+                  </dl>
                 </td>
-                <td className="py-3">
+                <td className="hidden py-3 sm:table-cell">
                   <div className="flex items-center gap-2">
                     <SourceIcon source={r.source} domain={r.referrer_domain} /> {r.source}
                   </div>
                 </td>
-                <td className="py-3 text-right">{r.sessions}</td>
-                <td className="py-3 text-right">{r.pageviews}</td>
-                <td className="py-3 text-right">{fmtDuration(r.duration)}</td>
-                <td className="py-3 text-right">{r.spent ? money(r.spent) : '—'}</td>
-                <td className="px-3 py-3 text-right text-stone-500">{fmtAgo(Date.now() - r.last_seen)} ago</td>
+                <td className="hidden py-3 text-right sm:table-cell">{r.sessions}</td>
+                <td className="hidden py-3 text-right sm:table-cell">{r.pageviews}</td>
+                <td className="hidden py-3 text-right sm:table-cell">{fmtDuration(r.duration)}</td>
+                <td className="hidden py-3 text-right sm:table-cell">{r.spent ? money(r.spent) : '—'}</td>
+                <td className="hidden px-3 py-3 text-right text-stone-500 sm:table-cell">{fmtAgo(Date.now() - r.last_seen)} ago</td>
               </tr>
             ))}
         </tbody>

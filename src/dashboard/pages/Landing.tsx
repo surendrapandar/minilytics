@@ -181,19 +181,26 @@ export function Landing() {
         </div>
       </section>
 
-      <section className="relative mx-auto max-w-6xl px-4">
+      <section className="mx-auto max-w-6xl px-4">
         <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" size={[2160, 1500]} eager />
-        <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
-          <div className="text-stone-500">Revenue from</div>
-          <div className="font-semibold">𝕏 launch-tweet</div>
-          <div className="text-xl font-semibold text-revenue">$497</div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-400">Highlights from this dashboard</h2>
+          <p className="shrink-0 text-xs text-stone-400">Demo data</p>
         </div>
-        <div className="absolute -right-1 top-[18%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-right-6">
-          <div className="text-stone-500">New customer</div>
-          <div className="font-semibold">came from ChatGPT</div>
-          <div className="text-stone-500">paid 8 days after first visit</div>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <div className="card p-4 sm:p-5">
+            <div className="text-sm text-stone-500">Revenue from</div>
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <div className="font-semibold">𝕏 launch-tweet</div>
+              <div className="text-xl font-semibold text-revenue">$497</div>
+            </div>
+          </div>
+          <div className="card p-4 sm:p-5">
+            <div className="text-sm text-stone-500">New customer</div>
+            <div className="mt-1 font-semibold">came from ChatGPT</div>
+            <div className="text-sm text-stone-500">paid 8 days after first visit</div>
+          </div>
         </div>
-        <p className="mt-3 text-center text-xs text-stone-400">Demo data</p>
       </section>
 
       {/* ---------- Problem */}
