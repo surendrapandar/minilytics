@@ -133,6 +133,11 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
         setActive((index) => Math.max(0, Math.min(count - 1, (index ?? (delta > 0 ? -1 : count)) + delta)));
       }}
     >
+      <span className="sr-only" aria-live="polite">
+        {safeActive !== null
+          ? `${buckets[safeActive]}: ${series.map((item) => `${item.label} ${(item.values[safeActive] ?? 0).toLocaleString()}`).join(', ')}`
+          : ''}
+      </span>
       <svg className="h-20 w-full" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
@@ -170,6 +175,7 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
       </svg>
       {safeActive !== null && (
         <div
+          aria-hidden="true"
           className="pointer-events-none absolute top-0 z-20 -translate-x-1/2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 text-xs shadow-md backdrop-blur-sm"
           style={{ left: `${Math.max(24, Math.min(76, ((safeActive + 0.5) / count) * 100))}%` }}
         >
