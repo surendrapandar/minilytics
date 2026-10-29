@@ -18,6 +18,14 @@ const TREND_PERIODS = [
 
 type TrendPeriod = (typeof TREND_PERIODS)[number]['value'];
 
+function FilterChevron({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`h-4 w-4 shrink-0 text-stone-400 ${className}`}>
+      <path d="m4 6 4 4 4-4" />
+    </svg>
+  );
+}
+
 export function Sites() {
   const { me } = useMe();
   const [sites, setSites] = useState<Site[] | null>(null);
@@ -61,6 +69,8 @@ export function Sites() {
     window.dispatchEvent(new Event('ml:logout'));
   }
 
+  const selectedMetricLabel = selectedMetrics.map((metric) => TREND_METRICS.find((item) => item.value === metric)?.label).join(' + ');
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -85,35 +95,42 @@ export function Sites() {
           <h1 className="text-2xl font-semibold">Your websites</h1>
           <p className="mt-1 text-sm text-stone-500">Performance trends across all your sites</p>
         </div>
-        <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto">
-          <div className="min-w-[130px] flex-1 sm:w-[160px] sm:flex-none">
-            <label htmlFor="site-trend-period" className="mb-1 block text-xs font-medium text-stone-500">Period</label>
-            <select
-              id="site-trend-period"
-              className="input w-full text-sm"
-              value={period}
-              onChange={(event) => setPeriod(event.target.value as TrendPeriod)}
-            >
-              {TREND_PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
+          <div className="w-full min-w-0 sm:w-[160px] sm:flex-none">
+            <div className="mb-1 flex h-4 items-center justify-between gap-2">
+              <label htmlFor="site-trend-period" className="text-xs font-medium leading-4 text-stone-500">Period</label>
+            </div>
+            <div className="relative">
+              <select
+                id="site-trend-period"
+                className="filter-control pr-9"
+                value={period}
+                onChange={(event) => setPeriod(event.target.value as TrendPeriod)}
+              >
+                {TREND_PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <FilterChevron className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
           </div>
-          <div className="relative min-w-[174px] flex-1 sm:w-[220px] sm:flex-none" ref={metricsMenuRef}>
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span id="site-trend-metrics-label" className="text-xs font-medium text-stone-500">Metrics</span>
-              <span className="text-[11px] text-stone-400">Up to 2</span>
+          <div className="relative w-full min-w-0 sm:w-[220px] sm:flex-none" ref={metricsMenuRef}>
+            <div className="mb-1 flex h-4 items-center justify-between gap-2">
+              <span id="site-trend-metrics-label" className="text-xs font-medium leading-4 text-stone-500">Metrics</span>
+              <span id="site-trend-metrics-hint" className="text-[11px] leading-4 text-stone-400">Up to 2</span>
             </div>
             <button
               type="button"
               id="site-trend-metrics"
               aria-labelledby="site-trend-metrics-label site-trend-metrics"
+              aria-describedby="site-trend-metrics-hint"
               aria-haspopup="true"
               aria-expanded={metricsOpen}
               aria-controls="site-trend-metrics-menu"
-              className="input flex w-full items-center justify-between gap-2 text-left text-sm"
+              title={selectedMetricLabel}
+              className="filter-control flex items-center justify-between gap-2"
               onClick={() => setMetricsOpen((open) => !open)}
             >
-              <span className="min-w-0 truncate">{selectedMetrics.map((metric) => TREND_METRICS.find((item) => item.value === metric)?.label).join(' + ')}</span>
-              <span className="shrink-0 text-stone-400" aria-hidden="true">⌄</span>
+              <span className="min-w-0 truncate">{selectedMetricLabel}</span>
+              <FilterChevron />
             </button>
             {metricsOpen && (
               <div id="site-trend-metrics-menu" role="group" aria-label="Select up to two shared metrics" className="absolute right-0 top-full z-30 mt-2 w-full min-w-[218px] rounded-xl border border-stone-200 bg-white p-2 shadow-lg">
