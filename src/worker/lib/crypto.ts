@@ -57,18 +57,26 @@ export async function verifyStandardWebhook(
     .some((sig) => safeEqual(sig, expected));
 }
 
-/**
- * Verify a Stripe webhook signature. The `Stripe-Signature` header is `t=<unix>,v1=<hex>[,v1=<hex>]`;
- * signed content is `${t}.${body}`, HMAC-SHA256 with the whole `whsec_...` secret as the key.
- */
-export async function verifyStripeWebhook(secret: string, header: string | null, body: string, now = Date.now()): Promise<boolean> {
-  if (!header) return false;
-  const parts = header.split(',').map((p) => p.trim().split('='));
-  const t = parts.find(([k]) => k === 't')?.[1] ?? '';
-  if (!/^\d+$/.test(t) || Math.abs(now / 1000 - Number(t)) > 5 * 60) return false;
-  const mac = new Uint8Array(await hmac(enc.encode(secret.trim()), `${t}.${body}`));
-  const expected = Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
-  return parts.some(([k, v]) => k === 'v1' && !!v && safeEqual(v, expected));
+/** Stripe signs the exact raw body with the entire endpoint secret, not a base64-decoded key. */
+export async function verifyStripeWebhook(
+  secret: string,
+  signature: string | null,
+  body: string,
+  now = Date.now(),
+): Promise<boolean> {
+  if (!secret || !signature) return false;
+  const parts = signature.split(',').map((part) => part.trim());
+  const timestamps = parts.filter((part) => part.startsWith('t='));
+  if (timestamps.length !== 1) return false;
+  const timestamp = timestamps[0].slice(2);
+  if (!/^\d+$/.test(timestamp)) return false;
+  const ts = Number(timestamp);
+  if (!Number.isSafeInteger(ts) || Math.abs(now / 1000 - ts) > 300) return false;
+  const signatures = parts.filter((part) => /^v1=[a-f0-9]{64}$/.test(part));
+  if (!signatures.length) return false;
+  const digest = await hmac(enc.encode(secret), `${timestamp}.${body}`);
+  const expected = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return signatures.some((part) => safeEqual(part.slice(3), expected));
 }
 
 /** Sign a value for the dashboard login cookie. */

@@ -223,6 +223,15 @@ function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now
          WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) AND visitor_id IS NULL`,
       )
       .bind(vid, siteId, vid, now + 60_000, siteId, paymentId),
+    db.prepare(
+      `UPDATE payments AS r SET visitor_id = p.visitor_id, session_id = p.session_id,
+         matched_by = p.matched_by, customer_id = COALESCE(r.customer_id, p.customer_id),
+         email = COALESCE(r.email, p.email), name = COALESCE(r.name, p.name)
+       FROM payments p WHERE r.site_id = ? AND r.provider = 'stripe' AND r.kind = 'refund'
+         AND r.visitor_id IS NULL AND r.original_payment_id = p.id AND p.site_id = r.site_id
+         AND p.provider = 'stripe' AND p.kind = 'payment' AND p.visitor_id IS NOT NULL
+         AND ? IN (p.id, p.subscription_id, p.checkout_id)`,
+    ).bind(siteId, paymentId),
     db
       .prepare(
         `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1)),

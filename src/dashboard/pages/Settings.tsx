@@ -73,7 +73,7 @@ function SecretField({ value, configured, onChange, onSave }: { value: string; c
   return (
     <div>
       <div className="flex gap-2">
-        <input className="input font-mono" type="password" placeholder="whsec_..." value={value} onChange={(e) => onChange(e.target.value)} />
+        <input className="input font-mono" type="password" autoComplete="new-password" aria-label="Webhook signing secret" placeholder="whsec_..." value={value} onChange={(e) => onChange(e.target.value)} />
         <button className="btn-dark" onClick={onSave}>
           Save
         </button>
@@ -117,6 +117,8 @@ export function Settings({ siteId }: { siteId: string }) {
         dodo_webhook_secret: s.dodo_webhook_secret ?? '',
         dodo_product_ids: s.dodo_product_ids ?? '',
         stripe_webhook_secret: s.stripe_webhook_secret ?? '',
+        stripe_metadata_key: s.stripe_metadata_key ?? '',
+        stripe_metadata_value: s.stripe_metadata_value ?? '',
       });
     });
   }, [siteId]);
@@ -126,6 +128,12 @@ export function Settings({ siteId }: { siteId: string }) {
     try {
       const s = await api<Site>(`/api/sites/${siteId}`, { method: 'PATCH', json: patch });
       setSite(s);
+      if ('stripe_webhook_secret' in patch) {
+        setForm((current) => ({ ...current, stripe_webhook_secret: s.stripe_webhook_secret ?? '' }));
+      }
+      if ('stripe_metadata_key' in patch) {
+        setForm((current) => ({ ...current, stripe_metadata_key: s.stripe_metadata_key ?? '', stripe_metadata_value: s.stripe_metadata_value ?? '' }));
+      }
       setSaved(msg);
       setTimeout(() => setSaved(''), 2000);
     } catch (e) {
@@ -208,7 +216,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       </Section>
 
       {(saved || error) && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg ${error ? 'bg-red-600' : 'bg-ink'}`}>
+        <div role={error ? 'alert' : 'status'} className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg ${error ? 'bg-red-600' : 'bg-ink'}`}>
           {error || saved}
         </div>
       )}
@@ -302,10 +310,17 @@ await dodo.checkoutSessions.create({
   // ...your existing options
   return_url: 'https://${site.domain}/thanks',
   metadata: {
+    ...existingMetadata,
     ml_visitor_id: jar.get('ml_vid')?.value ?? '',
     ml_session_id: jar.get('ml_sid')?.value ?? '',
   },
 });`}</Code>
+          <p className="text-stone-500">
+            Keep the return page on this site with the tracker installed. Preserve Dodo's <code>payment_id</code> or{' '}
+            <code>subscription_id</code> query parameters until the tracker loads, so it can match payments when metadata is missing.
+            For JavaScript redirects, append <code>metadata_ml_visitor_id</code> and <code>metadata_ml_session_id</code> from{' '}
+            <code>window.minilytics?.attribution?.()</code>, preserving existing query parameters.
+          </p>
         </Step>
       </Steps>
       <details className="mt-5 text-sm">
@@ -382,46 +397,143 @@ function PendingDodoPayments({ site }: { site: Site }) {
 }
 
 function StripeSetup({ site, origin, form, set, save }: RevenueProps) {
+  const stripeMarker = site.stripe_metadata_key != null && site.stripe_metadata_value != null
+    ? `\n  [${JSON.stringify(site.stripe_metadata_key)}]: ${JSON.stringify(site.stripe_metadata_value)},`
+    : '';
   return (
     <>
       <Steps>
-        <Step
-          n={1}
-          title={
-            <>
-              In Stripe → <b>Developers → Webhooks</b>, add this endpoint with <code>checkout.session.completed</code>,{' '}
-              <code>invoice.paid</code> and <code>charge.refunded</code>:
-            </>
-          }
-        >
+        <Step n={1} title={<>In Stripe → <b>Workbench → Webhooks</b>, add this endpoint using <b>snapshot events</b>:</>}>
           <CopyField value={`${origin}/api/webhooks/stripe/${site.id}`} />
+          <p>Select exactly these five event types:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li><code>payment_intent.succeeded</code></li>
+            <li><code>checkout.session.completed</code></li>
+            <li><code>checkout.session.async_payment_succeeded</code></li>
+            <li><code>refund.created</code></li>
+            <li><code>refund.updated</code></li>
+          </ul>
         </Step>
-        <Step n={2} title="Paste its signing secret:">
+        <Step n={2} title="Paste this endpoint's signing secret (whsec_...):">
           <SecretField
             value={form.stripe_webhook_secret ?? ''}
             configured={!!site.stripe_webhook_secret}
             onChange={(v) => set({ stripe_webhook_secret: v })}
-            onSave={() => save({ stripe_webhook_secret: form.stripe_webhook_secret ?? '' }, 'Stripe connected')}
+            onSave={() => save({ stripe_webhook_secret: form.stripe_webhook_secret ?? '' }, form.stripe_webhook_secret ? 'Stripe webhook secret saved' : 'Stripe disconnected')}
           />
+          <p className="text-xs text-stone-500">Leave the masked value unchanged to keep the secret. Clear and save to disconnect Stripe. Minilytics stores no Stripe API key.</p>
         </Step>
-        <Step n={3} title="Pass the visitor to your checkout:">
-          <Code label="checkout.ts">{`const jar = await cookies(); // next/headers
+        <Step n={3} title="Optionally scope revenue to this site's payments:">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            void save({ stripe_metadata_key: form.stripe_metadata_key || null, stripe_metadata_value: form.stripe_metadata_value || null }, 'Stripe revenue filter saved');
+          }}>
+            <fieldset aria-describedby="stripe-filter-help stripe-filter-safety">
+              <legend className="font-medium">Optional Stripe revenue filter</legend>
+              <p id="stripe-filter-help" className="mt-2 text-stone-600">
+                Without a filter, account payments delivered to this endpoint are eligible unless tagged for a different site.
+                To accept only marked payments, set both fields. Matching is exact and case-sensitive, including whitespace.
+                Clear both fields and save to disable filtering.
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="label" htmlFor="stripe-metadata-key">Metadata key (up to 40 characters; no square brackets)</label>
+                  <input id="stripe-metadata-key" className="input font-mono" type="text" maxLength={40} pattern={'[^\\[\\]]+'}
+                    title="Use up to 40 characters, without [ or ]." required={!!form.stripe_metadata_value}
+                    value={form.stripe_metadata_key ?? ''} onChange={(event) => set({ stripe_metadata_key: event.target.value })} />
+                </div>
+                <div>
+                  <label className="label" htmlFor="stripe-metadata-value">Metadata value (up to 500 characters)</label>
+                  <input id="stripe-metadata-value" className="input font-mono" type="text" maxLength={500} required={!!form.stripe_metadata_key}
+                    value={form.stripe_metadata_value ?? ''} onChange={(event) => set({ stripe_metadata_value: event.target.value })} />
+                </div>
+              </div>
+              <p id="stripe-filter-safety" className="mt-3 text-stone-600">
+                The PaymentIntent itself must match the saved rule to add revenue, and Checkout session metadata must match to save context.
+                Customer, email, visitor, return-page and subscription matches cannot establish revenue ownership.
+                Subscription metadata alone is not enough: unmarked recurring PaymentIntents are excluded even if that customer previously paid.
+                Refunds follow an accepted original payment only; an early refund waits outside revenue until its original payment is accepted.
+                Rule changes apply prospectively and do not remove or reclassify old revenue.
+              </p>
+              <button className="btn-dark mt-3" type="submit">Save Stripe revenue filter</button>
+              <p className="mt-2 text-xs text-stone-500">Save before copying the setup prompt or code; they use the saved rule. Use a non-secret marker set by your server, not as authorization.</p>
+            </fieldset>
+          </form>
+        </Step>
+        <Step n={4} title="Pass the visitor and saved metadata rule to Checkout and its PaymentIntent:">
+          <Code label="checkout.ts">{`import { cookies } from 'next/headers';
 
-await stripe.checkout.sessions.create({
-  // ...your existing options
+// Use your application's existing server-side Stripe client and options.
+const jar = await cookies();
+const attribution = {
+  ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+  ml_session_id: jar.get('ml_sid')?.value ?? '',
+  ml_site_id: ${JSON.stringify(site.id)},${stripeMarker}
+};
+
+// One-time payment: preserve existing options and metadata.
+const session = await stripe.checkout.sessions.create({
+  ...existingCheckoutOptions,
+  mode: 'payment',
   success_url: 'https://${site.domain}/thanks?session_id={CHECKOUT_SESSION_ID}',
-  metadata: {
-    ml_visitor_id: jar.get('ml_vid')?.value ?? '',
-    ml_session_id: jar.get('ml_sid')?.value ?? '',
+  metadata: { ...existingCheckoutOptions.metadata, ...attribution },
+  payment_intent_data: {
+    ...existingCheckoutOptions.payment_intent_data,
+    metadata: { ...existingCheckoutOptions.payment_intent_data?.metadata, ...attribution },
+  },
+});
+
+// Subscription alternative: also mark every PaymentIntent before it succeeds.
+const subscriptionSession = await stripe.checkout.sessions.create({
+  ...existingSubscriptionCheckoutOptions,
+  mode: 'subscription',
+  success_url: 'https://${site.domain}/thanks?session_id={CHECKOUT_SESSION_ID}',
+  metadata: { ...existingSubscriptionCheckoutOptions.metadata, ...attribution },
+  subscription_data: {
+    ...existingSubscriptionCheckoutOptions.subscription_data,
+    metadata: { ...existingSubscriptionCheckoutOptions.subscription_data?.metadata, ...attribution },
   },
 });`}</Code>
           <p className="text-stone-500">
-            Using <b>Payment Links</b>? No code needed. Set the link's confirmation page to redirect to{' '}
-            <code>https://{site.domain}/thanks?session_id={'{CHECKOUT_SESSION_ID}'}</code>.
+            Create Checkout after the tracker is ready. If your checkout API is on another domain, send{' '}
+            <code>window.minilytics?.attribution?.()</code> in the request body and merge those IDs on your server.
+            Directly created PaymentIntents also need their own attribution and saved marker.
+          </p>
+          <p className="text-stone-500">
+            Checkout events save visitor, PaymentIntent, customer and subscription context only; unpaid sessions and free trials never add revenue.
+            Subscription metadata is not automatically copied to PaymentIntents. In filtered mode, your billing integration must mark each
+            PaymentIntent before it succeeds; this subscription example alone does not make initial or renewal charges eligible.
+            Customer mapping supplies attribution only after the PaymentIntent passes the filter.
+          </p>
+          <p className="text-stone-500">
+            Keep <code>ml_site_id</code> set to <code>{site.id}</code>: a different site ID on Checkout or a PaymentIntent is ignored.
+            This site tag does not replace the configured metadata rule. If the rule uses <code>ml_site_id</code> as its key, its value must be this site's ID.
+            Load the tracker on your return page and preserve <code>session_id</code> until it loads, so accepted payments can be linked to the returning visitor.
+          </p>
+        </Step>
+        <Step n={5} title="Using Stripe Payment Links?">
+          <p>
+            The tracker automatically tags <code>buy.stripe.com</code> anchor links with{' '}
+            <code>client_reference_id=ml_&lt;visitor_id&gt;__&lt;session_id&gt;</code>, preserving your own non-Minilytics reference.
+            For JavaScript redirects, add it yourself once the tracker is ready:
+          </p>
+          <Code label="Browser redirect">{`const link = new URL('https://buy.stripe.com/your_payment_link');
+const attribution = window.minilytics?.attribution?.();
+const reference = link.searchParams.get('client_reference_id');
+if (attribution?.ml_visitor_id && attribution.ml_session_id && (!reference || reference.startsWith('ml_'))) {
+  link.searchParams.set('client_reference_id', 'ml_' + attribution.ml_visitor_id + '__' + attribution.ml_session_id);
+}
+window.location.assign(link.toString());`}</Code>
+          <p className="text-stone-500">
+            Set the confirmation redirect to <code>https://{site.domain}/thanks?session_id={'{CHECKOUT_SESSION_ID}'}</code>.
+            The compound reference supplies visitor and session fallback; legacy raw visitor references still work without a session ID.
+            If you already use this field for your own reference, use server-created Checkout with metadata for exact attribution instead of overwriting it.
+            Neither the link reference nor the return page bypasses filtering: both Checkout and its PaymentIntent need the configured marker.
+            Configure metadata propagation in your payment integration; automatic link tagging cannot add the required PaymentIntent metadata.
           </p>
         </Step>
       </Steps>
-      <ProviderFooter anchor="stripe" />
+      <ProviderFooter anchor="stripe" note="Only payment_intent.succeeded adds income, using amount_received in Stripe minor units, including subscriptions. Only succeeded refunds subtract revenue, deduplicated by refund ID. Invoices paid outside Stripe, credits and legacy charges without a PaymentIntent are excluded. Do not also forward Stripe payments through the generic payments API. Match the site's revenue currency to the charge currency; no Stripe FX conversion is performed and mixed-currency totals are not comparable." />
     </>
   );
 }
@@ -475,7 +587,10 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
-          <p className="mt-1 text-sm text-stone-600">Paste into Claude Code or Cursor in your project. It does steps 1–3 for you.</p>
+          <p className="mt-1 max-w-lg text-sm text-stone-600">
+            Copy this prompt into Claude Code, Cursor or any coding AI opened in your project. It installs the script, connects your Dodo or Stripe
+            attribution, identifies users and adds button goals, using this site's real values. It detects the payment provider already in your code.
+          </p>
         </div>
         <CopyButton text={prompt} label="Copy AI prompt" className="btn-dark shrink-0" />
       </div>
@@ -483,6 +598,9 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
+      <p className="mt-3 text-xs text-stone-500">
+        The AI handles the code. You still connect your provider's webhook yourself using the Dodo or Stripe setup below.
+      </p>
     </section>
   );
 }

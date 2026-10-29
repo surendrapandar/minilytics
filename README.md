@@ -212,28 +212,6 @@ Using Dodo **payment links**? The script adds `metadata_ml_visitor_id` / `metada
    script. Dodo adds `?payment_id=…` to it, and Minilytics uses that to link the payment to the exact visitor even when
    metadata doesn't come through.
 
-### Stripe
-
-1. In Stripe → Developers → Webhooks, add `https://YOUR-HOST/api/webhooks/stripe/SITE_ID` and subscribe to
-   `checkout.session.completed`, `invoice.paid` and `charge.refunded`. Paste the signing secret (`whsec_…`) into the
-   site settings.
-2. Pass the visitor cookies as metadata when creating a Checkout Session, and add `{CHECKOUT_SESSION_ID}` to the success URL:
-
-```ts
-const jar = await cookies(); // next/headers
-await stripe.checkout.sessions.create({
-  // ...your existing options
-  success_url: 'https://yoursite.com/thanks?session_id={CHECKOUT_SESSION_ID}',
-  metadata: { ml_visitor_id: jar.get('ml_vid')?.value ?? '', ml_session_id: jar.get('ml_sid')?.value ?? '' },
-});
-```
-
-Using Stripe **Payment Links** (`buy.stripe.com`)? The script puts the visitor in `client_reference_id` when the link is
-clicked (unless you already set your own). Set the link's confirmation page to redirect to
-`https://yoursite.com/thanks?session_id={CHECKOUT_SESSION_ID}` so the payment is also matched on the return page.
-
-Subscription renewals (`invoice.paid`) are credited to the visitor who first subscribed. Refunds are subtracted.
-
 ### How credit is given
 
 A payment goes to the paying visitor's last visit that came from a real source (last non-direct
@@ -244,9 +222,126 @@ Stripe checkout link in the 3 hours before the payment). The Journey tab shows h
 matching again** re-runs this for older payments.
 Refunds are subtracted from revenue.
 
+### Stripe
+
+In a site's Settings, use **Connect Stripe**. Add the displayed endpoint
+(`https://YOUR-HOST/api/webhooks/stripe/SITE_ID`) in Stripe **Workbench → Webhooks**, choose **snapshot events**
+for your own account, and select:
+
+- `payment_intent.succeeded`
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `refund.created`
+- `refund.updated`
+
+Save that endpoint's `whsec_…` signing secret in the site's Stripe settings. Minilytics does not need a Stripe API
+key or SDK. Keep your application's existing fulfillment/subscription webhooks unchanged. Use separate sites and
+endpoint secrets for sandbox and live traffic so test payments do not contaminate production analytics.
+
+#### Optional per-site revenue filter
+
+By default, account payments delivered to a site's endpoint are eligible unless their `ml_site_id` metadata tags
+a different site. The site's domain, visitor IDs, customer history and Checkout links do not isolate untagged
+products sharing a Stripe account. In Settings → Stripe, set the optional metadata key and value, then save.
+The key must be nonempty, at most 40 characters and contain no
+`[` or `]`; the value must be nonempty and at most 500 characters. Matching is exact and case-sensitive, including
+whitespace. Clear **both** fields and save to restore all-account behavior. The API fields are
+`stripe_metadata_key` and `stripe_metadata_value`: both strings enable filtering, both `null` disable it; partial
+pairs are rejected. Apply migrations through `0009_stripe_scope.sql` before deploying this feature.
+
+With filtering enabled:
+
+- Each `payment_intent.succeeded` object's **own** `metadata[key]` must equal the configured value to enter revenue.
+  Customer, email, visitor, subscription or Checkout associations cannot establish revenue ownership.
+- Checkout session metadata must independently match the same rule before any attribution context is saved.
+  Mark **both** the session and its PaymentIntent, preserving existing attribution IDs and metadata.
+- Subscription metadata alone is insufficient: Stripe does not automatically copy it to recurring PaymentIntents.
+  Unmarked recurring PaymentIntents are excluded even if the customer previously paid. Your billing integration
+  must ensure each PaymentIntent carries the marker before it succeeds; the subscription Checkout example alone
+  does not guarantee renewal revenue. Do not infer ownership from a previously accepted subscription or customer.
+- Only succeeded, nonzero refunds against an accepted original payment subtract revenue. A refund that arrives
+  first waits outside the payments table until its original matching payment is accepted; it does not independently
+  establish ownership or affect totals. Refund metadata need not carry the marker.
+
+Rule changes are **prospective**: setting, changing or clearing the filter does not delete or reclassify old revenue.
+Use a fresh site if a clean historical boundary is required. Save the rule before copying the Settings code example
+or AI setup prompt; they include the saved marker as a safely escaped dynamic key/value, without API keys or webhook
+secrets. Use a non-secret marker chosen by your application and assigned on the server, not arbitrary browser input.
+This filter is analytics scoping, not authorization or a substitute for Stripe webhook signature verification.
+
+#### Checkout metadata
+
+Pass the tracking cookies in Checkout metadata **and** on the underlying PaymentIntent:
+
+```ts
+const jar = await cookies(); // next/headers; use your existing server-side Stripe client
+const attribution = {
+  ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+  ml_session_id: jar.get('ml_sid')?.value ?? '',
+  ml_site_id: 'SITE_ID',
+  // If filtering is enabled, also add your configured marker here:
+  // [configuredMetadataKey]: configuredMetadataValue,
+};
+await stripe.checkout.sessions.create({
+  mode: 'payment',
+  line_items: [{ price: 'price_xxx', quantity: 1 }],
+  success_url: 'https://YOUR-SITE/thanks?session_id={CHECKOUT_SESSION_ID}',
+  metadata: attribution,
+  payment_intent_data: { metadata: attribution },
+});
+```
+
+Merge these values with existing metadata instead of replacing your application's fields. For `mode: 'subscription'`,
+keep session `metadata` and replace `payment_intent_data` with `subscription_data: { metadata: attribution }`.
+Matching Checkout events retain customer context for later subscription charges, including trials with no first payment.
+Subscription metadata is not automatically copied to recurring PaymentIntents. With filtering enabled, mark each
+PaymentIntent before it succeeds; the subscription example alone is not enough. Customer mapping only supplies
+attribution after the PaymentIntent passes the filter. Direct PaymentIntent integrations should put both the IDs
+and any configured marker in the PaymentIntent's own metadata.
+
+For **Stripe Payment Links**, the tracker adds `client_reference_id=ml_<visitor_id>__<session_id>` when a link is clicked,
+unless your application already set its own reference. For JavaScript redirects, append it using
+`window.minilytics?.attribution?.()` once the tracker is ready, preserving existing parameters.
+If your application already uses `client_reference_id`, use server-created Checkout metadata instead.
+This visitor fallback does not bypass a configured revenue filter: the session and PaymentIntent still need the marker.
+
+**Accounting:** only successful, positive PaymentIntent `amount_received` adds revenue. Checkout events add context,
+not money; subscribing to invoice notifications does not count the same payment again. PaymentIntent IDs and refund
+IDs are namespaced per site, so retries and concurrent deliveries do not duplicate income. Successful partial/full
+refunds subtract money once; pending/failed refunds do not. Late Checkout context is reconciled without replacing
+existing attributed history. In filtered mode, refunds received before an accepted original payment remain outside
+revenue until that payment arrives and passes the rule; unfiltered behavior is unchanged. Repeated customer payments use the
+existing renewal/repeat-purchase flag. Invoices paid outside Stripe, credits, disputes, and legacy charges without a
+PaymentIntent are not included. Do not also forward these same payments through the generic payments API.
+
+Match the site's revenue currency to the Stripe charge currency. Stripe amounts are normalized to the dashboard's
+currency units (including ISK/UGX), but **no exchange-rate conversion is performed**. Mixed-currency site totals sum
+amounts and are not comparable. Configure a separate site per currency if necessary.
+
+Webhook signatures use the exact raw payload, HMAC-SHA256 and a five-minute timestamp tolerance. Clearing or rotating
+the saved Stripe secret takes effect immediately. If Cloudflare blocks webhook deliveries, inspect its Security
+Events and exempt only the webhook path from the relevant challenge rule; keep signature verification enabled.
+
+#### Upgrading an existing Stripe installation
+
+Apply the upstream migrations through `0007_payment_product.sql`, then `0008_stripe_attribution.sql` and
+`0009_stripe_scope.sql`. These extend the upstream schema without adding the Stripe secret column twice.
+Update the Stripe endpoint's subscribed events to the five listed above: the old `invoice.paid` and
+`charge.refunded` events are no longer accounting inputs.
+
+Existing one-time payments stored under raw `pi_…` IDs are migrated to site-scoped IDs, preserving their
+attribution and preventing duplicate recording when the same PaymentIntent is delivered again. Older `in_…` /
+`cs_…` payments and cumulative `ch_…:refund` rows remain historical data: the stored schema does not identify
+their corresponding PaymentIntent or individual refund IDs. Do not replay those historical transactions into
+the new endpoint without reconciling them first. A new site provides a clean accounting boundary if needed.
+
+Installations of the earlier, unmerged PR migrations (`0004_stripe.sql` / `0005_stripe_scope.sql`) are not the
+upstream schema. Do not blindly apply this renamed migration sequence to them: back up and reconcile their
+already-added columns/tables and migration ledger first. No production database is changed by merging this PR.
+
 ### Other providers (API)
 
-Any other provider can use the generic API (the key is in site settings):
+Other providers can use the generic API (the key is in site settings):
 
 ```bash
 curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..." -H "Content-Type: application/json" \
@@ -275,13 +370,15 @@ npm run dev:web                       # optional: hot-reloading dashboard on htt
 npm run seed                          # optional: 30 days of demo data ("ShipKit" site)
 npm test                              # unit tests
 npm run smoke                         # end-to-end test against the running dev server
+npm run smoke:stripe                  # Stripe signed-event / real Worker+D1 regression flow
+npm run smoke:stripe-scope            # exact per-site Stripe metadata isolation
 node scripts/smoke-hosted.mjs         # hosted-mode test (see the comment at the top for how to start it)
 ```
 
 ## How it's built
 
 - `public/js/script.js`: the tracker, 9 KB (about 3.5 KB gzipped). It handles cookies, pageviews, engaged time, goals, outbound links and Dodo link tagging
-- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, the Dodo webhook, the payments and goals API, and stats queries on D1 (SQLite)
+- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, Dodo and Stripe webhooks, the payments and goals API, and stats queries on D1 (SQLite)
 - `src/dashboard`: the React dashboard (Vite, Tailwind, Recharts), served as static files by the same Worker
 - `migrations/`: the database schema
 

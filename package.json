@@ -20,7 +20,9 @@
     "db:migrate": "wrangler d1 migrations apply minilytics --remote",
     "deploy": "vite build && wrangler d1 migrations apply minilytics --remote && wrangler deploy",
     "seed": "node scripts/seed-demo.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed.sql",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:stripe": "node scripts/smoke-stripe.mjs",
+    "smoke:stripe-scope": "node --experimental-strip-types scripts/smoke-stripe-scope.ts"
   },
   "dependencies": {
     "hono": "^4.13.13",

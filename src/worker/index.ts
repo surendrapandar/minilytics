@@ -5,8 +5,10 @@ import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
-import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
+import { handleDodoWebhook, handleGoalApi, handlePaymentApi, learnDodoProducts, rematchPayments } from './payments';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, visitorProfile, visitors, type FunnelStep } from './stats';
+import { handleStripeWebhook } from './stripe';
+import { parseStripeMetadataFilter } from '../shared/stripe-scope';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -105,8 +107,11 @@ function validTimezone(tz: string) {
   }
 }
 
-const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
-const publicSite = (s: Site) => ({ ...s, dodo_webhook_secret: mask(s.dodo_webhook_secret), stripe_webhook_secret: mask(s.stripe_webhook_secret) });
+const publicSite = (s: Site) => ({
+  ...s,
+  dodo_webhook_secret: s.dodo_webhook_secret ? '••••••••' : null,
+  stripe_webhook_secret: s.stripe_webhook_secret ? '••••••••' : null,
+});
 
 app.get('/api/sites', async (c) => {
   const now = Date.now();
@@ -136,6 +141,8 @@ app.post('/api/sites', async (c) => {
   const domain = cleanDomain(b.domain ?? '');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return c.json({ error: 'Enter a domain like example.com' }, 400);
   const tz = b.timezone && validTimezone(b.timezone) ? b.timezone : 'UTC';
+  const filter = parseStripeMetadataFilter(b.stripe_metadata_key ?? null, b.stripe_metadata_value ?? null);
+  if (!filter) return c.json({ error: 'Provide both a Stripe metadata key (1–40 characters, no brackets) and value (1–500 characters), or clear both.' }, 400);
   const site: Site = {
     id: randomId(8),
     name: (b.name || domain).slice(0, 100),
@@ -144,12 +151,14 @@ app.post('/api/sites', async (c) => {
     currency: (b.currency || 'USD').toUpperCase().slice(0, 3),
     api_key: 'ml_' + randomId(16),
     dodo_webhook_secret: null,
+    stripe_webhook_secret: null,
+    ...filter,
     created_at: Date.now(),
   };
   await c.env.DB.prepare(
-    'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, created_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, stripe_webhook_secret, stripe_metadata_key, stripe_metadata_value, created_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, site.created_at, isHosted(c.env) ? user.id : null)
+    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, null, site.stripe_metadata_key, site.stripe_metadata_value, site.created_at, isHosted(c.env) ? user.id : null)
     .run();
   return c.json(publicSite(site));
 });
@@ -160,6 +169,11 @@ app.patch('/api/sites/:id', async (c) => {
   const site = c.get('site');
   const b = await c.req.json<Partial<Site>>().catch(() => ({}) as Partial<Site>);
   const next = { ...site };
+  if ('stripe_metadata_key' in b || 'stripe_metadata_value' in b) {
+    const filter = parseStripeMetadataFilter(b.stripe_metadata_key, b.stripe_metadata_value);
+    if (!filter) return c.json({ error: 'Provide both a Stripe metadata key (1–40 characters, no brackets) and value (1–500 characters), or clear both.' }, 400);
+    Object.assign(next, filter);
+  }
   if (typeof b.name === 'string' && b.name.trim()) next.name = b.name.trim().slice(0, 100);
   if (typeof b.domain === 'string') {
     const d = cleanDomain(b.domain);
@@ -174,15 +188,18 @@ app.patch('/api/sites/:id', async (c) => {
   if (typeof b.dodo_webhook_secret === 'string' && !b.dodo_webhook_secret.includes('•')) {
     next.dodo_webhook_secret = b.dodo_webhook_secret.trim() || null;
   }
+  if (b.stripe_webhook_secret === null) next.stripe_webhook_secret = null;
   if (typeof b.stripe_webhook_secret === 'string' && !b.stripe_webhook_secret.includes('•')) {
-    next.stripe_webhook_secret = b.stripe_webhook_secret.trim() || null;
+    const secret = b.stripe_webhook_secret.trim();
+    if (secret && !secret.startsWith('whsec_')) return c.json({ error: 'Stripe webhook secret must start with whsec_' }, 400);
+    next.stripe_webhook_secret = secret || null;
   }
   if (typeof b.dodo_product_ids === 'string') {
     const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
     next.dodo_product_ids = ids.join(',') || null;
   }
   await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ? WHERE id = ?',
+    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ?, stripe_metadata_key = ?, stripe_metadata_value = ? WHERE id = ?',
   )
     .bind(
       next.name,
@@ -191,7 +208,9 @@ app.patch('/api/sites/:id', async (c) => {
       next.currency,
       next.dodo_webhook_secret,
       next.dodo_product_ids ?? null,
-      next.stripe_webhook_secret ?? null,
+      next.stripe_webhook_secret,
+      next.stripe_metadata_key,
+      next.stripe_metadata_value,
       site.id,
     )
     .run();
@@ -208,7 +227,7 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
-    ['events', 'sessions', 'visitors', 'payments', 'funnels'].map((t) =>
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'dodo_products', 'pending_payments', 'stripe_context', 'stripe_pending_refunds'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );

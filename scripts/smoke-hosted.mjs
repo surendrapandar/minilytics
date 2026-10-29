@@ -80,6 +80,16 @@ assert((await call(`/api/sites/${aliceSite}`, { cookie: B })).status === 404, "B
 assert(!(await call('/api/sites', { cookie: B })).body.some((s) => s.id === aliceSite), "Bob's list doesn't include Alice's site");
 assert((await call('/api/sites', { cookie: A })).body.map((s) => s.id).join() === aliceSite, 'Alice sees only her site');
 
+// Stripe settings must keep the same tenant boundary as the rest of the dashboard.
+r = await call(`/api/sites/${aliceSite}`, { cookie: A, method: 'PATCH', body: JSON.stringify({
+  stripe_webhook_secret: 'whsec_hosted-smoke', stripe_metadata_key: 'product', stripe_metadata_value: 'alice',
+}) });
+assert(r.status === 200 && r.body.stripe_webhook_secret === '••••••••' && r.body.stripe_metadata_value === 'alice', 'owner configures Stripe without exposing the secret');
+r = await call(`/api/sites/${aliceSite}`, { cookie: B, method: 'PATCH', body: JSON.stringify({ stripe_webhook_secret: '', stripe_metadata_key: null, stripe_metadata_value: null }) });
+assert(r.status === 404, "Bob cannot change Alice's Stripe secret or revenue scope");
+r = await call(`/api/sites/${aliceSite}`, { cookie: A });
+assert(r.body.stripe_webhook_secret === '••••••••' && r.body.stripe_metadata_value === 'alice', 'denied cross-tenant write preserves Stripe configuration');
+
 // Owner (ADMIN_EMAILS) never pays and sees the pre-existing (ownerless) sites, not customers' sites
 const ownerMe = (await call('/api/auth/me', { cookie: O })).body.user;
 assert(ownerMe.admin && ownerMe.paid, 'owner is admin and free');

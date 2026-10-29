@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { getSite, type AppEnv, type Site } from './env';
-import { verifyStandardWebhook, verifyStripeWebhook } from './lib/crypto';
+import { verifyStandardWebhook } from './lib/crypto';
 
 export function currencyDecimals(currency: string): number {
   try {
@@ -148,9 +148,12 @@ async function matchByTiming(db: D1Database, site: Site, p: PaymentInput): Promi
 }
 
 export async function recordPayment(db: D1Database, site: Site, p: PaymentInput) {
-  const { visitorId, sessionId, renewal, matchedBy } = await attribute(db, site, p);
-  // Seen before (a retry, or Stripe's invoice.paid arriving before checkout.session.completed): fill in what
-  // was missing, and let checkout metadata win over a weaker match.
+  // A Stripe refund inherits only its original payment's credit, never a return-page claim or guess.
+  const { visitorId, sessionId, renewal, matchedBy } = p.provider === 'stripe' && p.kind === 'refund'
+    ? { visitorId: null, sessionId: null, renewal: false, matchedBy: null }
+    : await attribute(db, site, p);
+  // Retries can fill missing attribution, and checkout metadata wins over a weaker match.
+  // Stripe preserves recorded history and fills gaps through its durable context reconciliation.
   const better = `(payments.visitor_id IS NULL OR excluded.matched_by = 'metadata')`;
   const stmts = [
     db
@@ -162,7 +165,7 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
            session_id = CASE WHEN ${better} THEN COALESCE(excluded.session_id, payments.session_id) ELSE payments.session_id END,
            matched_by = CASE WHEN ${better} THEN COALESCE(excluded.matched_by, payments.matched_by) ELSE payments.matched_by END,
            checkout_id = COALESCE(payments.checkout_id, excluded.checkout_id)
-         WHERE payments.site_id = excluded.site_id`,
+         WHERE payments.site_id = excluded.site_id AND payments.provider != 'stripe'`,
       )
       .bind(
         p.id,
@@ -395,94 +398,6 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
       .run();
   }
   // Every other event type is acknowledged so Dodo doesn't retry it.
-  return c.json({ ok: true });
-}
-
-/** Stripe webhook: POST /api/webhooks/stripe/:siteId */
-export async function handleStripeWebhook(c: Context<AppEnv>) {
-  const site = await getSite(c.env.DB, c.req.param('siteId')!);
-  if (!site) return c.json({ error: 'unknown site' }, 404);
-  if (!site.stripe_webhook_secret) return c.json({ error: 'webhook secret not configured for this site' }, 400);
-
-  const body = await c.req.text();
-  if (!(await verifyStripeWebhook(site.stripe_webhook_secret, c.req.header('stripe-signature') ?? null, body))) {
-    return c.json({ error: 'invalid signature' }, 401);
-  }
-
-  const event = JSON.parse(body) as { type: string; data: { object: Record<string, any> } };
-  const o = event.data?.object ?? {};
-  const ts = (Number(o.created) || Date.now() / 1000) * 1000;
-  // Older API versions put these on the object, newer ones under `parent`.
-  const subscriptionId = str(o.subscription) ?? str(o.parent?.subscription_details?.subscription);
-
-  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-    if (o.payment_status !== 'paid') return c.json({ ok: true, ignored: 'not paid yet' });
-    // Payment links can't carry metadata, so the script puts the visitor in client_reference_id: ml_<vid>__<sid>.
-    const ref = /^ml_([\w-]+?)__([\w-]+)$/.exec(o.client_reference_id ?? '');
-    await recordPayment(c.env.DB, site, {
-      // A subscription's first invoice also arrives as invoice.paid; the same id makes them one payment.
-      id: (o.mode === 'subscription' ? str(o.invoice) : str(o.payment_intent)) ?? String(o.id),
-      provider: 'stripe',
-      ts,
-      amount: Number(o.amount_total) || 0,
-      kind: 'payment',
-      currency: String(o.currency ?? site.currency),
-      visitorId: pickMeta(o.metadata, ['ml_visitor_id', 'visitor_id']) ?? ref?.[1],
-      sessionId: pickMeta(o.metadata, ['ml_session_id', 'session_id']) ?? ref?.[2],
-      customerId: str(o.customer),
-      email: str(o.customer_details?.email)?.toLowerCase() ?? null,
-      name: str(o.customer_details?.name),
-      subscriptionId,
-      checkoutId: str(o.id),
-    });
-  } else if (event.type === 'invoice.paid') {
-    // One-time Checkout payments are counted above; here only subscription invoices (first payment and renewals).
-    if (!String(o.billing_reason).startsWith('subscription') || !(Number(o.amount_paid) > 0)) {
-      return c.json({ ok: true, ignored: 'not a subscription payment' });
-    }
-    await recordPayment(c.env.DB, site, {
-      id: String(o.id),
-      provider: 'stripe',
-      ts,
-      amount: Number(o.amount_paid),
-      kind: 'payment',
-      currency: String(o.currency ?? site.currency),
-      customerId: str(o.customer),
-      email: str(o.customer_email)?.toLowerCase() ?? null,
-      name: str(o.customer_name),
-      subscriptionId,
-      renewal: o.billing_reason === 'subscription_cycle',
-    });
-  } else if (event.type === 'charge.refunded') {
-    const original =
-      (await c.env.DB.prepare('SELECT * FROM payments WHERE site_id = ? AND id IN (?, ?)')
-        .bind(site.id, str(o.payment_intent) ?? '', str(o.invoice) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>()) ??
-      // Newer API versions don't link a charge to its invoice; fall back to the customer's latest payment.
-      (await c.env.DB.prepare("SELECT * FROM payments WHERE site_id = ? AND customer_id = ? AND kind = 'payment' ORDER BY ts DESC LIMIT 1")
-        .bind(site.id, str(o.customer) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>());
-    if (!original) return c.json({ ok: true, ignored: 'unknown payment' });
-    // amount_refunded is the running total, so a second partial refund replaces the row.
-    await c.env.DB.prepare(
-      `INSERT OR REPLACE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name)
-       VALUES (?, ?, 'stripe', ?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        `${o.id}:refund`,
-        site.id,
-        Date.now(),
-        -Math.abs(Number(o.amount_refunded) || 0),
-        String(o.currency ?? site.currency).toUpperCase(),
-        original.visitor_id,
-        original.session_id,
-        str(o.customer),
-        str(o.billing_details?.email)?.toLowerCase() ?? null,
-        str(o.billing_details?.name),
-      )
-      .run();
-  }
-  // Every other event type is acknowledged so Stripe doesn't retry it.
   return c.json({ ok: true });
 }
 
