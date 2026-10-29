@@ -29,12 +29,15 @@ interface TrendRow {
   site_id: string;
   bucket: string;
   visitors: number;
+  pageviews: number;
+  sessions: number;
 }
 
 interface TotalRow {
   site_id: string;
   visitors: number;
   pageviews: number;
+  sessions: number;
 }
 
 /** Fetch all authorized websites' statistics in one batch, not one request per card. */
@@ -51,7 +54,7 @@ export async function siteTrends(c: Context<AppEnv>) {
 
   const [trendRows, totals] = await c.env.DB.batch([
     c.env.DB.prepare(
-      `SELECT ss.site_id, ${bucket} AS bucket, COUNT(DISTINCT ss.visitor_id) AS visitors
+      `SELECT ss.site_id, ${bucket} AS bucket, COUNT(DISTINCT ss.visitor_id) AS visitors, COUNT(*) AS sessions, COALESCE(SUM(ss.pageviews), 0) AS pageviews, COUNT(*) AS sessions
        FROM sessions ss JOIN sites s ON s.id = ss.site_id
        WHERE ${where} GROUP BY ss.site_id, bucket ORDER BY bucket`,
     ).bind(...params),
@@ -63,19 +66,20 @@ export async function siteTrends(c: Context<AppEnv>) {
     ).bind(...params),
   ]);
 
-  const bySite = new Map<string, Map<string, number>>();
+  const bySite = new Map<string, Map<string, TrendRow>>();
   for (const row of trendRows.results as unknown as TrendRow[]) {
     if (!bySite.has(row.site_id)) bySite.set(row.site_id, new Map());
-    bySite.get(row.site_id)!.set(row.bucket, row.visitors);
+    bySite.get(row.site_id)!.set(row.bucket, row);
   }
 
-  const sites: Record<string, { visitors: number; pageviews: number; series: number[] }> = {};
+  const sites: Record<string, { visitors: number; pageviews: number; sessions: number; series: { visitors: number; pageviews: number; sessions: number }[] }> = {};
   for (const row of totals.results as unknown as TotalRow[]) {
     const points = bySite.get(row.site_id);
     sites[row.site_id] = {
       visitors: row.visitors,
       pageviews: row.pageviews,
-      series: buckets.map((label) => points?.get(label) ?? 0),
+      sessions: row.sessions,
+      series: buckets.map((label) => ({ visitors: points?.get(label)?.visitors ?? 0, pageviews: points?.get(label)?.pageviews ?? 0, sessions: points?.get(label)?.sessions ?? 0 })),
     };
   }
 
