@@ -18,7 +18,7 @@ export interface TabDef {
 export function renderLabel(dim: string, row: Pick<BreakdownRow, 'label' | 'extra'>, wrap = false): ReactNode {
   const l = row.label;
   const text = (s: ReactNode) => (
-    <span className={wrap ? 'min-w-0 break-words' : 'truncate'} title={typeof s === 'string' ? s : undefined}>
+    <span className={wrap ? 'min-w-0 break-words [overflow-wrap:anywhere]' : 'truncate'} title={typeof s === 'string' ? s : undefined}>
       {s}
     </span>
   );
@@ -194,7 +194,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
   const filtered = (data ?? []).filter((r) => !search || (r.label ?? '').toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="card flex min-h-[560px] flex-col p-3">
+    <div className="card flex min-h-[560px] min-w-0 flex-col p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
         <div className="tabs flex-wrap">
           {tabs.map((t) => (

@@ -73,7 +73,7 @@ function Goals({ totalVisitors }: { totalVisitors: number }) {
             title="Filter by visitors who completed this goal"
           >
             <td className="block px-1 font-medium sm:table-cell sm:px-3 sm:py-2.5">
-              <span className="break-words">🎯 {g.label}</span>
+              <span className="break-words [overflow-wrap:anywhere]">🎯 {g.label}</span>
             </td>
             <td className="mt-1 flex items-baseline justify-between gap-4 px-1 sm:mt-0 sm:table-cell sm:py-2.5 sm:text-right">
               <span className="text-stone-500 sm:hidden">Visitors</span>
@@ -133,7 +133,7 @@ function Funnels() {
   return (
     <div className="px-3 pb-3">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <select className="input w-auto py-1.5" value={current?.id} onChange={(e) => setSelected(e.target.value)}>
+        <select className="input w-auto min-w-0 max-w-full truncate py-1.5" value={current?.id} title={current?.name} onChange={(e) => setSelected(e.target.value)}>
           {funnels.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
@@ -172,7 +172,7 @@ function Funnels() {
                 <div className="flex h-48 items-end rounded-xl bg-stone-50">
                   <div className="w-full rounded-xl bg-visitors/70 transition-all" style={{ height: `${Math.max(pct * 100, 2)}%` }} />
                 </div>
-                <div className="mt-2 break-words text-sm font-medium" title={s.value}>
+                <div className="mt-2 break-words text-sm font-medium [overflow-wrap:anywhere]" title={s.value}>
                   {i + 1}. {s.type === 'goal' ? '🎯 ' : ''}
                   {s.value}
                 </div>
@@ -320,11 +320,11 @@ function SourceInfo({ r }: { r: Record<string, any> }) {
     <div className="flex min-w-0 items-start gap-2">
       <SourceIcon source={r.source} domain={r.referrer_domain} />
       <div className="min-w-0">
-        <div className="break-words" title={r.source ?? undefined}>
+        <div className="break-words [overflow-wrap:anywhere]" title={r.source ?? undefined}>
           {r.source}
         </div>
         {(r.utm_campaign || r.ref) && (
-          <div className="break-words text-xs text-stone-500" title={r.utm_campaign || r.ref}>
+          <div className="break-words text-xs text-stone-500 [overflow-wrap:anywhere]" title={r.utm_campaign || r.ref}>
             {r.utm_campaign || r.ref}
           </div>
         )}
