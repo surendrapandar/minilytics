@@ -136,8 +136,8 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
       <svg className="h-20 w-full" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#8dbdf0" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#8dbdf0" stopOpacity="0.015" />
+            <stop offset="0%" stopColor={series[0]?.color ?? "#8dbdf0"} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={series[0]?.color ?? "#8dbdf0"} stopOpacity="0.015" />
           </linearGradient>
         </defs>
         <line x1="0" x2={WIDTH} y1={BOTTOM} y2={BOTTOM} stroke="#ece9e6" strokeWidth="1" />
