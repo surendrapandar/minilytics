@@ -16,6 +16,12 @@ const TREND_PERIODS = [
 ] as const;
 
 type TrendPeriod = (typeof TREND_PERIODS)[number]['value'];
+type TrendMetric = 'visitors' | 'pageviews' | 'sessions';
+const TREND_METRICS: { value: TrendMetric; label: string }[] = [
+  { value: 'visitors', label: 'Visitors' },
+  { value: 'pageviews', label: 'Pageviews' },
+  { value: 'sessions', label: 'Sessions' },
+];
 
 export function Sites() {
   const { me } = useMe();
@@ -23,6 +29,7 @@ export function Sites() {
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = useState<TrendPeriod>('7d');
   const [retryKey, setRetryKey] = useState(0);
+  const [metrics, setMetrics] = useState<Record<string, TrendMetric>>({});
 
   // A single period control drives one shared API request for all site cards.
   const { data: trends, loading, error } = useApi<SiteTrends>(`/api/sites/trends?period=${period}`, retryKey);
@@ -84,8 +91,9 @@ export function Sites() {
         {sites?.map((s) => {
           const trend = trends?.period === period ? trends.sites[s.id] : undefined;
           const ready = !loading && !error && trends?.period === period;
+          const metric = metrics[s.id] ?? 'visitors';
           return (
-            <button key={s.id} onClick={() => navigate(`/site/${s.id}?period=${period}`)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
+            <div key={s.id} className="card p-5 text-left">
               <div className="flex items-center gap-3">
                 <Favicon domain={s.domain} size={28} />
                 <div className="min-w-0">
@@ -103,11 +111,12 @@ export function Sites() {
                   <div className="text-xs text-stone-500">pageviews in period</div>
                 </div>
               </div>
-              <div className="mt-4" aria-busy={loading}>
+              <div className="mt-4 flex items-center justify-between gap-2"><label htmlFor={`metric-${s.id}`} className="text-xs text-stone-500">Trend</label><select id={`metric-${s.id}`} aria-label={`${s.name} trend metric`} className="input w-auto py-1 text-xs" value={metric} onChange={(event) => setMetrics((previous) => ({ ...previous, [s.id]: event.target.value as TrendMetric }))}>{TREND_METRICS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div className="mt-2" aria-busy={loading}>
                 {!ready ? (
                   <div className="h-20 animate-pulse rounded-xl bg-stone-100" />
                 ) : (
-                  <TrendSparkline values={trend?.series ?? []} name={s.name} />
+                  <TrendSparkline values={(trend?.series ?? []).map((point) => point[metric])} buckets={trends?.buckets ?? []} name={s.name} metric={metric} />
                 )}
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
@@ -115,9 +124,9 @@ export function Sites() {
                   <span className={`h-2 w-2 rounded-full ${s.online ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} />
                   {s.online} online now
                 </div>
-                <span className="text-xs font-medium text-stone-600">View dashboard →</span>
+                <button className="text-xs font-medium text-stone-600 hover:underline" onClick={() => navigate(`/site/${s.id}?period=${period}`)}>View dashboard →</button>
               </div>
-            </button>
+            </div>
           );
         })}
         {sites && !sites.length && (
