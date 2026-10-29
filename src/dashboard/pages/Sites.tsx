@@ -83,7 +83,7 @@ export function Sites() {
       <div className="mt-10 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Your websites</h1>
-          <p className="mt-1 text-sm text-stone-500">Visitor trends across all your sites</p>
+          <p className="mt-1 text-sm text-stone-500">Performance trends across all your sites</p>
         </div>
         <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto">
           <div className="min-w-[130px] flex-1 sm:w-[160px] sm:flex-none">
@@ -144,7 +144,7 @@ export function Sites() {
 
       {error && (
         <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <span>Could not load visitor trends. {error}</span>
+          <span>Could not load website trends. {error}</span>
           <button className="font-medium underline" onClick={() => setRetryKey((key) => key + 1)}>Retry</button>
         </div>
       )}
