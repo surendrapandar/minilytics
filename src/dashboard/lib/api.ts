@@ -71,7 +71,7 @@ export interface Overview {
 export interface SiteTrends {
   period: string;
   buckets: string[];
-  sites: Record<string, { visitors: number; pageviews: number; series: number[] }>;
+  sites: Record<string, { visitors: number; pageviews: number; sessions: number; series: { visitors: number; pageviews: number; sessions: number }[] }>;
 }
 
 export interface BreakdownRow {
