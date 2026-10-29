@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { persona } from '../../shared/names';
 import { domainForSource } from '../../shared/sources';
 import { flag } from '../lib/format';
 
@@ -103,24 +104,16 @@ export function Flag({ cc, size = 18 }: { cc: string | null; size?: number }) {
   );
 }
 
-const FACES = ['😀', '😎', '🤓', '🧐', '🙂', '😊', '🤠', '🥳', '😺', '🦊', '🐼', '🐨', '🐯', '🦁', '🐸', '🐵', '🦄', '🐙'];
-const BGS = ['#fde68a', '#bfdbfe', '#fbcfe8', '#bbf7d0', '#ddd6fe', '#fed7aa', '#a5f3fc', '#fecaca', '#e9d5ff'];
-
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-/** A friendly, stable avatar per visitor. */
+/** A friendly, stable avatar per visitor; matches their animal name ("brown fox" → 🦊). */
 export function Avatar({ id, size = 40 }: { id: string; size?: number }) {
-  const h = hash(id);
+  const p = persona(id);
   return (
     <span
       className="inline-flex shrink-0 items-center justify-center rounded-full ring-2 ring-white"
-      style={{ width: size, height: size, background: BGS[h % BGS.length], fontSize: size * 0.55 }}
+      style={{ width: size, height: size, background: p.color, fontSize: size * 0.55 }}
+      title={p.name}
     >
-      {FACES[(h >> 4) % FACES.length]}
+      {p.emoji}
     </span>
   );
 }

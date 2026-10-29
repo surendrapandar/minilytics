@@ -1,5 +1,6 @@
+import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
-import { countryName, fmtAgo, fmtDateTime, fmtDuration, shortId } from '../lib/format';
+import { countryName, fmtAgo, fmtDateTime, fmtDuration } from '../lib/format';
 import { useApi } from '../lib/useApi';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 import { Modal } from './Modal';
@@ -35,7 +36,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
           <div className="flex items-center gap-4">
             <Avatar id={visitorId!} size={64} />
             <div className="min-w-0">
-              <div className="truncate text-xl font-semibold">{p.visitor?.name || p.visitor?.email || `Visitor ${shortId(visitorId!)}`}</div>
+              <div className="truncate text-xl font-semibold">{displayName(visitorId!, p.visitor?.name, p.visitor?.email)}</div>
               {p.visitor?.email && p.visitor.name && <div className="text-sm text-stone-500">{p.visitor.email}</div>}
               {last && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-stone-500">

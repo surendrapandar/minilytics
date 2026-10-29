@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { navigate } from '../App';
+import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
@@ -7,6 +7,7 @@ import { api, type Site } from '../lib/api';
 import { fmtNumber } from '../lib/format';
 
 export function Sites() {
+  const { me } = useMe();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -26,7 +27,13 @@ export function Sites() {
     <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
       <div className="flex items-center justify-between">
         <Logo />
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {me.hosted && me.user && (
+            <button className="hidden items-center gap-2 rounded-xl px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 sm:flex" onClick={() => navigate('/billing')} title="Plan & billing">
+              {me.user.avatar ? <img src={me.user.avatar} alt="" className="h-7 w-7 rounded-full" referrerPolicy="no-referrer" /> : null}
+              {me.user.email}
+            </button>
+          )}
           <button className="btn" onClick={logout}>
             Log out
           </button>

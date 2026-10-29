@@ -183,6 +183,9 @@ for (const g of ['hour', 'day', 'week', 'month']) {
   assert(res.status === 200, `granularity ${g} -> ${res.body.range.granularity}`);
 }
 
+const rt = (await call(`/api/sites/${site.id}/realtime`)).body;
+assert(rt.visitors.some((v) => v.visitor_id === vid) && rt.feed.some((f) => f.type === 'payment'), `live view: ${rt.visitors.length} online, ${rt.feed.length} recent events`);
+
 await call(`/api/sites/${site.id}`, { method: 'DELETE' });
 assert((await call(`/api/sites/${site.id}`)).status === 404, 'site deleted');
 console.log('\nAll smoke tests passed');

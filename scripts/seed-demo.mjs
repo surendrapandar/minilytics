@@ -87,12 +87,26 @@ for (let d = 34; d >= 0; d--) {
     }
   }
 }
-// A few people online right now
-for (let i = 0; i < 3; i++) {
+// A few people online right now, with locations for the live globe
+const LIVE = [
+  ['US', 'San Francisco', 37.77, -122.42, 'X', 't.co', 'Organic Social', '/pricing'],
+  ['US', 'New York', 40.71, -74.01, 'Google', 'google.com', 'Organic Search', '/blog/seo-for-saas'],
+  ['GB', 'London', 51.51, -0.13, 'ChatGPT', 'chatgpt.com', 'AI', '/'],
+  ['IN', 'Bengaluru', 12.97, 77.59, 'Direct/None', null, 'Direct', '/features'],
+  ['NL', 'Amsterdam', 52.37, 4.9, 'Reddit', 'reddit.com', 'Organic Social', '/'],
+];
+LIVE.forEach(([cc, city, lat, lon, source, domain, channel, page], i) => {
   const vid = uuid(), sid = uuid();
-  out.push(`INSERT INTO visitors (site_id, id, first_seen) VALUES ('${siteId}', '${vid}', ${now - 60_000});`);
-  out.push(`INSERT INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, duration, pageviews, goals, hostname, entry_page, exit_page, referrer_domain, source, channel, country, browser, os, device) VALUES ('${siteId}', '${sid}', '${vid}', ${now - 90_000}, ${now - 20_000}, 60000, 2, 0, 'shipkit.dev', '/', '/pricing', 't.co', 'X', 'Organic Social', 'US', 'Chrome', 'Mac OS', 'Desktop');`);
-}
+  const start = now - (i + 1) * 70_000;
+  out.push(`INSERT INTO visitors (site_id, id, first_seen) VALUES ('${siteId}', '${vid}', ${start});`);
+  out.push(`INSERT INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, duration, pageviews, goals, hostname, entry_page, exit_page, referrer_domain, source, channel, country, city, browser, os, device, lat, lon) VALUES ('${siteId}', '${sid}', '${vid}', ${start}, ${now - 15_000}, 60000, 2, ${i === 0 ? 1 : 0}, 'shipkit.dev', '/', ${q(page)}, ${q(domain)}, ${q(source)}, ${q(channel)}, '${cc}', ${q(city)}, 'Chrome', 'Mac OS', '${i === 3 ? 'Mobile' : 'Desktop'}', ${lat}, ${lon});`);
+  out.push(`INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path) VALUES ('${siteId}', '${sid}', '${vid}', ${start}, 'pageview', NULL, '/');`);
+  out.push(`INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path) VALUES ('${siteId}', '${sid}', '${vid}', ${start + 30_000}, 'pageview', NULL, ${q(page)});`);
+  if (i === 0) {
+    out.push(`INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path) VALUES ('${siteId}', '${sid}', '${vid}', ${start + 50_000}, 'goal', 'checkout_click', '/pricing');`);
+    out.push(`INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name) VALUES ('pay_demo_live', '${siteId}', 'dodo', ${start + 60_000}, 9900, 'payment', 'USD', '${vid}', '${sid}', 'cus_live', 'socianova@example.com', 'SociaNova');`);
+  }
+});
 
 mkdirSync('.wrangler', { recursive: true });
 writeFileSync('.wrangler/seed.sql', out.join('\n'));

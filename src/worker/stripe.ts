@@ -13,6 +13,7 @@ interface AttributionContext {
   email: string | null;
   name: string | null;
   subscription_id: string | null;
+  checkout_id: string | null;
 }
 
 interface StripeEvent {
@@ -86,13 +87,16 @@ function metadata(value: unknown): Pick<AttributionContext, 'visitor_id' | 'sess
 function context(data: JsonObject, checkout: boolean): AttributionContext {
   const meta = metadata(data.metadata);
   const details = data.customer_details == null ? {} : object(data.customer_details);
+  const reference = checkout ? text(data.client_reference_id) : null;
+  const tagged = reference ? /^ml_([\w-]+?)__([\w-]+)$/.exec(reference) : null;
   return {
-    visitor_id: meta.visitor_id ?? (checkout ? text(data.client_reference_id) : null),
-    session_id: meta.session_id,
+    visitor_id: meta.visitor_id ?? tagged?.[1] ?? reference,
+    session_id: meta.session_id ?? (meta.visitor_id === null || meta.visitor_id === tagged?.[1] ? tagged?.[2] ?? null : null),
     customer_id: id(data.customer, 'cus'),
     email: checkout ? text(details.email) ?? text(data.customer_email) : text(data.receipt_email),
     name: checkout ? text(details.name) : null,
     subscription_id: checkout ? id(data.subscription, 'sub') : null,
+    checkout_id: checkout ? id(data.id, 'cs') : null,
   };
 }
 
@@ -100,8 +104,8 @@ async function saveContext(db: D1Database, siteId: string, intent: string | null
   const keys = [intent, value.customer_id].filter((key): key is string => key !== null);
   if (!keys.length) return;
   await db.batch(keys.map((key) => db.prepare(
-    `INSERT INTO stripe_context (site_id, object_id, visitor_id, session_id, customer_id, email, name, subscription_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO stripe_context (site_id, object_id, visitor_id, session_id, customer_id, email, name, subscription_id, checkout_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (site_id, object_id) DO UPDATE SET
        visitor_id = COALESCE(stripe_context.visitor_id, excluded.visitor_id),
        session_id = CASE WHEN stripe_context.visitor_id IS NULL OR stripe_context.visitor_id = excluded.visitor_id
@@ -109,8 +113,9 @@ async function saveContext(db: D1Database, siteId: string, intent: string | null
        customer_id = COALESCE(stripe_context.customer_id, excluded.customer_id),
        email = COALESCE(stripe_context.email, excluded.email),
        name = COALESCE(stripe_context.name, excluded.name),
-       subscription_id = COALESCE(stripe_context.subscription_id, excluded.subscription_id)`,
-  ).bind(siteId, key, value.visitor_id, value.session_id, value.customer_id, value.email, value.name, value.subscription_id, ts)));
+       subscription_id = COALESCE(stripe_context.subscription_id, excluded.subscription_id),
+       checkout_id = COALESCE(stripe_context.checkout_id, excluded.checkout_id)`,
+  ).bind(siteId, key, value.visitor_id, value.session_id, value.customer_id, value.email, value.name, value.subscription_id, key === intent ? value.checkout_id : null, ts)));
 }
 
 async function savedContext(db: D1Database, siteId: string, intent: string, customer: string | null): Promise<AttributionContext | null> {
@@ -120,7 +125,7 @@ async function savedContext(db: D1Database, siteId: string, intent: string, cust
        CASE WHEN pi.visitor_id IS NOT NULL THEN pi.session_id ELSE cu.session_id END AS session_id,
        COALESCE(pi.customer_id, cu.customer_id) AS customer_id,
        COALESCE(pi.email, cu.email) AS email, COALESCE(pi.name, cu.name) AS name,
-       COALESCE(pi.subscription_id, cu.subscription_id) AS subscription_id
+       COALESCE(pi.subscription_id, cu.subscription_id) AS subscription_id, pi.checkout_id
      FROM (SELECT 1) AS seed
      LEFT JOIN stripe_context pi ON pi.site_id = ? AND pi.object_id = ?
      LEFT JOIN stripe_context cu ON cu.site_id = ? AND cu.object_id = ?`,
@@ -133,14 +138,17 @@ async function reconcile(db: D1Database, siteId: string, intent: string | null, 
   await db.batch([
     db.prepare(
       `WITH context AS (
-         SELECT p.id, COALESCE(pi.visitor_id, cu.visitor_id) AS visitor_id,
+         SELECT p.id, COALESCE(pi.visitor_id, cu.visitor_id, claim.visitor_id) AS visitor_id,
+           CASE WHEN pi.visitor_id IS NOT NULL OR cu.visitor_id IS NOT NULL THEN 'metadata'
+             WHEN claim.visitor_id IS NOT NULL THEN 'return_page' END AS matched_by,
            CASE WHEN pi.visitor_id IS NOT NULL THEN pi.session_id ELSE cu.session_id END AS session_id,
            COALESCE(pi.customer_id, cu.customer_id) AS customer_id,
            COALESCE(pi.email, cu.email) AS email, COALESCE(pi.name, cu.name) AS name,
-           COALESCE(pi.subscription_id, cu.subscription_id) AS subscription_id
+           COALESCE(pi.subscription_id, cu.subscription_id) AS subscription_id, pi.checkout_id
          FROM payments p
          LEFT JOIN stripe_context pi ON pi.site_id = p.site_id AND pi.object_id = SUBSTR(p.id, LENGTH('stripe:' || p.site_id || ':') + 1)
          LEFT JOIN stripe_context cu ON cu.site_id = p.site_id AND cu.object_id = COALESCE(p.customer_id, pi.customer_id)
+         LEFT JOIN payment_claims claim ON claim.site_id = p.site_id AND claim.payment_id = COALESCE(p.checkout_id, pi.checkout_id)
          WHERE p.site_id = ? AND p.provider = 'stripe' AND p.kind = 'payment'
            AND (p.id = ? OR p.customer_id = ?)
        )
@@ -151,10 +159,11 @@ async function reconcile(db: D1Database, siteId: string, intent: string | null, 
              AND s.visitor_id = COALESCE(p.visitor_id, ctx.visitor_id) AND s.started_at <= p.ts + 60000
              ORDER BY (s.channel != 'Direct') DESC, s.started_at DESC LIMIT 1),
            CASE WHEN p.visitor_id IS NULL OR p.visitor_id = ctx.visitor_id THEN ctx.session_id END),
-         matched_by = CASE WHEN p.visitor_id IS NULL AND ctx.visitor_id IS NOT NULL THEN 'metadata' ELSE p.matched_by END,
+         matched_by = CASE WHEN p.visitor_id IS NULL AND ctx.visitor_id IS NOT NULL THEN ctx.matched_by ELSE p.matched_by END,
          customer_id = COALESCE(p.customer_id, ctx.customer_id),
          email = COALESCE(p.email, ctx.email), name = COALESCE(p.name, ctx.name),
-         subscription_id = COALESCE(p.subscription_id, ctx.subscription_id)
+         subscription_id = COALESCE(p.subscription_id, ctx.subscription_id),
+         checkout_id = COALESCE(p.checkout_id, ctx.checkout_id)
        FROM context ctx WHERE p.id = ctx.id`,
     ).bind(siteId, originalId, customer),
     // Refund attribution is the original payment's exact credit, not a new visit at refund time.
@@ -243,6 +252,7 @@ async function payment(db: D1Database, site: Site, event: StripeEvent) {
       sessionId: value.session_id ?? saved?.session_id,
       customerId: value.customer_id ?? saved?.customer_id,
       email: value.email ?? saved?.email, name: saved?.name, subscriptionId: saved?.subscription_id,
+      checkoutId: saved?.checkout_id,
     });
   }
   // Re-read durable context after insertion to cover concurrent/out-of-order Checkout.
@@ -312,9 +322,13 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
     const event: StripeEvent = {
       type, created: timestamp(envelope.created), object: object(object(envelope.data).object),
     };
-    if ((type === 'payment_intent.succeeded' || type.startsWith('checkout.session.'))
-      && !matchesStripeMetadata(event.object.metadata, site.stripe_metadata_key, site.stripe_metadata_value)) {
-      return c.json({ ok: true, ignored: true });
+    if (type === 'payment_intent.succeeded' || type.startsWith('checkout.session.')) {
+      const meta = event.object.metadata == null ? {} : object(event.object.metadata);
+      const taggedSite = text(meta.ml_site_id);
+      if ((taggedSite !== null && taggedSite !== site.id)
+        || !matchesStripeMetadata(meta, site.stripe_metadata_key, site.stripe_metadata_value)) {
+        return c.json({ ok: true, ignored: true });
+      }
     }
     if (event.object.created !== undefined) timestamp(event.object.created);
     if (type === 'payment_intent.succeeded') await payment(db, site, event);

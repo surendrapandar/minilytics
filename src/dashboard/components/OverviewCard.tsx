@@ -19,7 +19,7 @@ function Change({ cur, prev, invert = false }: { cur: number; prev: number; inve
   );
 }
 
-export function OverviewCard({ data }: { data: Overview | null }) {
+export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: () => void }) {
   const { money } = useDash();
   const [hidden, setHidden] = useState<Record<Metric, boolean>>({ visitors: false, revenue: false });
   const c = data?.current;
@@ -57,12 +57,13 @@ export function OverviewCard({ data }: { data: Overview | null }) {
           </button>
         ))}
         {data && (
-          <div className="px-5 py-4">
+          <button className="px-5 py-4 text-left hover:bg-stone-50" onClick={onLive} title="Open the live map (M)">
             <div className="flex items-center gap-1.5 text-sm text-stone-500">
               Online <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
             </div>
             <div className="mt-1 text-[28px] font-semibold leading-tight">{data.online}</div>
-          </div>
+            <div className="text-xs text-stone-400">View on map →</div>
+          </button>
         )}
         {!data && <div className="col-span-full h-[98px] animate-pulse bg-stone-50" />}
       </div>

@@ -1,8 +1,9 @@
 import type { Context } from 'hono';
 import { classify } from '../shared/sources';
+import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
 import { isBot, parseUA } from './lib/ua';
-import { creditedSessionSql } from './payments';
+import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
 const TYPES = new Set(['pageview', 'goal', 'outbound', 'ping', 'identify']);
 const MAX_PING_MS = 10 * 60_000;
@@ -61,6 +62,8 @@ export async function handleEvent(c: Context<AppEnv>) {
 
   const site = await getSite(c.env.DB, body.w);
   if (!site) return c.body(null, 404);
+  // Hosted mode: stop recording when the owner's plan has ended (quietly, so their site never shows errors).
+  if (!siteOwnerActive(c.env, site)) return c.body(null, 202);
 
   let url: URL;
   try {
@@ -79,6 +82,14 @@ export interface Geo {
   country: string | null;
   region: string | null;
   city: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+/** City-level coordinates, rounded to 2 decimals (~1 km) so no precise location is ever stored. */
+function coord(v: unknown, max: number): number | null {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+  return Number.isFinite(n) && Math.abs(n) <= max ? Math.round(n * 100) / 100 : null;
 }
 
 /**
@@ -95,10 +106,22 @@ function geoOf(c: Context<AppEnv>): Geo {
     }
   };
   if (h('x-vercel-ip-country')) {
-    return { country: h('x-vercel-ip-country'), region: h('x-vercel-ip-country-region'), city: h('x-vercel-ip-city') };
+    return {
+      country: h('x-vercel-ip-country'),
+      region: h('x-vercel-ip-country-region'),
+      city: h('x-vercel-ip-city'),
+      lat: coord(h('x-vercel-ip-latitude'), 90),
+      lon: coord(h('x-vercel-ip-longitude'), 180),
+    };
   }
   const cf = (c.req.raw as { cf?: IncomingRequestCfProperties }).cf;
-  return { country: (cf?.country as string) ?? null, region: (cf?.region as string) ?? null, city: (cf?.city as string) ?? null };
+  return {
+    country: (cf?.country as string) ?? null,
+    region: (cf?.region as string) ?? null,
+    city: (cf?.city as string) ?? null,
+    lat: coord(cf?.latitude, 90),
+    lon: coord(cf?.longitude, 180),
+  };
 }
 
 export async function ingest(
@@ -172,15 +195,22 @@ export async function ingest(
     );
   }
   await db.batch(stmts);
+
+  // A link to a Dodo checkout, or a buyer back on the return page, tells which site a product belongs to.
+  const product = t === 'outbound' ? dodoProductOfLink(String(body.n ?? '')) : null;
+  const paid = t === 'pageview' ? url.searchParams.get('payment_id') : null;
+  if (product || (paid && /^pay_[\w-]{4,64}$/.test(paid))) await learnDodoProducts(db, site, product ? [product] : [], paid);
 }
 
 /**
- * Dodo sends buyers back to your return URL with ?payment_id=pay_... . Seeing that on a pageview tells us
- * exactly which visitor made the payment, even when the checkout had no metadata.
+ * Dodo sends buyers back to your return URL with ?payment_id=pay_... and Stripe with ?session_id=cs_...
+ * (when the success URL has {CHECKOUT_SESSION_ID}). Seeing that on a pageview tells us exactly which
+ * visitor made the payment, even when the checkout had no metadata.
  */
 function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now: number): D1PreparedStatement[] {
-  const paymentId = url.searchParams.get('payment_id') ?? url.searchParams.get('subscription_id');
-  if (!paymentId || !/^(pay|sub)_[\w-]{4,64}$/.test(paymentId)) return [];
+  const q = url.searchParams;
+  const paymentId = q.get('payment_id') ?? q.get('subscription_id') ?? q.get('session_id');
+  if (!paymentId || !/^(pay|sub)_[\w-]{4,64}$|^cs_(test|live)_\w{4,200}$/.test(paymentId)) return [];
   return [
     db
       .prepare('INSERT OR IGNORE INTO payment_claims (site_id, payment_id, visitor_id, ts) VALUES (?, ?, ?, ?)')
@@ -190,16 +220,25 @@ function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now
       .prepare(
         `UPDATE payments SET visitor_id = ?, matched_by = 'return_page',
            session_id = (${creditedSessionSql()})
-         WHERE site_id = ? AND (id = ? OR subscription_id = ?) AND visitor_id IS NULL`,
+         WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) AND visitor_id IS NULL`,
       )
-      .bind(vid, siteId, vid, now + 60_000, siteId, paymentId, paymentId),
+      .bind(vid, siteId, vid, now + 60_000, siteId, paymentId),
+    db.prepare(
+      `UPDATE payments AS r SET visitor_id = p.visitor_id, session_id = p.session_id,
+         matched_by = p.matched_by, customer_id = COALESCE(r.customer_id, p.customer_id),
+         email = COALESCE(r.email, p.email), name = COALESCE(r.name, p.name)
+       FROM payments p WHERE r.site_id = ? AND r.provider = 'stripe' AND r.kind = 'refund'
+         AND r.visitor_id IS NULL AND r.original_payment_id = p.id AND p.site_id = r.site_id
+         AND p.provider = 'stripe' AND p.kind = 'payment' AND p.visitor_id IS NOT NULL
+         AND ? IN (p.id, p.subscription_id, p.checkout_id)`,
+    ).bind(siteId, paymentId),
     db
       .prepare(
-        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND (id = ? OR subscription_id = ?) LIMIT 1)),
-           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND (id = ? OR subscription_id = ?) LIMIT 1))
+        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1)),
+           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1))
          WHERE site_id = ? AND id = ?`,
       )
-      .bind(siteId, paymentId, paymentId, siteId, paymentId, paymentId, siteId, vid),
+      .bind(siteId, paymentId, siteId, paymentId, siteId, vid),
   ];
 }
 
@@ -264,8 +303,8 @@ function newSession(
       .prepare(
         `INSERT OR IGNORE INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, pageviews, hostname, entry_page, exit_page,
           referrer, referrer_domain, source, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref,
-          country, region, city, browser, os, device)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          country, region, city, browser, os, device, lat, lon)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         site.id,
@@ -292,6 +331,8 @@ function newSession(
         browser,
         os,
         device,
+        geo.lat,
+        geo.lon,
       ),
     // Separate statement so concurrent first events (pageview + goal racing) never double count.
     ...(pageviews

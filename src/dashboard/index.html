@@ -8,6 +8,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet" />
+    <script>
+      // minilytics.app tracks itself with Minilytics. Only on that domain, so self-hosted dashboards load nothing extra.
+      if (/(^|\.)minilytics\.app$/.test(location.hostname)) {
+        // Queue calls (identify, goal) made before the script has loaded; the tracker replays them.
+        window.minilytics = window.minilytics || function () { (window.minilytics.q = window.minilytics.q || []).push(arguments); };
+        var ml = document.createElement('script');
+        ml.defer = true;
+        ml.setAttribute('data-website-id', '2r2m2d29014o6243');
+        ml.src = 'https://minilytics.app/js/script.js';
+        document.head.appendChild(ml);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

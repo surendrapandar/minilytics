@@ -135,6 +135,37 @@ try {
   assert.equal((await overview(trialSite)).revenue, 4900);
   check('trial/Payment Link customer context attributes the first later charge without counting trial revenue');
 
+  const linkSite = await site();
+  const linkV = await visitor(linkSite);
+  const linkIntent = objectId('pi'), linkCustomer = objectId('cus');
+  await send(linkSite, 'checkout.session.completed', checkout(linkIntent, linkCustomer, {}, { client_reference_id: `ml_${linkV.vid}__${linkV.sid}` }));
+  await send(linkSite, 'payment_intent.succeeded', pi(linkIntent, linkCustomer));
+  assert.equal((await customers(linkSite))[0].visitor_id, linkV.vid);
+  assert.equal((await customers(linkSite))[0].session_id, linkV.sid);
+  check('upstream encoded Payment Link reference preserves visitor and session attribution');
+
+  const returnSite = await site();
+  const returnV = await visitor(returnSite);
+  const returnIntent = objectId('pi');
+  const returnCheckout = checkout(returnIntent, null, {}, { id: objectId('cs_test'), customer_details: null });
+  await call('/api/event', 'POST', { w: returnSite.id, t: 'pageview', u: `https://${returnSite.domain}/thanks?session_id=${returnCheckout.id}`, vid: returnV.vid, sid: returnV.sid });
+  await send(returnSite, 'payment_intent.succeeded', pi(returnIntent, null));
+  await send(returnSite, 'checkout.session.completed', returnCheckout);
+  assert.equal((await customers(returnSite))[0].visitor_id, returnV.vid);
+  check('upstream Checkout return-page claim reconciles when Checkout arrives after the payment');
+
+  const afterSite = await site();
+  const afterV = await visitor(afterSite);
+  const afterIntent = objectId('pi');
+  const afterCheckout = checkout(afterIntent, null, {}, { id: objectId('cs_test'), customer_details: null });
+  await send(afterSite, 'checkout.session.completed', afterCheckout);
+  await send(afterSite, 'payment_intent.succeeded', pi(afterIntent, null));
+  await send(afterSite, 'refund.created', { ...refund, id: objectId('re'), payment_intent: afterIntent, status: 'succeeded' });
+  await call('/api/event', 'POST', { w: afterSite.id, t: 'pageview', u: `https://${afterSite.domain}/thanks?session_id=${afterCheckout.id}`, vid: afterV.vid, sid: afterV.sid });
+  assert.equal((await customers(afterSite))[0].visitor_id, afterV.vid);
+  assert.equal((await profile(afterSite, afterV)).payments.filter(p => p.kind === 'refund').length, 1);
+  check('return page arriving after payment and refund links both to the original visitor');
+
   const isolated = await site();
   const isolatedV = await visitor(isolated);
   await send(isolated, 'payment_intent.succeeded', pi(intent, customer, isolatedV.metadata));

@@ -11,6 +11,23 @@ Cloudflare's free plan.
 <table>
   <tr>
     <td align="center" width="33%">
+      <a href="https://snitchfeed.com/?utm_source=minilytics&utm_medium=sponsorship&utm_campaign=oss-sponsor&utm_content=github-readme"><img src="docs/sponsors/snitchfeed.png" width="64" height="64" alt="SnitchFeed"></a><br>
+      <a href="https://snitchfeed.com/?utm_source=minilytics&utm_medium=sponsorship&utm_campaign=oss-sponsor&utm_content=github-readme"><b>SnitchFeed</b></a><br>
+      <sub>Agentic social listening for GTM: X, LinkedIn, Reddit &amp; more</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="https://www.opensourcealternatives.to/?ref=minilytics-github"><img src="docs/sponsors/opensourcealternatives.png" width="64" height="64" alt="Open Source Alternatives"></a><br>
+      <a href="https://www.opensourcealternatives.to/?ref=minilytics-github"><b>Open Source Alternatives</b></a><br>
+      <sub>Find Best Open Source Alternatives to Paid Software</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="https://github.com/twf-nikhila/Awesome-Black-Friday-Cyber-Monday-deals"><img src="docs/sponsors/black-friday-deals.png" width="64" height="64" alt="Awesome Black Friday Deals"></a><br>
+      <a href="https://github.com/twf-nikhila/Awesome-Black-Friday-Cyber-Monday-deals"><b>Awesome Black Friday Deals</b></a><br>
+      <sub>Black Friday &amp; Cyber Monday deals for devs &amp; indie makers</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
       <a href="https://diskmate.app/?ref=minilytics-github"><img src="docs/sponsors/diskmate.svg" width="64" height="64" alt="DiskMate"></a><br>
       <a href="https://diskmate.app/?ref=minilytics-github"><b>DiskMate</b></a><br>
       <sub>Disk space analyzer &amp; cleaner for Mac</sub>
@@ -41,6 +58,8 @@ Cloudflare's free plan.
 - **Where they are and what they use**: country, region, city, browser, OS, device
 - **What they did**: pages, entry pages, exit links (outbound clicks), button clicks and custom goals, funnels
 - **Who paid**: a Journey list of every customer with their source, amount, time to convert, and a full visitor timeline (visit → pages → clicks → payment)
+- **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
+- Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
 - Multiple websites, one login
 
@@ -115,6 +134,34 @@ npm run deploy
 
 At 5–10k visitors a month you'll use a few percent of this. If you outgrow it, Cloudflare's Workers Paid plan is $5/month.
 
+## Run it as a hosted SaaS (optional)
+
+By default Minilytics is single-user with a password. Set the Google values below and it becomes a hosted product:
+a landing page with pricing, **Sign in with Google**, a paid plan through Dodo Payments, and every customer sees only
+their own sites. Tracking stops (quietly) for sites whose owner's plan has ended.
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_ID        # Google Cloud → Credentials → OAuth client (Web)
+npx wrangler secret put GOOGLE_CLIENT_SECRET    # redirect URI: https://YOUR-DOMAIN/api/auth/google/callback
+npx wrangler secret put ADMIN_EMAILS            # your Google email(s): free, and you keep the existing sites
+npx wrangler secret put PLAN_CHECKOUT_URL       # Dodo payment link for the plan
+npx wrangler secret put PLAN_PRODUCT_ID         # that product's id (pdt_...)
+npx wrangler secret put BILLING_WEBHOOK_SECRET  # Dodo webhook → https://YOUR-DOMAIN/api/billing/webhook
+npx wrangler secret put PLAN_PRICE              # e.g. $29
+npx wrangler secret put PLAN_INTERVAL           # lifetime | month | year
+npx wrangler secret put PLAN_SPOTS              # e.g. 5 ("3 of 5 spots left"); optional
+npx wrangler secret put PLAN_NEXT_PRICE         # e.g. $49 ("…, then $49"); optional
+npx wrangler secret put PLAN_TIERS              # optional: "$29:5, $49:pdt_b:5, $100" steps the price up as spots sell
+                                                # (one Dodo product per price; no pdt_ = sold out or only announced).
+                                                # Replaces PRICE/SPOTS/NEXT_PRICE; sold-out prices show as "5 sold at $29"
+npx wrangler secret put SUPPORT_EMAIL           # shown on pricing, billing and legal pages
+npm run deploy
+```
+
+Subscribe the billing webhook to `payment.succeeded`, `subscription.*` and `refund.succeeded`. A one-time product
+(`PLAN_INTERVAL=lifetime`) gives lifetime access; a subscription gives access until it expires or is refunded.
+The Terms, Privacy and Refund pages (`/terms`, `/privacy`, `/refund`) are plain-language starting points: review them.
+
 ## Install on a website
 
 ```html
@@ -140,7 +187,11 @@ https://yoursite.com/?ref=launch-tweet            (short version)
 For SEO, Google never shares the search keyword, but **Entry page** with the **Google** referrer tells you which
 article people found you through.
 
-## Revenue attribution with Dodo Payments
+## Revenue attribution
+
+Pick your provider in site settings → **Connect payments**.
+
+### Dodo Payments
 
 1. In Dodo → Developer → Webhooks, add `https://YOUR-HOST/api/webhooks/dodo/SITE_ID` and subscribe to
    `payment.succeeded` and `refund.succeeded`. Paste the signing secret (`whsec_…`) into the site settings.
@@ -161,15 +212,17 @@ Using Dodo **payment links**? The script adds `metadata_ml_visitor_id` / `metada
    script. Dodo adds `?payment_id=…` to it, and Minilytics uses that to link the payment to the exact visitor even when
    metadata doesn't come through.
 
-**How credit is given:** a payment goes to the paying visitor's last visit that came from a real source (last non-direct
+### How credit is given
+
+A payment goes to the paying visitor's last visit that came from a real source (last non-direct
 touch). So "clicked a tweet, came back directly 17 days later and paid" is credited to the tweet. If metadata is
-missing, Minilytics tries, in order: the return page (`?payment_id=`), an earlier payment by the same customer
-(renewals), an email you `identify()`'d, and finally checkout timing (used only when exactly one visitor clicked a Dodo
-checkout link in the 3 hours before the payment). The Journey tab shows how each payment was matched, and **Try
+missing, Minilytics tries, in order: the return page (`?payment_id=` / `?session_id=`), an earlier payment by the same customer
+(renewals), an email you `identify()`'d, and finally checkout timing (used only when exactly one visitor clicked a Dodo or
+Stripe checkout link in the 3 hours before the payment). The Journey tab shows how each payment was matched, and **Try
 matching again** re-runs this for older payments.
 Refunds are subtracted from revenue.
 
-## Revenue attribution with Stripe
+### Stripe
 
 In a site's Settings, use **Connect Stripe**. Add the displayed endpoint
 (`https://YOUR-HOST/api/webhooks/stripe/SITE_ID`) in Stripe **Workbench → Webhooks**, choose **snapshot events**
@@ -185,15 +238,16 @@ Save that endpoint's `whsec_…` signing secret in the site's Stripe settings. M
 key or SDK. Keep your application's existing fulfillment/subscription webhooks unchanged. Use separate sites and
 endpoint secrets for sandbox and live traffic so test payments do not contaminate production analytics.
 
-### Optional per-site revenue filter
+#### Optional per-site revenue filter
 
-By default, **all account payments delivered to a site's endpoint are eligible**; the site's domain, visitor IDs,
-customer history and Checkout links do not isolate products sharing a Stripe account. In Settings → Connect Stripe,
-set the optional metadata key and value, then save. The key must be nonempty, at most 40 characters and contain no
+By default, account payments delivered to a site's endpoint are eligible unless their `ml_site_id` metadata tags
+a different site. The site's domain, visitor IDs, customer history and Checkout links do not isolate untagged
+products sharing a Stripe account. In Settings → Stripe, set the optional metadata key and value, then save.
+The key must be nonempty, at most 40 characters and contain no
 `[` or `]`; the value must be nonempty and at most 500 characters. Matching is exact and case-sensitive, including
 whitespace. Clear **both** fields and save to restore all-account behavior. The API fields are
 `stripe_metadata_key` and `stripe_metadata_value`: both strings enable filtering, both `null` disable it; partial
-pairs are rejected. Apply migration `0005_stripe_scope.sql` before deploying this feature.
+pairs are rejected. Apply migrations through `0009_stripe_scope.sql` before deploying this feature.
 
 With filtering enabled:
 
@@ -215,7 +269,7 @@ or AI setup prompt; they include the saved marker as a safely escaped dynamic ke
 secrets. Use a non-secret marker chosen by your application and assigned on the server, not arbitrary browser input.
 This filter is analytics scoping, not authorization or a substitute for Stripe webhook signature verification.
 
-### Checkout metadata
+#### Checkout metadata
 
 Pass the tracking cookies in Checkout metadata **and** on the underlying PaymentIntent:
 
@@ -224,13 +278,14 @@ const jar = await cookies(); // next/headers; use your existing server-side Stri
 const attribution = {
   ml_visitor_id: jar.get('ml_vid')?.value ?? '',
   ml_session_id: jar.get('ml_sid')?.value ?? '',
+  ml_site_id: 'SITE_ID',
   // If filtering is enabled, also add your configured marker here:
   // [configuredMetadataKey]: configuredMetadataValue,
 };
 await stripe.checkout.sessions.create({
   mode: 'payment',
   line_items: [{ price: 'price_xxx', quantity: 1 }],
-  success_url: 'https://YOUR-SITE/thanks',
+  success_url: 'https://YOUR-SITE/thanks?session_id={CHECKOUT_SESSION_ID}',
   metadata: attribution,
   payment_intent_data: { metadata: attribution },
 });
@@ -244,10 +299,10 @@ PaymentIntent before it succeeds; the subscription example alone is not enough. 
 attribution after the PaymentIntent passes the filter. Direct PaymentIntent integrations should put both the IDs
 and any configured marker in the PaymentIntent's own metadata.
 
-For **Stripe Payment Links**, append `client_reference_id=<ml_visitor_id>` using
-`window.minilytics?.attribution?.()` once the tracker is ready. Preserve existing query parameters. The tracking
-script does not rewrite Stripe links automatically. If your application already uses `client_reference_id`, use
-server-created Checkout metadata instead of overwriting it. Missing tracking cookies cannot provide exact attribution.
+For **Stripe Payment Links**, the tracker adds `client_reference_id=ml_<visitor_id>__<session_id>` when a link is clicked,
+unless your application already set its own reference. For JavaScript redirects, append it using
+`window.minilytics?.attribution?.()` once the tracker is ready, preserving existing parameters.
+If your application already uses `client_reference_id`, use server-created Checkout metadata instead.
 This visitor fallback does not bypass a configured revenue filter: the session and PaymentIntent still need the marker.
 
 **Accounting:** only successful, positive PaymentIntent `amount_received` adds revenue. Checkout events add context,
@@ -267,7 +322,24 @@ Webhook signatures use the exact raw payload, HMAC-SHA256 and a five-minute time
 the saved Stripe secret takes effect immediately. If Cloudflare blocks webhook deliveries, inspect its Security
 Events and exempt only the webhook path from the relevant challenge rule; keep signature verification enabled.
 
-## Other payment providers
+#### Upgrading an existing Stripe installation
+
+Apply the upstream migrations through `0007_payment_product.sql`, then `0008_stripe_attribution.sql` and
+`0009_stripe_scope.sql`. These extend the upstream schema without adding the Stripe secret column twice.
+Update the Stripe endpoint's subscribed events to the five listed above: the old `invoice.paid` and
+`charge.refunded` events are no longer accounting inputs.
+
+Existing one-time payments stored under raw `pi_…` IDs are migrated to site-scoped IDs, preserving their
+attribution and preventing duplicate recording when the same PaymentIntent is delivered again. Older `in_…` /
+`cs_…` payments and cumulative `ch_…:refund` rows remain historical data: the stored schema does not identify
+their corresponding PaymentIntent or individual refund IDs. Do not replay those historical transactions into
+the new endpoint without reconciling them first. A new site provides a clean accounting boundary if needed.
+
+Installations of the earlier, unmerged PR migrations (`0004_stripe.sql` / `0005_stripe_scope.sql`) are not the
+upstream schema. Do not blindly apply this renamed migration sequence to them: back up and reconcile their
+already-added columns/tables and migration ledger first. No production database is changed by merging this PR.
+
+### Other providers (API)
 
 Other providers can use the generic API (the key is in site settings):
 
@@ -299,6 +371,8 @@ npm run seed                          # optional: 30 days of demo data ("ShipKit
 npm test                              # unit tests
 npm run smoke                         # end-to-end test against the running dev server
 npm run smoke:stripe                  # Stripe signed-event / real Worker+D1 regression flow
+npm run smoke:stripe-scope            # exact per-site Stripe metadata isolation
+node scripts/smoke-hosted.mjs         # hosted-mode test (see the comment at the top for how to start it)
 ```
 
 ## How it's built
