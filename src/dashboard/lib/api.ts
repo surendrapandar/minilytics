@@ -68,6 +68,12 @@ export interface Overview {
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
 }
 
+export interface SiteTrends {
+  period: string;
+  buckets: string[];
+  sites: Record<string, { visitors: number; pageviews: number; series: number[] }>;
+}
+
 export interface BreakdownRow {
   label: string | null;
   visitors: number;
