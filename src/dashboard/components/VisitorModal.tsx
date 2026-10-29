@@ -36,7 +36,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
           <div className="flex items-center gap-4">
             <Avatar id={visitorId!} size={64} />
             <div className="min-w-0">
-              <div className="truncate text-xl font-semibold">{displayName(visitorId!, p.visitor?.name, p.visitor?.email)}</div>
+              <div className="break-words text-xl font-semibold [overflow-wrap:anywhere]">{displayName(visitorId!, p.visitor?.name, p.visitor?.email)}</div>
               {p.visitor?.email && p.visitor.name && <div className="text-sm text-stone-500">{p.visitor.email}</div>}
               {last && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-stone-500">
@@ -80,7 +80,11 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                     <span className="flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-0.5">
                       <SourceIcon source={s.source} domain={s.referrer_domain} size={14} /> {s.source}
                     </span>
-                    {s.referrer && <span className="max-w-full truncate text-stone-500 sm:max-w-[260px]">{s.referrer}</span>}
+                    {s.referrer && (
+                      <span className="max-w-full break-all text-stone-500 sm:max-w-[260px] sm:truncate" title={s.referrer}>
+                        {s.referrer}
+                      </span>
+                    )}
                     {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">campaign: {s.utm_campaign}</span>}
                     {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">ref: {s.ref}</span>}
                     <span className="text-stone-400">{fmtDuration(s.duration)}</span>

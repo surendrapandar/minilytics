@@ -46,7 +46,7 @@ function Goals({ totalVisitors }: { totalVisitors: number }) {
       </div>
     );
   return (
-    <table className="w-full text-sm">
+    <table className="w-full table-fixed text-sm sm:table-auto">
       <thead className="hidden sm:table-header-group">
         <tr className="text-left text-stone-500">
           <th className="px-3 pb-2 font-medium">Goal</th>
@@ -250,7 +250,9 @@ function VisitorCell({ id, name, email, country, city, device, os, browser, badg
       <Avatar id={id} size={44} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium">{displayName(id, name, email)}</span>
+          <span className="break-words font-medium [overflow-wrap:anywhere] sm:truncate" title={displayName(id, name, email)}>
+            {displayName(id, name, email)}
+          </span>
           {badge}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-stone-500">
@@ -386,7 +388,7 @@ function Journey({ search }: { search: string }) {
           )}
         </div>
       )}
-      <table className="w-full text-[15px] sm:min-w-[760px]">
+      <table className="w-full table-fixed text-[15px] sm:min-w-[760px] sm:table-auto">
         <thead className="hidden sm:table-header-group">
           <tr className="text-left text-sm text-stone-500">
             <th className="px-3 pb-3 font-medium">Visitor</th>
@@ -472,7 +474,7 @@ function Users({ search }: { search: string }) {
   if (!data.length) return <div className="p-8 text-center text-sm text-stone-500">No visitors in this period.</div>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[15px] sm:min-w-[760px]">
+      <table className="w-full table-fixed text-[15px] sm:min-w-[760px] sm:table-auto">
         <thead className="hidden sm:table-header-group">
           <tr className="text-left text-sm text-stone-500">
             <th className="px-3 pb-3 font-medium">Visitor</th>

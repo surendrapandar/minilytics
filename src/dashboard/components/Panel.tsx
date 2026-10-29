@@ -149,7 +149,7 @@ function Bars({
             </button>
             <button
               type="button"
-              className="relative mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-stone-300 hover:bg-stone-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
+              className="relative mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
               onClick={() => onDetails(r)}
               aria-label={`Details for ${r.label ?? '(none)'}`}
             >
@@ -243,7 +243,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
               tabIndex={tab.filter ? 0 : undefined}
             >
               <div className="flex min-w-0 items-center gap-2 text-[15px] font-medium">{renderLabel(active, r, true)}</div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+              <dl className="mt-2 space-y-1.5 text-sm">
                 <Detail label="Visitors" value={fmtNumber(r.visitors)} />
                 <Detail label="Revenue" value={money(r.revenue)} />
                 <Detail label="Customers" value={fmtNumber(r.customers)} />
