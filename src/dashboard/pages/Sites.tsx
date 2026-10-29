@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
@@ -7,6 +7,7 @@ import { TrendSparkline } from '../components/TrendSparkline';
 import { api, type Site, type SiteTrends } from '../lib/api';
 import { fmtNumber } from '../lib/format';
 import { useApi } from '../lib/useApi';
+import { DEFAULT_TREND_METRICS, MAX_TREND_METRICS, TREND_METRICS, toggleTrendMetric, type TrendMetric } from '../lib/trendMetrics';
 
 const TREND_PERIODS = [
   { value: '7d', label: 'Last 7 days' },
@@ -16,12 +17,6 @@ const TREND_PERIODS = [
 ] as const;
 
 type TrendPeriod = (typeof TREND_PERIODS)[number]['value'];
-type TrendMetric = 'visitors' | 'pageviews' | 'sessions';
-const TREND_METRICS: { value: TrendMetric; label: string }[] = [
-  { value: 'visitors', label: 'Visitors' },
-  { value: 'pageviews', label: 'Pageviews' },
-  { value: 'sessions', label: 'Sessions' },
-];
 
 export function Sites() {
   const { me } = useMe();
@@ -29,7 +24,27 @@ export function Sites() {
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = useState<TrendPeriod>('7d');
   const [retryKey, setRetryKey] = useState(0);
-  const [metrics, setMetrics] = useState<Record<string, TrendMetric>>({});
+  const [selectedMetrics, setSelectedMetrics] = useState<TrendMetric[]>(DEFAULT_TREND_METRICS);
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const metricsMenuRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss the shared metric menu on an outside click or Escape.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !metricsMenuRef.current?.contains(event.target)) {
+        setMetricsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMetricsOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   // A single period control drives one shared API request for all site cards.
   const { data: trends, loading, error } = useApi<SiteTrends>(`/api/sites/trends?period=${period}`, retryKey);
@@ -70,16 +85,60 @@ export function Sites() {
           <h1 className="text-2xl font-semibold">Your websites</h1>
           <p className="mt-1 text-sm text-stone-500">Visitor trends across all your sites</p>
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="site-trend-period" className="text-sm text-stone-500">Period</label>
-          <select
-            id="site-trend-period"
-            className="input w-auto min-w-[160px] text-sm"
-            value={period}
-            onChange={(event) => setPeriod(event.target.value as TrendPeriod)}
-          >
-            {TREND_PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+        <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto">
+          <div className="min-w-[130px] flex-1 sm:w-[160px] sm:flex-none">
+            <label htmlFor="site-trend-period" className="mb-1 block text-xs font-medium text-stone-500">Period</label>
+            <select
+              id="site-trend-period"
+              className="input w-full text-sm"
+              value={period}
+              onChange={(event) => setPeriod(event.target.value as TrendPeriod)}
+            >
+              {TREND_PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+          <div className="relative min-w-[174px] flex-1 sm:w-[220px] sm:flex-none" ref={metricsMenuRef}>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span id="site-trend-metrics-label" className="text-xs font-medium text-stone-500">Metrics</span>
+              <span className="text-[11px] text-stone-400">Up to 2</span>
+            </div>
+            <button
+              type="button"
+              id="site-trend-metrics"
+              aria-labelledby="site-trend-metrics-label site-trend-metrics"
+              aria-haspopup="true"
+              aria-expanded={metricsOpen}
+              aria-controls="site-trend-metrics-menu"
+              className="input flex w-full items-center justify-between gap-2 text-left text-sm"
+              onClick={() => setMetricsOpen((open) => !open)}
+            >
+              <span className="min-w-0 truncate">{selectedMetrics.map((metric) => TREND_METRICS.find((item) => item.value === metric)?.label).join(' + ')}</span>
+              <span className="shrink-0 text-stone-400" aria-hidden="true">⌄</span>
+            </button>
+            {metricsOpen && (
+              <div id="site-trend-metrics-menu" role="group" aria-label="Select up to two shared metrics" className="absolute right-0 top-full z-30 mt-2 w-full min-w-[218px] rounded-xl border border-stone-200 bg-white p-2 shadow-lg">
+                <div className="px-2 pb-2 text-xs text-stone-500">Applies to every website</div>
+                {TREND_METRICS.map((item) => {
+                  const checked = selectedMetrics.includes(item.value);
+                  const disabled = !checked && selectedMetrics.length >= MAX_TREND_METRICS;
+                  return (
+                    <label key={item.value} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-stone-50 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => setSelectedMetrics((current) => toggleTrendMetric(current, item.value))}
+                        className="h-4 w-4 accent-stone-800"
+                      />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span>{item.label}</span>
+                    </label>
+                  );
+                })}
+                <p className="border-t border-stone-100 px-2 pt-2 text-xs text-stone-400">Choose 1 or 2. Uncheck one to change.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -94,7 +153,6 @@ export function Sites() {
         {sites?.map((s) => {
           const trend = trends?.period === period ? trends.sites[s.id] : undefined;
           const ready = !loading && !error && trends?.period === period;
-          const metric = metrics[s.id] ?? 'visitors';
           return (
             <div key={s.id} className="card p-5 text-left">
               <div className="flex items-center gap-3">
@@ -104,33 +162,48 @@ export function Sites() {
                   <div className="truncate text-sm text-stone-500">{s.domain}</div>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-2xl font-semibold">{ready ? fmtNumber(trend?.visitors ?? 0) : '—'}</div>
-                  <div className="text-xs text-stone-500">visitors in period</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold">{ready ? fmtNumber(trend?.pageviews ?? 0) : '—'}</div>
-                  <div className="text-xs text-stone-500">pageviews in period</div>
-                </div>
+              <div className={`mt-5 grid gap-3 ${selectedMetrics.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {selectedMetrics.map((metric) => {
+                  const meta = TREND_METRICS.find((item) => item.value === metric)!;
+                  return (
+                    <div key={metric} className="min-w-0">
+                      <div className="truncate text-2xl font-semibold">{ready ? fmtNumber(trend?.[metric] ?? 0) : '—'}</div>
+                      <div className="text-xs text-stone-500">{meta.label.toLowerCase()} in period</div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="mt-4 flex items-center justify-between gap-2">
-                <label htmlFor={`metric-${s.id}`} className="text-xs text-stone-500">Trend</label>
-                <select
-                  id={`metric-${s.id}`}
-                  aria-label={`${s.name} trend metric`}
-                  className="input w-auto min-w-0 max-w-[70%] py-1 text-xs"
-                  value={metric}
-                  onChange={(event) => setMetrics((previous) => ({ ...previous, [s.id]: event.target.value as TrendMetric }))}
-                >
-                  {TREND_METRICS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-stone-500">Trend</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {selectedMetrics.map((metric) => {
+                    const meta = TREND_METRICS.find((item) => item.value === metric)!;
+                    return (
+                      <span key={metric} className="flex items-center gap-1.5 text-xs text-stone-500">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: meta.color }} />
+                        {meta.label}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
               <div className="mt-2" aria-busy={loading}>
                 {!ready ? (
                   <div className="h-20 animate-pulse rounded-xl bg-stone-100" />
                 ) : (
-                  <TrendSparkline values={(trend?.series ?? []).map((point) => point[metric])} buckets={trends?.buckets ?? []} name={s.name} metric={metric} />
+                  <TrendSparkline
+                    name={s.name}
+                    buckets={trends?.buckets ?? []}
+                    series={selectedMetrics.map((metric) => {
+                      const meta = TREND_METRICS.find((item) => item.value === metric)!;
+                      return {
+                        key: metric,
+                        label: meta.label,
+                        color: meta.color,
+                        values: (trend?.series ?? []).map((point) => point[metric]),
+                      };
+                    })}
+                  />
                 )}
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
@@ -147,7 +220,7 @@ export function Sites() {
           <div className="card col-span-full p-10 text-center text-stone-500">No websites yet. Add your first one to get a tracking snippet.</div>
         )}
       </div>
-      {sites?.length ? <p className="mt-4 text-xs text-stone-400">All trend periods use UTC dates for consistent cross-site comparisons.</p> : null}
+      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. The same period and metrics apply to all website cards.</p> : null}
       <AddSite open={adding} onClose={() => setAdding(false)} />
     </div>
   );
