@@ -54,12 +54,17 @@ export async function siteTrends(c: Context<AppEnv>) {
 
   const [trendRows, totals] = await c.env.DB.batch([
     c.env.DB.prepare(
-      `SELECT ss.site_id, ${bucket} AS bucket, COUNT(DISTINCT ss.visitor_id) AS visitors, COUNT(*) AS sessions, COALESCE(SUM(ss.pageviews), 0) AS pageviews, COUNT(*) AS sessions
+      `SELECT ss.site_id, ${bucket} AS bucket,
+              COUNT(DISTINCT ss.visitor_id) AS visitors,
+              COUNT(*) AS sessions,
+              COALESCE(SUM(ss.pageviews), 0) AS pageviews
        FROM sessions ss JOIN sites s ON s.id = ss.site_id
        WHERE ${where} GROUP BY ss.site_id, bucket ORDER BY bucket`,
     ).bind(...params),
     c.env.DB.prepare(
-      `SELECT ss.site_id, COUNT(DISTINCT ss.visitor_id) AS visitors,
+      `SELECT ss.site_id,
+              COUNT(DISTINCT ss.visitor_id) AS visitors,
+              COUNT(*) AS sessions,
               COALESCE(SUM(ss.pageviews), 0) AS pageviews
        FROM sessions ss JOIN sites s ON s.id = ss.site_id
        WHERE ${where} GROUP BY ss.site_id`,
