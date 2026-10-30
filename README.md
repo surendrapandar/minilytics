@@ -273,10 +273,14 @@ npm run build && npm run dev:api      # http://localhost:8787
 npm run dev:web                       # optional: hot-reloading dashboard on http://localhost:5173
 
 npm run seed                          # optional: 30 days of demo data ("ShipKit" site)
+npm run seed:bots                     # optional: synthetic crawler data (run after seed)
 npm test                              # unit tests
 npm run smoke                         # end-to-end test against the running dev server
+npm run smoke:bots                    # bot collection, filtering and isolation tests
 node scripts/smoke-hosted.mjs         # hosted-mode test (see the comment at the top for how to start it)
 ```
+
+See the [bot analytics guide](docs/bot-analytics.md) for live server-side tracking setup and local testing details.
 
 ## How it's built
 

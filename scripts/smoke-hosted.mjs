@@ -72,6 +72,11 @@ assert((await call('/api/public/plan')).body.spotsLeft === spotsBefore - 1, 'one
 r = await call('/api/sites', { cookie: A, method: 'POST', body: JSON.stringify({ domain: 'alice-site.com' }) });
 assert(r.status === 200, 'paid user adds a site');
 const aliceSite = r.body.id;
+const aliceBotKey = r.body.api_key;
+const botReport = () => fetch(BASE + '/api/v1/bots', { method: 'POST', headers: { authorization: `Bearer ${aliceBotKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://alice-site.com/docs', user_agent: 'GPTBot/1.0' }) });
+assert((await botReport()).status === 202, 'bot report accepted while paid');
+assert((await call(`/api/sites/${aliceSite}/bots?period=today`, { cookie: A })).body.total.requests === 1, 'paid bot request recorded');
+assert((await call(`/api/sites/${aliceSite}/bots`, { cookie: B })).status === 404, "Bob cannot read Alice's bot analytics");
 
 // Bob pays (matched by email, no metadata) and must not see Alice's site
 await billing({ type: 'subscription.active', data: { product_id: 'pdt_plan', status: 'active', subscription_id: 'sub_b', next_billing_date: new Date(now + 30 * 86_400_000).toISOString(), customer: { email: `bob-${run}@example.com` }, metadata: {} } });
@@ -96,6 +101,9 @@ assert((await call('/api/auth/me', { cookie: A })).body.user.paid === false, 'ex
 await ev({});
 r = await call(`/api/sites/${aliceSite}/overview?period=today`, { cookie: A });
 assert(r.status === 200 && r.body.current.visitors === 1, 'events ignored after the plan ends (data still viewable)');
+
+await botReport();
+assert((await call(`/api/sites/${aliceSite}/bots?period=today`, { cookie: A })).body.total.requests === 1, 'bot reports ignored after the plan ends');
 
 // Refund of Bob's plan payment
 await billing(payment(bob, 'pdt_plan', 'pay_b_' + run));

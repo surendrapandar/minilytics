@@ -181,6 +181,22 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
 
       <Revenue site={site} origin={origin} form={form} set={set} save={save} onKeyRotated={(api_key) => setSite({ ...site, api_key })} />
 
+      <Section title="Bot analytics" desc="Report crawler requests from your website’s backend. Browser tracking alone cannot observe most crawlers.">
+        <p className="mb-3 text-sm text-stone-500">Keep the API key on your server. Send the original request URL and user agent once per incoming request. Human user agents are ignored. Only the hostname and path are stored; query strings, IPs and raw user agents are not stored.</p>
+        <Code>{`await fetch('${origin}/api/v1/bots', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_SITE_API_KEY',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    url: request.url,
+    user_agent: request.headers.get('user-agent') || '',
+  }),
+});`}</Code>
+        <p className="mt-3 text-sm text-stone-500">Use the site API key under Connect payments → Other / API above. Run this in your backend’s supported background-task mechanism so reporting does not delay page responses. Bot identities are inferred from user agents and can be spoofed.</p>
+      </Section>
+
       <LinkBuilder domain={site.domain} />
 
       <Section title="General">
