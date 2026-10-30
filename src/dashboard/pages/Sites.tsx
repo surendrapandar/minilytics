@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { TrendSparkline } from '../components/TrendSparkline';
 import { api, type Site, type SiteTrends } from '../lib/api';
 import { fmtNumber } from '../lib/format';
+import { usePref } from '../lib/prefs';
 import { useApi } from '../lib/useApi';
 import { DEFAULT_TREND_METRICS, MAX_TREND_METRICS, TREND_METRICS, toggleTrendMetric, type TrendMetric } from '../lib/trendMetrics';
 
@@ -30,7 +31,7 @@ export function Sites() {
   const { me } = useMe();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [adding, setAdding] = useState(false);
-  const [period, setPeriod] = useState<TrendPeriod>('7d');
+  const [period, setPeriod] = usePref<TrendPeriod>('ml_sites_period', '7d');
   const [retryKey, setRetryKey] = useState(0);
   const [selectedMetrics, setSelectedMetrics] = useState<TrendMetric[]>(DEFAULT_TREND_METRICS);
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -56,6 +57,12 @@ export function Sites() {
 
   // A single period control drives one shared API request for all site cards.
   const { data: trends, loading, error } = useApi<SiteTrends>(`/api/sites/trends?period=${period}`, retryKey);
+
+  // Keep the numbers fresh while the page sits open.
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === 'visible' && setRetryKey((k) => k + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     api<Site[]>('/api/sites').then((s) => {
