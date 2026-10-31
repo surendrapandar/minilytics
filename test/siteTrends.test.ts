@@ -30,14 +30,38 @@ describe('site overview trends', () => {
     ]);
   });
 
-  it('supports today and yesterday with hourly buckets', () => {
+  it('uses exclusive end boundaries for exact-hour queries', () => {
     const today = siteTrendRange('today', now);
     const yesterday = siteTrendRange('yesterday', now);
     expect(today.granularity).toBe('hour');
-    expect(bucketLabels(today, 0)).toHaveLength(13);
-    expect(bucketLabels(yesterday, 0)).toHaveLength(24);
+    expect(today.from).toBe(Date.UTC(2026, 9, 29));
+    expect(today.to).toBe(now);
+    // At exactly 12:00 the range [00:00, 12:00) contains 12 hours.
+    expect(bucketLabels(today, 0)).toHaveLength(12);
     expect(bucketLabels(today, 0)[0]).toBe('2026-10-29T00:00');
+    expect(bucketLabels(today, 0).at(-1)).toBe('2026-10-29T11:00');
+    expect(bucketLabels(yesterday, 0)).toHaveLength(24);
     expect(bucketLabels(yesterday, 0)[0]).toBe('2026-10-28T00:00');
+    expect(bucketLabels(yesterday, 0).at(-1)).toBe('2026-10-28T23:00');
+  });
+
+  it('includes the current partial hour after the hour begins', () => {
+    const at = now + 15 * 60_000;
+    const today = siteTrendRange('today', at);
+    expect(bucketLabels(today, 0)).toHaveLength(13);
+    expect(bucketLabels(today, 0).at(-1)).toBe('2026-10-29T12:00');
+    const prior = previousTrendRange(today, 'today');
+    expect(prior.from).toBe(Date.UTC(2026, 9, 28));
+    expect(prior.to).toBe(Date.UTC(2026, 9, 28, 12, 15));
+    expect(bucketLabels(prior, 0)).toHaveLength(13);
+    expect(bucketLabels(prior, 0).at(-1)).toBe('2026-10-28T12:00');
+  });
+
+  it('has no elapsed today hour exactly at UTC midnight', () => {
+    const midnight = Date.UTC(2026, 9, 29);
+    const today = siteTrendRange('today', midnight);
+    expect(bucketLabels(today, 0)).toHaveLength(0);
+    expect(bucketLabels(siteTrendRange('yesterday', midnight), 0)).toHaveLength(24);
   });
 
   it('supports one-day and arbitrary inclusive custom ranges', () => {
@@ -52,8 +76,11 @@ describe('site overview trends', () => {
   it('aligns previous period to the same elapsed hours', () => {
     const today = siteTrendRange('today', now);
     const prior = previousTrendRange(today, 'today');
-    expect(bucketLabels(prior, 0)).toHaveLength(13);
+    expect(prior.from).toBe(Date.UTC(2026, 9, 28));
+    expect(prior.to).toBe(Date.UTC(2026, 9, 28, 12));
+    expect(bucketLabels(prior, 0)).toHaveLength(12);
     expect(bucketLabels(prior, 0)[0]).toBe('2026-10-28T00:00');
+    expect(bucketLabels(prior, 0).at(-1)).toBe('2026-10-28T11:00');
     const older = previousTrendRange(siteTrendRange('7d', now), '7d');
     expect(bucketLabels(older, 0)).toHaveLength(7);
     const yearAgo = previousTrendRange(siteTrendRange('12m', now), '12m');
