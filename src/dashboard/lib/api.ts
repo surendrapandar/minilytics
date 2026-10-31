@@ -68,6 +68,19 @@ export interface Overview {
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
 }
 
+export interface SiteTrends {
+  period: string;
+  range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
+  buckets: string[];
+  sites: Record<string, { visitors: number; pageviews: number; sessions: number; series: { visitors: number; pageviews: number; sessions: number }[] }>;
+  comparison: {
+    mode: 'previous' | 'custom';
+    range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
+    buckets: string[];
+    sites: SiteTrends['sites'];
+  } | null;
+}
+
 export interface BreakdownRow {
   label: string | null;
   visitors: number;

@@ -288,11 +288,12 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
       {/* Summary card */}
       <div className={`absolute left-3 top-3 w-[min(360px,calc(100%-24px))] rounded-2xl border p-4 shadow-xl backdrop-blur ${panel}`}>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 font-semibold">
-            <Favicon domain={site.domain} size={18} /> {site.name}
-            <span className={`text-xs font-medium uppercase tracking-wider ${muted}`}>· Real-time</span>
+          <div className="flex min-w-0 items-center gap-2 font-semibold">
+            <Favicon domain={site.domain} size={18} />
+            <span className="truncate" title={site.name}>{site.name}</span>
+            <span className={`hidden whitespace-nowrap text-xs font-medium uppercase tracking-wider sm:inline ${muted}`}>· Real-time</span>
           </div>
-          <div className="flex items-center">
+          <div className="flex shrink-0 items-center">
             <button
               className={btn}
               title={sound ? 'Sound on' : 'Sound off'}
@@ -355,7 +356,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
               } ${f.visitor_id && f.visitor_id === highlight ? (dark ? 'bg-white/10' : 'bg-stone-100') : ''}`}
             >
               <span className="mt-0.5 shrink-0">{f.type === 'payment' ? '💳' : f.type === 'refund' ? '↩️' : f.type === 'goal' ? '🎯' : '👁'}</span>
-              <span className="min-w-0">
+              <span className="min-w-0 break-words">
                 <span className="font-semibold">{who}</span>
                 {f.country && (
                   <span className={muted}>
@@ -365,7 +366,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
                 )}{' '}
                 {f.type === 'pageview' && (
                   <>
-                    visited <code className="font-medium">{f.label}</code>
+                    visited <code className="break-all font-medium">{f.label}</code>
                   </>
                 )}
                 {f.type === 'goal' && (

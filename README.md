@@ -61,7 +61,7 @@ Cloudflare's free plan.
 - **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
-- Multiple websites, one login
+- Multiple websites, one login; the all-websites page supports Today, Yesterday, custom UTC dates (including a single day), and optional previous-period or independently selected date comparisons with animated trends
 
 ## Deploy for free (about 10 minutes)
 

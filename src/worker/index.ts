@@ -8,6 +8,7 @@ import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { siteTrends } from './siteTrends';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -76,6 +77,9 @@ app.get('/api/billing/checkout', requireUser, checkout);
 
 app.use('/api/sites', requireUser);
 app.use('/api/sites/*', requireUser);
+
+// Register the collection endpoint before the route treating its path segment as a site ID.
+app.get('/api/sites/trends', siteTrends);
 
 const loadSite = async (c: Context<AppEnv>, next: Next) => {
   const access = siteAccessSql(c.env, c.get('user'));
