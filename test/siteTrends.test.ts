@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bucketLabels } from '../src/worker/lib/time';
-import { isSiteTrendPeriod, siteTrendRange } from '../src/worker/siteTrends';
+import { customTrendRange, isSiteTrendPeriod, previousTrendRange, siteTrendRange } from '../src/worker/siteTrends';
 
 describe('site overview trends', () => {
   const now = Date.UTC(2026, 9, 29, 12);
@@ -30,9 +30,49 @@ describe('site overview trends', () => {
     ]);
   });
 
+  it('supports today and yesterday with hourly buckets', () => {
+    const today = siteTrendRange('today', now);
+    const yesterday = siteTrendRange('yesterday', now);
+    expect(today.granularity).toBe('hour');
+    expect(bucketLabels(today, 0)).toHaveLength(13);
+    expect(bucketLabels(yesterday, 0)).toHaveLength(24);
+    expect(bucketLabels(today, 0)[0]).toBe('2026-10-29T00:00');
+    expect(bucketLabels(yesterday, 0)[0]).toBe('2026-10-28T00:00');
+  });
+
+  it('supports one-day and arbitrary inclusive custom ranges', () => {
+    const single = customTrendRange('2026-10-21', '2026-10-21', now)!;
+    expect(single.granularity).toBe('hour');
+    expect(bucketLabels(single, 0)).toHaveLength(24);
+    const extended = customTrendRange('2026-10-15', '2026-10-22', now)!;
+    expect(extended.granularity).toBe('day');
+    expect(bucketLabels(extended, 0)).toHaveLength(8);
+  });
+
+  it('aligns previous period to the same elapsed hours', () => {
+    const today = siteTrendRange('today', now);
+    const prior = previousTrendRange(today, 'today');
+    expect(bucketLabels(prior, 0)).toHaveLength(13);
+    expect(bucketLabels(prior, 0)[0]).toBe('2026-10-28T00:00');
+    const older = previousTrendRange(siteTrendRange('7d', now), '7d');
+    expect(bucketLabels(older, 0)).toHaveLength(7);
+    const yearAgo = previousTrendRange(siteTrendRange('12m', now), '12m');
+    expect(bucketLabels(yearAgo, 0)).toHaveLength(12);
+    expect(bucketLabels(yearAgo, 0)[0]).toBe('2024-11');
+  });
+
+  it('rejects invalid, future, inverted and overlong date windows', () => {
+    expect(customTrendRange('2026-02-30', '2026-03-01', now)).toBeNull();
+    expect(customTrendRange('2026-10-30', '2026-10-30', now)).toBeNull();
+    expect(customTrendRange('2026-10-25', '2026-10-24', now)).toBeNull();
+    expect(customTrendRange('2025-01-01', '2026-10-01', now)).toBeNull();
+    expect(customTrendRange('2026-10-29', '2026-10-29', now)?.granularity).toBe('hour');
+  });
+
   it('rejects invalid or dangerous period inputs', () => {
     expect(isSiteTrendPeriod('7d')).toBe(true);
-    expect(isSiteTrendPeriod('custom')).toBe(false);
+    expect(isSiteTrendPeriod('custom')).toBe(true);
+    expect(isSiteTrendPeriod('nonsense')).toBe(false);
     expect(isSiteTrendPeriod("7d'; DROP TABLE sessions; --")).toBe(false);
   });
 });

@@ -11,13 +11,38 @@ import { useApi } from '../lib/useApi';
 import { DEFAULT_TREND_METRICS, MAX_TREND_METRICS, TREND_METRICS, toggleTrendMetric, type TrendMetric } from '../lib/trendMetrics';
 
 const TREND_PERIODS = [
+  { value: 'today', label: 'Today (UTC)' },
+  { value: 'yesterday', label: 'Yesterday (UTC)' },
   { value: '7d', label: 'Last 7 days' },
   { value: '30d', label: 'Last 30 days' },
   { value: '90d', label: 'Last 90 days' },
   { value: '12m', label: 'Last 12 months' },
+  { value: 'custom', label: 'Custom range' },
 ] as const;
 
 type TrendPeriod = (typeof TREND_PERIODS)[number]['value'];
+type CompareMode = 'previous' | 'custom';
+const DAY = 86_400_000;
+const utcDate = (offset = 0) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
+
+function isValidWindow(from: string, to: string, today: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return false;
+  const start = Date.parse(from + 'T00:00:00Z');
+  const end = Date.parse(to + 'T00:00:00Z');
+  return Number.isFinite(start) && Number.isFinite(end)
+    && new Date(start).toISOString().slice(0, 10) === from
+    && new Date(end).toISOString().slice(0, 10) === to
+    && from <= to && to <= today && (end - start) / DAY < 366;
+}
+
+function ComparisonDelta({ current, previous }: { current: number; previous: number }) {
+  if (current === 0 && previous === 0) return <span className="text-stone-400">No change</span>;
+  if (previous === 0) return <span className="text-emerald-700">New</span>;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  return <span className={pct > 0 ? 'text-emerald-700' : pct < 0 ? 'text-rose-600' : 'text-stone-500'}>
+    {pct > 0 ? '+' : ''}{pct}% <span className="text-stone-400">vs {fmtNumber(previous)}</span>
+  </span>;
+}
 
 function FilterChevron({ className = '' }: { className?: string }) {
   return (
@@ -32,6 +57,12 @@ export function Sites() {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = usePref<TrendPeriod>('ml_sites_period', '7d');
+  const [customFrom, setCustomFrom] = usePref('ml_sites_from', utcDate(-6));
+  const [customTo, setCustomTo] = usePref('ml_sites_to', utcDate());
+  const [comparisonEnabled, setComparisonEnabled] = usePref('ml_sites_compare_enabled', false);
+  const [comparisonMode, setComparisonMode] = usePref<CompareMode>('ml_sites_compare_mode', 'previous');
+  const [compareFrom, setCompareFrom] = usePref('ml_sites_compare_from', utcDate(-13));
+  const [compareTo, setCompareTo] = usePref('ml_sites_compare_to', utcDate(-7));
   const [retryKey, setRetryKey] = useState(0);
   const [selectedMetrics, setSelectedMetrics] = useState<TrendMetric[]>(DEFAULT_TREND_METRICS);
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -55,8 +86,26 @@ export function Sites() {
     };
   }, []);
 
-  // A single period control drives one shared API request for all site cards.
-  const { data: trends, loading, error } = useApi<SiteTrends>(`/api/sites/trends?period=${period}`, retryKey);
+  // Both calendar windows apply to every site; invalid picks must not issue requests.
+  const todayUtc = utcDate();
+  const validPrimary = period !== 'custom' || isValidWindow(customFrom, customTo, todayUtc);
+  const validComparison = !comparisonEnabled || comparisonMode !== 'custom' || isValidWindow(compareFrom, compareTo, todayUtc);
+  const params = new URLSearchParams({ period });
+  if (period === 'custom') {
+    params.set('from', customFrom);
+    params.set('to', customTo);
+  }
+  if (comparisonEnabled) {
+    params.set('compare', comparisonMode);
+    if (comparisonMode === 'custom') {
+      params.set('compareFrom', compareFrom);
+      params.set('compareTo', compareTo);
+    }
+  }
+  const trendsUrl = validPrimary && validComparison ? `/api/sites/trends?${params.toString()}` : null;
+  const { data: trends, loading, error, loadedUrl } = useApi<SiteTrends>(trendsUrl, retryKey);
+  // Polling the same URL keeps the previous chart visible; switching windows waits for matching data.
+  const ready = !!trends && loadedUrl === trendsUrl;
 
   // Keep the numbers fresh while the page sits open.
   useEffect(() => {
@@ -167,6 +216,10 @@ export function Sites() {
         </div>
       </div>
 
+      {(!validPrimary || !validComparison) && (
+        <p role="alert" className="mt-3 text-sm text-rose-600">Choose valid UTC dates (start ≤ end, not in the future, max 366 days).</p>
+      )}
+
       {error && (
         <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <span>Could not load website trends. {error}</span>
@@ -174,11 +227,63 @@ export function Sites() {
         </div>
       )}
 
+      <div className="mt-3 flex flex-col gap-3">
+        {period === 'custom' && (
+          <div className="grid gap-2 sm:flex sm:items-end">
+            <div className="grid grid-cols-1 gap-2 sm:w-[340px] sm:grid-cols-2">
+              <label className="min-w-0 text-xs font-medium text-stone-500">From (UTC)
+                <input type="date" aria-label="Current period start date" max={todayUtc}
+                  className="input mt-1 w-full min-w-0 px-2 text-sm" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+              </label>
+              <label className="min-w-0 text-xs font-medium text-stone-500">To (UTC)
+                <input type="date" aria-label="Current period end date" max={todayUtc}
+                  className="input mt-1 w-full min-w-0 px-2 text-sm" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+              </label>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-stone-700">
+            <input type="checkbox" className="h-4 w-4 accent-stone-800" checked={comparisonEnabled}
+              onChange={(event) => setComparisonEnabled(event.target.checked)} />
+            Compare dates
+          </label>
+          {comparisonEnabled && (
+            <select aria-label="Comparison range" className="btn min-h-10 max-w-full text-sm"
+              value={comparisonMode} onChange={(event) => setComparisonMode(event.target.value as CompareMode)}>
+              <option value="previous">Previous period</option>
+              <option value="custom">Custom comparison dates</option>
+            </select>
+          )}
+        </div>
+        {comparisonEnabled && comparisonMode === 'custom' && (
+          <div className="grid grid-cols-1 gap-2 sm:w-[340px] sm:grid-cols-2">
+            <label className="min-w-0 text-xs font-medium text-stone-500">Compare from (UTC)
+              <input type="date" aria-label="Comparison period start date" max={todayUtc}
+                className="input mt-1 w-full min-w-0 px-2 text-sm" value={compareFrom} onChange={(event) => setCompareFrom(event.target.value)} />
+            </label>
+            <label className="min-w-0 text-xs font-medium text-stone-500">Compare to (UTC)
+              <input type="date" aria-label="Comparison period end date" max={todayUtc}
+                className="input mt-1 w-full min-w-0 px-2 text-sm" value={compareTo} onChange={(event) => setCompareTo(event.target.value)} />
+            </label>
+          </div>
+        )}
+        {comparisonEnabled && (
+          <p className="text-xs text-stone-500">Solid lines show the selected dates; dashed lines show the comparison dates. Different-length windows align by relative progress.</p>
+        )}
+      </div>
+
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sites?.map((s) => {
-          const trend = trends?.period === period ? trends.sites[s.id] : undefined;
-          const ready = !loading && !error && trends?.period === period;
-          const dashboardPath = `/site/${s.id}?period=${period}`;
+          const trend = ready ? trends?.sites[s.id] : undefined;
+          const compared = ready ? trends?.comparison?.sites[s.id] : undefined;
+          const isComparing = ready && !!trends?.comparison;
+          const detailParams = new URLSearchParams({ period });
+          if (period === 'custom') {
+            detailParams.set('from', customFrom);
+            detailParams.set('to', customTo);
+          }
+          const dashboardPath = `/site/${s.id}?${detailParams.toString()}`;
           function openDashboard(event: React.MouseEvent<HTMLDivElement>) {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             if (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, label, [tabindex]')) return;
@@ -214,6 +319,11 @@ export function Sites() {
                     <div key={metric} className="min-w-0">
                       <div className="truncate text-2xl font-semibold">{ready ? fmtNumber(trend?.[metric] ?? 0) : '—'}</div>
                       <div className="text-xs text-stone-500">{meta.label.toLowerCase()} in period</div>
+                      {isComparing && (
+                        <div className="mt-1 text-xs">
+                          <ComparisonDelta current={trend?.[metric] ?? 0} previous={compared?.[metric] ?? 0} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -248,6 +358,18 @@ export function Sites() {
                         values: (trend?.series ?? []).map((point) => point[metric]),
                       };
                     })}
+                    comparison={trends?.comparison ? {
+                      buckets: trends.comparison.buckets,
+                      series: selectedMetrics.map((metric) => {
+                        const meta = TREND_METRICS.find((item) => item.value === metric)!;
+                        return {
+                          key: metric,
+                          label: meta.label,
+                          color: meta.color,
+                          values: (compared?.series ?? trends.comparison!.buckets.map(() => null)).map((point) => point?.[metric] ?? 0),
+                        };
+                      }),
+                    } : null}
                   />
                 )}
               </div>
@@ -256,7 +378,7 @@ export function Sites() {
                   <span className={`h-2 w-2 rounded-full ${s.online ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} />
                   {s.online} online now
                 </div>
-                <button className="text-xs font-medium text-stone-600 hover:underline" onClick={() => navigate(`/site/${s.id}?period=${period}`)}>View dashboard →</button>
+                <button className="text-xs font-medium text-stone-600 hover:underline" onClick={() => navigate(dashboardPath)}>View dashboard →</button>
               </div>
             </div>
           );
@@ -265,7 +387,7 @@ export function Sites() {
           <div className="card col-span-full p-10 text-center text-stone-500">No websites yet. Add your first one to get a tracking snippet.</div>
         )}
       </div>
-      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. The same period and metrics apply to all website cards.</p> : null}
+      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. Today is partial. The same periods and metrics apply to every website card.</p> : null}
       <AddSite open={adding} onClose={() => setAdding(false)} />
     </div>
   );

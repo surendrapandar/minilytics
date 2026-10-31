@@ -11,7 +11,7 @@ const WIDTH = 320;
 const HEIGHT = 84;
 const TOP = 7;
 const BOTTOM = 75;
-const DURATION = 300;
+const DURATION = 780;
 
 function resample(values: number[], length: number): number[] {
   if (!values.length) return Array(length).fill(0) as number[];
@@ -37,72 +37,71 @@ function pathFor(values: number[]) {
     .join(' ');
 }
 
-/** Animate the SVG geometry with RAF; switch series without a charting dependency. */
-function AnimatedLine({ normalized, color, gradientId, fill }: {
+/** A fixed path is revealed from left to right by the parent SVG clip. */
+function ChartLine({ normalized, color, gradientId, fill, dashed = false }: {
   normalized: number[];
   color: string;
   gradientId: string;
   fill: boolean;
+  dashed?: boolean;
 }) {
-  const [rendered, setRendered] = useState<number[]>(() => normalized.map(() => 0));
-  const current = useRef<number[]>(normalized.map(() => 0));
-  const frame = useRef<number | null>(null);
-  const signature = normalized.join(',');
-
-  useEffect(() => {
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    if (reducedMotion || !normalized.length) {
-      current.current = normalized;
-      setRendered(normalized);
-      return;
-    }
-    const count = Math.max(2, normalized.length, current.current.length);
-    const startValues = resample(current.current, count);
-    const endValues = resample(normalized, count);
-    const start = performance.now();
-
-    function animate(now: number) {
-      const progress = Math.min(1, Math.max(0, (now - start) / DURATION));
-      const ease = 1 - Math.pow(1 - progress, 3);
-      const next = startValues.map((value, index) => value + (endValues[index] - value) * ease);
-      current.current = next;
-      setRendered(next);
-      if (progress < 1) frame.current = requestAnimationFrame(animate);
-      else {
-        frame.current = null;
-        current.current = normalized;
-        setRendered(normalized);
-      }
-    }
-    frame.current = requestAnimationFrame(animate);
-    return () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-      frame.current = null;
-    };
-  }, [signature]);
-
-  const d = pathFor(rendered);
+  const d = pathFor(normalized);
   return (
     <>
       {fill && d && <path d={`${d} L${WIDTH},${BOTTOM} L0,${BOTTOM} Z`} fill={`url(#${gradientId})`} />}
-      <path d={d} fill="none" stroke={color} strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={d} fill="none" stroke={color} strokeOpacity={dashed ? 0.58 : 1}
+        strokeDasharray={dashed ? '6 5' : undefined}
+        strokeWidth={dashed ? '1.8' : '2.2'} vectorEffect="non-scaling-stroke"
+        strokeLinecap="round" strokeLinejoin="round" />
     </>
   );
 }
 
-/** Render up to two globally selected metrics on the same absolute-value scale. */
-export function TrendSparkline({ series, buckets, name }: { series: SparklineSeries[]; buckets: string[]; name: string }) {
+/** Current values use solid lines; optional independent-window comparisons use dashed lines. */
+export function TrendSparkline({
+  series, buckets, name, comparison,
+}: {
+  series: SparklineSeries[];
+  buckets: string[];
+  name: string;
+  comparison?: { buckets: string[]; series: SparklineSeries[] } | null;
+}) {
   const gradientId = useId().replace(/:/g, '-');
+  const clipId = `${gradientId}-reveal`;
   const [active, setActive] = useState<number | null>(null);
+  const [reveal, setReveal] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const count = buckets.length;
-  const max = Math.max(1, ...series.flatMap((item) => item.values));
-  const empty = !count || series.every((item) => item.values.every((value) => value === 0));
+  const comparisonCount = comparison?.buckets.length ?? 0;
+  const comparisonSeries = comparison?.series ?? [];
+  const max = Math.max(1, ...series.flatMap((item) => item.values), ...comparisonSeries.flatMap((item) => item.values));
+  const empty = !count || [...series, ...comparisonSeries].every((item) => item.values.every((value) => value === 0));
   const safeActive = active !== null && active >= 0 && active < count ? active : null;
   const focusX = safeActive === null ? 0 : (safeActive / Math.max(1, count - 1)) * WIDTH;
+  const comparisonIndex = safeActive === null || !comparisonCount ? null
+    : Math.round((safeActive / Math.max(1, count - 1)) * (comparisonCount - 1));
+  const drawingKey = [buckets.join('|'), series.map((item) => item.key).join('|'),
+    comparison?.buckets.join('|') ?? '', comparisonSeries.map((item) => item.key).join('|')].join('::');
 
-  useEffect(() => { setActive(null); }, [buckets.join('|'), series.map((item) => item.key).join('|')]);
+  // Replays for date / metric selections, but not on background polling of the same window.
+  useEffect(() => {
+    setActive(null);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (reduced) {
+      setReveal(1);
+      return;
+    }
+    setReveal(0);
+    const start = performance.now();
+    let frame = 0;
+    function draw(now: number) {
+      const t = Math.max(0, Math.min(1, (now - start) / DURATION));
+      setReveal(1 - Math.pow(1 - t, 3));
+      if (t < 1) frame = requestAnimationFrame(draw);
+    }
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [drawingKey]);
 
   function move(event: PointerEvent<HTMLDivElement>) {
     const bounds = root.current?.getBoundingClientRect();
@@ -116,12 +115,8 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
   }
 
   return (
-    <div
-      ref={root}
-      className="relative cursor-crosshair rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-      role="group"
-      tabIndex={0}
-      aria-label={`${name} trend chart. Use arrow keys to inspect dates.`}
+    <div ref={root} className="relative cursor-crosshair rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+      role="group" tabIndex={0} aria-label={`${name} trend chart. Use arrow keys to inspect dates.`}
       onPointerMove={(event) => { if (event.pointerType !== 'touch') move(event); }}
       onPointerDown={move}
       onPointerLeave={(event) => { if (event.pointerType !== 'touch') setActive(null); }}
@@ -135,49 +130,45 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
     >
       <span className="sr-only" aria-live="polite">
         {safeActive !== null
-          ? `${buckets[safeActive]}: ${series.map((item) => `${item.label} ${(item.values[safeActive] ?? 0).toLocaleString()}`).join(', ')}`
+          ? `${buckets[safeActive]}: ${series.map((item) => `${item.label} ${(item.values[safeActive] ?? 0).toLocaleString()}`).join(', ')}${comparisonIndex !== null
+            ? `; comparison ${comparison?.buckets[comparisonIndex]}: ${comparisonSeries.map((item) => `${item.label} ${(item.values[comparisonIndex] ?? 0).toLocaleString()}`).join(', ')}`
+            : ''}`
           : ''}
       </span>
       <svg className="h-20 w-full" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={series[0]?.color ?? "#8dbdf0"} stopOpacity="0.25" />
-            <stop offset="100%" stopColor={series[0]?.color ?? "#8dbdf0"} stopOpacity="0.015" />
+            <stop offset="0%" stopColor={series[0]?.color ?? '#8dbdf0'} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={series[0]?.color ?? '#8dbdf0'} stopOpacity="0.015" />
           </linearGradient>
+          <clipPath id={clipId}><rect x="0" y="0" width={WIDTH * reveal} height={HEIGHT} /></clipPath>
         </defs>
         <line x1="0" x2={WIDTH} y1={BOTTOM} y2={BOTTOM} stroke="#ece9e6" strokeWidth="1" />
-        {series.map((item, index) => (
-          <AnimatedLine
-            key={item.key}
-            normalized={item.values.map((value) => value / max)}
-            color={item.color}
-            gradientId={gradientId}
-            fill={index === 0}
-          />
-        ))}
+        <g clipPath={`url(#${clipId})`}>
+          {comparisonSeries.map((item) => (
+            <ChartLine key={`compare-${item.key}`}
+              normalized={resample(item.values, count).map((value) => value / max)}
+              color={item.color} gradientId={gradientId} fill={false} dashed />
+          ))}
+          {series.map((item, index) => (
+            <ChartLine key={item.key} normalized={item.values.map((value) => value / max)}
+              color={item.color} gradientId={gradientId} fill={index === 0} />
+          ))}
+        </g>
         {safeActive !== null && (
           <>
             <line x1={focusX} x2={focusX} y1={TOP} y2={BOTTOM} stroke="#a8a29e" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
             {series.map((item) => (
-              <circle
-                key={item.key}
-                cx={focusX}
+              <circle key={item.key} cx={focusX}
                 cy={BOTTOM - ((item.values[safeActive] ?? 0) / max) * (BOTTOM - TOP)}
-                r="3.7"
-                fill={item.color}
-                stroke="white"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              />
+                r="3.7" fill={item.color} stroke="white" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             ))}
           </>
         )}
       </svg>
       {safeActive !== null && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute top-0 z-20 -translate-x-1/2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 text-xs shadow-md backdrop-blur-sm"
-          style={{ left: `${Math.max(24, Math.min(76, ((safeActive + 0.5) / count) * 100))}%` }}
+        <div aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-0 z-20 max-w-[calc(100%-0.5rem)] -translate-x-1/2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 text-xs shadow-md backdrop-blur-sm"
         >
           <div className="mb-1 whitespace-nowrap font-semibold text-stone-700">{buckets[safeActive]}</div>
           {series.map((item) => (
@@ -189,6 +180,17 @@ export function TrendSparkline({ series, buckets, name }: { series: SparklineSer
               <span className="font-medium text-stone-800">{(item.values[safeActive] ?? 0).toLocaleString()}</span>
             </div>
           ))}
+          {comparisonIndex !== null && (
+            <>
+              <div className="mt-2 border-t border-stone-100 pt-1 text-stone-500">Compare · {comparison?.buckets[comparisonIndex]}</div>
+              {comparisonSeries.map((item) => (
+                <div key={item.key} className="flex items-center justify-between gap-4 whitespace-nowrap text-stone-600">
+                  <span>{item.label}</span>
+                  <span className="font-medium text-stone-800">{(item.values[comparisonIndex] ?? 0).toLocaleString()}</span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
