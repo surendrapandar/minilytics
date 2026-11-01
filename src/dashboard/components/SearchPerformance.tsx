@@ -217,7 +217,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
               <p className="mt-4 text-xs text-stone-500">
                 Showing {data.from} – {data.to} (Pacific Time)
                 {data.truncated ? ' · Limited to the most recent 366 calendar days' : ''}
-                {data.requestedTo > data.to ? ' · Current incomplete day excluded' : ''}
+                {data.to !== undefined && data.requestedTo > data.to ? ' · Current incomplete day excluded' : ''}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stone-200 bg-stone-200 sm:grid-cols-4">
                 {METRICS.map(({ key, label }) => (
