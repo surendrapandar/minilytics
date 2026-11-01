@@ -14,3 +14,6 @@
 
 /site.webmanifest
   Content-Type: application/manifest+json
+
+/avatars/*
+  Cache-Control: public, max-age=604800
