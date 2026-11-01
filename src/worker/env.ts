@@ -30,6 +30,8 @@ export interface Env {
   MONTHLY_PRODUCT_ID?: string;
   MONTHLY_PRICE?: string;
   SUPPORT_EMAIL?: string;
+  /** Google Search Console read-only service account JSON; store as a Worker secret. */
+  GSC_SERVICE_ACCOUNT_JSON?: string;
 }
 
 export interface Site {
@@ -42,6 +44,7 @@ export interface Site {
   dodo_webhook_secret: string | null;
   created_at: number;
   owner_id?: string | null;
+  gsc_property?: string | null;
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
 }

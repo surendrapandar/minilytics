@@ -9,6 +9,7 @@ import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook
 import { rememberOwnerDevice } from './owner';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 import { siteTrends } from './siteTrends';
+import { configureGsc, gscProperties, gscSearch } from './gsc';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -169,6 +170,9 @@ app.post('/api/sites', async (c) => {
 });
 
 app.get('/api/sites/:id', (c) => c.json(publicSite(c.get('site'))));
+app.get('/api/sites/:id/gsc/properties', gscProperties);
+app.put('/api/sites/:id/gsc', configureGsc);
+app.get('/api/sites/:id/gsc', gscSearch);
 
 app.patch('/api/sites/:id', async (c) => {
   const site = c.get('site');

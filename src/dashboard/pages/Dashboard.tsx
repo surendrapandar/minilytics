@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { navigate } from '../App';
+import { navigate, useMe } from '../App';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
+import { SearchPerformance } from '../components/SearchPerformance';
 import { Panel, renderLabel } from '../components/Panel';
 import { Toolbar } from '../components/Toolbar';
 import { VisitorModal } from '../components/VisitorModal';
@@ -35,6 +36,7 @@ const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
 };
 
 export function Dashboard({ siteId }: { siteId: string }) {
+  const { me } = useMe();
   const [q, update] = useQueryState(siteId);
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
@@ -124,6 +126,8 @@ export function Dashboard({ siteId }: { siteId: string }) {
         <div className="mt-5">
           <OverviewCard data={overview} onLive={() => setLive(true)} />
         </div>
+
+        {(!me.hosted || me.user?.admin) && <div className="mt-5"><SearchPerformance site={site} /></div>}
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <Panel

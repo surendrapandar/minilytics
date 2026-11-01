@@ -1,0 +1,125 @@
+import type { Context } from 'hono';
+import type { AppEnv } from './env';
+
+type Dimension = 'query' | 'page' | 'country' | 'device';
+const DIMS: Dimension[] = ['query', 'page', 'country', 'device'];
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
+let tokenCache: { value: string; expires: number; fingerprint: string } | null = null;
+
+function b64url(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function utf8url(text: string): string { return b64url(new TextEncoder().encode(text)); }
+
+interface ServiceKey { client_email: string; private_key: string; private_key_id?: string; type: string }
+function keyFromEnv(raw?: string): ServiceKey {
+  if (!raw) throw new Error('GSC_SERVICE_ACCOUNT_JSON is not configured');
+  let key: ServiceKey;
+  try { key = JSON.parse(raw) as ServiceKey; } catch { throw new Error('Invalid service-account secret'); }
+  if (key.type !== 'service_account' || !key.client_email?.endsWith('.gserviceaccount.com') || !key.private_key?.includes('BEGIN PRIVATE KEY')) {
+    throw new Error('Invalid service-account credentials');
+  }
+  return key;
+}
+async function googleToken(raw?: string): Promise<string> {
+  const key = keyFromEnv(raw);
+  const fingerprint = key.client_email + ':' + (key.private_key_id ?? '');
+  if (tokenCache && tokenCache.fingerprint === fingerprint && Date.now() + 60_000 < tokenCache.expires) return tokenCache.value;
+  const pem = key.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
+  const secret = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const privateKey = await crypto.subtle.importKey('pkcs8', secret, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const now = Math.floor(Date.now() / 1000);
+  const body = utf8url(JSON.stringify({ iss: key.client_email, scope: SCOPE, aud: TOKEN_URL, iat: now, exp: now + 3600 }));
+  const header = utf8url(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: key.private_key_id }));
+  const unsigned = header + '.' + body;
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(unsigned));
+  const assertion = unsigned + '.' + b64url(new Uint8Array(signature));
+  const response = await fetch(TOKEN_URL, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+  });
+  if (!response.ok) throw new Error('Google token request failed (' + response.status + ')');
+  const result = await response.json<{ access_token?: string; expires_in?: number }>();
+  if (!result.access_token) throw new Error('Google did not return an access token');
+  tokenCache = { value: result.access_token, fingerprint, expires: Date.now() + (result.expires_in ?? 3600) * 1000 };
+  return result.access_token;
+}
+export function validGscProperty(value: string): boolean {
+  if (value.startsWith('sc-domain:')) return /^sc-domain:[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
+  try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !!url.hostname && !url.username && !url.password; }
+  catch { return false; }
+}
+async function allowedProperties(token: string): Promise<string[]> {
+  const result = await fetch('https://www.googleapis.com/webmasters/v3/sites', { headers: { authorization: 'Bearer ' + token } });
+  if (!result.ok) throw new Error('Could not list GSC properties (' + result.status + ')');
+  const json = await result.json<{ siteEntry?: { siteUrl: string; permissionLevel: string }[] }>();
+  return (json.siteEntry ?? []).filter((entry) => entry.permissionLevel !== 'siteUnverifiedUser').map((entry) => entry.siteUrl);
+}
+export async function gscProperties(c: Context<AppEnv>) {
+  const user = c.get('user');
+  if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user.admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
+  try {
+    const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
+    return c.json({ properties: await allowedProperties(token) });
+  } catch (error) { return c.json({ error: (error as Error).message }, 502); }
+}
+export async function configureGsc(c: Context<AppEnv>) {
+  const user = c.get('user');
+  if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user.admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
+  const json = await c.req.json<{ property?: string | null }>().catch(() => null);
+  if (!json || (json.property !== null && typeof json.property !== 'string')) return c.json({ error: 'Invalid GSC property' }, 400);
+  const property = json.property?.trim() || null;
+  if (property && !validGscProperty(property)) return c.json({ error: 'Invalid property format' }, 400);
+  if (property) {
+    try {
+      const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
+      if (!(await allowedProperties(token)).includes(property)) return c.json({ error: 'Service account cannot access this GSC property' }, 403);
+    } catch (error) { return c.json({ error: (error as Error).message }, 502); }
+  }
+  await c.env.DB.prepare('UPDATE sites SET gsc_property = ? WHERE id = ?').bind(property, c.get('site').id).run();
+  return c.json({ property });
+}
+function dayOffset(offset: number): string {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+export function validGscDates(from: string, to: string, today = dayOffset(0)): boolean {
+  const valid = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const timestamp = Date.parse(value + 'T00:00:00Z');
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+  };
+  return valid(from) && valid(to) && from <= to && to < today &&
+    (Date.parse(to) - Date.parse(from)) / 86_400_000 <= 365;
+}
+export async function gscSearch(c: Context<AppEnv>) {
+  const user = c.get('user');
+  if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user.admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
+  const property = c.get('site').gsc_property;
+  if (!property) return c.json({ connected: false, rows: [], property: null });
+  const dimension = c.req.query('dimension') ?? 'query';
+  if (!DIMS.includes(dimension as Dimension)) return c.json({ error: 'Invalid dimension' }, 400);
+  // Search Console can lag several days; exclude the most recent three UTC dates.
+  const from = c.req.query('from') ?? dayOffset(-30);
+  const to = c.req.query('to') ?? dayOffset(-3);
+  if (!validGscDates(from, to)) {
+    return c.json({ error: 'Select a valid date range of at most 366 days, ending before today' }, 400);
+  }
+  try {
+    const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
+    const response = await fetch('https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', {
+      method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ startDate: from, endDate: to, dimensions: [dimension], type: 'web', rowLimit: 250 }),
+    });
+    if (!response.ok) return c.json({ error: 'GSC query failed (' + response.status + '). Check property permissions.' }, 502);
+    const body = await response.json<{ rows?: { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }[] }>();
+    return c.json({ connected: true, property, dimension, from, to, rows: (body.rows ?? []).map((row) => ({
+      label: row.keys[0] ?? '', clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position,
+    })) });
+  } catch (error) { return c.json({ error: (error as Error).message }, 502); }
+}

@@ -63,6 +63,12 @@ Cloudflare's free plan.
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
 - Multiple websites, one login; the all-websites page supports Today, Yesterday, custom UTC dates (including a single day), and optional previous-period or independently selected date comparisons with animated trends
 
+## Optional: Google Search Console
+
+Minilytics can display read-only Google search queries, landing pages, countries and devices in each site's **Search Performance** panel via a private **Service Account**. The JSON credentials belong in a Cloudflare Worker Secret, never in GitHub. In hosted mode the shared service account is restricted to administrators.
+
+For property authorization, setup instructions and the required D1 migration, see [Service Account setup](docs/gsc-service-account.md). This initial implementation queries the Search Analytics API on demand; scheduled D1 caching is a separate future enhancement.
+
 ## Deploy for free (about 10 minutes)
 
 Every person deploys **their own copy** on their own free Cloudflare account. Your data stays on your account, and you

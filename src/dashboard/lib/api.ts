@@ -33,6 +33,7 @@ export interface Site {
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
   created_at: number;
+  gsc_property?: string | null;
   visitors24h?: number;
   online?: number;
 }
