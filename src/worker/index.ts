@@ -145,7 +145,8 @@ app.post('/api/sites', async (c) => {
   const b = await c.req.json<Partial<Site>>().catch(() => ({}) as Partial<Site>);
   const domain = cleanDomain(b.domain ?? '');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return c.json({ error: 'Enter a domain like example.com' }, 400);
-  const tz = b.timezone && validTimezone(b.timezone) ? b.timezone : 'UTC';
+  if (b.timezone && !validTimezone(b.timezone)) return c.json({ error: 'Unknown timezone' }, 400);
+  const tz = b.timezone || 'UTC';
   const site: Site = {
     id: randomId(8),
     name: (b.name || domain).slice(0, 100),

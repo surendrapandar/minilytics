@@ -3,6 +3,7 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
+import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { Area, Bar, ComposedChart, ResponsiveContainer, YAxis } from 'recharts';
 import { currencyDecimals } from '../../shared/currency';
 import { api, type Site, type SiteSpark } from '../lib/api';
@@ -185,8 +186,6 @@ function Totals({ visitors, revenue }: { visitors?: number; revenue?: { currency
   );
 }
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'SGD', 'JPY', 'BRL'];
-
 function AddSite({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [domain, setDomain] = useState('');
   const [name, setName] = useState('');
@@ -220,15 +219,11 @@ function AddSite({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Timezone</label>
-            <input className="input" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+            <TimezoneSelect value={timezone} onChange={setTimezone} />
           </div>
           <div>
             <label className="label">Revenue currency</label>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
+            <CurrencySelect value={currency} onChange={setCurrency} />
           </div>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}

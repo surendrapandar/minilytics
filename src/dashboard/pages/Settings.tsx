@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { BackButton } from '../components/BackButton';
 import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
+import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
 import { fmtMoney } from '../lib/format';
@@ -195,11 +196,11 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
           </div>
           <div>
             <label className="label">Timezone</label>
-            <input className="input" value={form.timezone ?? ''} onChange={(e) => set({ timezone: e.target.value })} />
+            <TimezoneSelect value={form.timezone ?? 'UTC'} onChange={(timezone) => set({ timezone })} />
           </div>
           <div>
             <label className="label">Revenue currency</label>
-            <input className="input" value={form.currency ?? ''} maxLength={3} onChange={(e) => set({ currency: e.target.value })} />
+            <CurrencySelect value={form.currency ?? 'USD'} onChange={(currency) => set({ currency })} />
           </div>
         </div>
         <button className="btn-dark mt-4" onClick={() => save({ name: form.name, domain: form.domain, timezone: form.timezone, currency: form.currency })}>
