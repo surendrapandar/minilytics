@@ -31,9 +31,9 @@ The app supports Queries, Pages, Countries and Devices. **Search Performance use
 
 ## Important boundaries
 
-- This first release is an **on-demand, read-only GSC MVP**, not the daily cached import/cron integration. Opening the panel or changing a dimension issues a Google API request.
+- This is an **on-demand, read-only GSC MVP**, not a daily import/cron integration. Changing the Queries / Pages / Countries / Devices tab refreshes **only the breakdown table**; KPI cards, daily trends and previous-period comparisons stay mounted and unchanged.
 - The dimension table fetches at most 250 top rows and may omit anonymized queries. KPI cards come from a separate site-level aggregate request, not the sum of the displayed rows; daily curves come from date-grouped Search Console metrics. Some aggregate and row-level figures may differ because of Google's privacy filtering and reporting rules.
-- Each data refresh makes four Search Analytics calls: top dimension rows, daily series, site-level totals, and totals for the previous equal-length period. This is an on-demand implementation, without persisted caching.
+- The first load of a date window makes three overview Search Analytics calls (daily series, total, previous total), then one breakdown call. Switching to a different tab makes **one breakdown call**, and revisiting a loaded tab uses an in-memory UI cache with **zero** new calls. Changing the shared date range or pressing the dashboard Refresh button invalidates that cache. Cache state is not persisted across page reloads.
 - GSC clicks and Minilytics visitors are different metrics. You cannot reliably attribute a payment to an individual GSC search keyword.
 - In hosted mode, service-account access is **admin-only**. Other users cannot enumerate service-account properties, change mappings or query GSC data. A future user-facing SaaS integration needs per-user OAuth rather than sharing this private service account.
 - A permission or token error appears in the panel without showing the private key. Review Google Cloud API enablement, GSC permissions and the Cloudflare Secret if you see one.

@@ -8,11 +8,12 @@ export type GscTotals = { clicks: number; impressions: number; ctr: number; posi
 export type GscDaily = GscTotals & { date: string };
 type Row = { label: string } & GscTotals;
 type Dimension = 'query' | 'page' | 'country' | 'device';
-type Result = {
-  connected: boolean; rows: Row[]; property: string | null; from?: string; to?: string;
+type OverviewResult = {
+  connected: boolean; property: string | null; from?: string; to?: string;
   totals: GscTotals; previous: GscTotals; series: GscDaily[];
   available: boolean; truncated: boolean; requestedFrom: string; requestedTo: string;
 };
+type BreakdownResult = { rows: Row[] };
 type Metric = keyof GscTotals;
 const DIMENSIONS: { value: Dimension; label: string }[] = [
   { value: 'query', label: 'Queries' },
@@ -104,49 +105,94 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
   const [dimension, setDimension] = useState<Dimension>('query');
   const [property, setProperty] = useState(site.gsc_property ?? '');
   const [properties, setProperties] = useState<string[]>([]);
-  const [data, setData] = useState<Result | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [error, setError] = useState('');
+  // KPI cards and daily chart are independent of the active breakdown tab.
+  // Keyed results prevent stale periods from flashing during date changes.
+  const rangeKey = JSON.stringify([site.id, site.gsc_property, period, from, to, reloadKey]);
+  const rowsKey = rangeKey + ':' + dimension;
+  const [overviewResult, setOverviewResult] = useState<{ key: string; data: OverviewResult } | null>(null);
+  const [overviewFailure, setOverviewFailure] = useState<{ key: string; message: string } | null>(null);
+  const [rowCache, setRowCache] = useState<{
+    key: string; items: Partial<Record<Dimension, Row[]>>;
+  }>({ key: '', items: {} });
+  const [rowsPending, setRowsPending] = useState<string | null>(null);
+  const [rowsFailure, setRowsFailure] = useState<{ key: string; message: string } | null>(null);
+  const [savingProperty, setSavingProperty] = useState(false);
+  const [propertyError, setPropertyError] = useState('');
+
+  const data = overviewResult?.key === rangeKey ? overviewResult.data : null;
+  const cachedRows = rowCache.key === rangeKey ? rowCache.items[dimension] : undefined;
+  const rows = cachedRows ?? [];
+  const summaryError = overviewFailure?.key === rangeKey ? overviewFailure.message : '';
+  const breakdownError = rowsFailure?.key === rowsKey ? rowsFailure.message : '';
+  const breakdownLoading = rowsPending === rowsKey;
 
   useEffect(() => { setProperty(site.gsc_property ?? ''); }, [site.id, site.gsc_property]);
+
   useEffect(() => {
-    if (!site.gsc_property) { setData(null); setBusy(false); return; }
+    if (!site.gsc_property) return;
     let cancelled = false;
-    setBusy(true);
-    setData(null);
-    setError('');
-    const params = new URLSearchParams({ dimension, period });
+    setOverviewFailure(null);
+    const params = new URLSearchParams({ view: 'overview', period });
     if (period === 'custom' && from && to) {
       params.set('from', from);
       params.set('to', to);
     }
-    api<Result>('/api/sites/' + site.id + '/gsc?' + params)
-      .then((result) => { if (!cancelled) setData(result); })
-      .catch((e: Error) => { if (!cancelled) { setError(e.message); setData(null); } })
-      .finally(() => { if (!cancelled) setBusy(false); });
+    api<OverviewResult>('/api/sites/' + site.id + '/gsc?' + params)
+      .then((result) => {
+        if (!cancelled) setOverviewResult({ key: rangeKey, data: result });
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setOverviewFailure({ key: rangeKey, message: error.message });
+      });
     return () => { cancelled = true; };
-  }, [site.id, site.gsc_property, dimension, period, from, to, reloadKey]);
+  }, [rangeKey, site.id, site.gsc_property, period, from, to]);
+
+  // Switching Queries / Pages / Countries / Devices requests only its table.
+  // Previously visited tabs stay cached for this site/date selection; the
+  // dashboard Refresh key invalidates both the overview and breakdown cache.
+  useEffect(() => {
+    if (!site.gsc_property || !data?.available || !data.from || !data.to || cachedRows !== undefined) return;
+    let cancelled = false;
+    setRowsPending(rowsKey);
+    setRowsFailure(null);
+    // Use the overview's effective PT dates so both areas always show the
+    // same window, even around midnight or when the range was truncated.
+    const params = new URLSearchParams({
+      view: 'breakdown', period: 'custom', dimension, from: data.from, to: data.to,
+    });
+    api<BreakdownResult>('/api/sites/' + site.id + '/gsc?' + params)
+      .then((result) => {
+        if (!cancelled) setRowCache((current) => ({
+          key: rangeKey,
+          items: { ...(current.key === rangeKey ? current.items : {}), [dimension]: result.rows },
+        }));
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setRowsFailure({ key: rowsKey, message: error.message });
+      })
+      .finally(() => {
+        if (!cancelled) setRowsPending((key) => key === rowsKey ? null : key);
+      });
+    return () => { cancelled = true; };
+  }, [rangeKey, rowsKey, site.id, site.gsc_property, period, from, to, dimension, data?.available, data?.from, data?.to, cachedRows]);
 
   async function showProperties() {
     setEditing(true);
-    setError('');
+    setPropertyError('');
     try {
       const response = await api<{ properties: string[] }>('/api/sites/' + site.id + '/gsc/properties');
       setProperties(response.properties);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setPropertyError((e as Error).message); }
   }
   async function saveProperty(value: string | null) {
-    setBusy(true);
-    setError('');
+    setSavingProperty(true);
+    setPropertyError('');
     try {
       await api('/api/sites/' + site.id + '/gsc', { method: 'PUT', json: { property: value } });
       // The parent owns site state; reload the site mapping after a property change.
       window.location.reload();
-    } catch (e) { setError((e as Error).message); setBusy(false); }
+    } catch (e) { setPropertyError((e as Error).message); setSavingProperty(false); }
   }
-
-  const rows = data?.rows ?? [];
   return (
     <section className="card min-w-0 p-4 sm:p-5" aria-label="Search Performance">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -158,7 +204,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
           {site.gsc_property ? 'Change property' : 'Connect Search Console'}
         </button>
       </div>
-      {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {propertyError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{propertyError}</p>}
       {editing && (
         <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3">
           <p className="mb-2 text-sm font-medium">Choose a Search Console property</p>
@@ -171,8 +217,8 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
               <input className="input min-w-0 flex-1" placeholder="sc-domain:example.com" value={property}
                 onChange={(event) => setProperty(event.target.value)} />
             )}
-            <button type="button" className="btn-dark" disabled={busy || !property} onClick={() => saveProperty(property)}>Connect</button>
-            {site.gsc_property && <button type="button" className="btn" disabled={busy} onClick={() => saveProperty(null)}>Disconnect</button>}
+            <button type="button" className="btn-dark" disabled={savingProperty || !property} onClick={() => saveProperty(property)}>Connect</button>
+            {site.gsc_property && <button type="button" className="btn" disabled={savingProperty} onClick={() => saveProperty(null)}>Disconnect</button>}
             <button type="button" className="btn" onClick={() => setEditing(false)}>Cancel</button>
           </div>
           <p className="mt-2 text-xs text-stone-500">
@@ -200,7 +246,8 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
             </span>
           </div>
 
-          {busy && !data ? (
+          {summaryError && <p role="alert" className="mt-3 text-sm text-red-600">{summaryError}</p>}
+          {!data && !summaryError ? (
             <div className="mt-4 space-y-3" role="status" aria-label="Loading Search Console performance">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
                 {METRICS.map((metric) => <div key={metric.key} className="h-28 animate-pulse rounded-xl bg-stone-100" />)}
@@ -231,7 +278,9 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
                 Data may lag several days; anonymized queries can make the table totals differ from site totals.
               </p>
               <div className="mt-4 min-w-0 overflow-hidden rounded-xl border border-stone-200/80">
-                <div className="max-h-[420px] overflow-auto">
+                {breakdownLoading && <div role="status" className="border-b border-stone-100 px-3 py-2 text-xs text-stone-500 sm:px-4">Loading {DIMENSIONS.find((item) => item.value === dimension)?.label.toLowerCase()}…</div>}
+                {breakdownError && <p role="alert" className="border-b border-stone-100 px-3 py-2 text-sm text-red-600 sm:px-4">{breakdownError}</p>}
+                <div className="max-h-[420px] overflow-auto" aria-busy={breakdownLoading}>
                   <table className="w-full min-w-[560px] text-left text-sm">
                     <thead className="sticky top-0 z-10 bg-stone-50 text-xs text-stone-500">
                       <tr>
@@ -256,11 +305,11 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
                       ))}
                     </tbody>
                   </table>
-                  {!rows.length && <p className="p-6 text-center text-sm text-stone-500">No {dimension} data for this period.</p>}
+                  {cachedRows !== undefined && !rows.length && <p className="p-6 text-center text-sm text-stone-500">No {dimension} data for this period.</p>}
                 </div>
               </div>
             </>
-          ) : !error ? (
+          ) : !summaryError ? (
             <p className="mt-5 text-sm text-stone-500">No search data for this period.</p>
           ) : null}
         </>

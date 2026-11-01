@@ -193,6 +193,11 @@ export async function gscSearch(c: Context<AppEnv>) {
   if (!property) return c.json({ connected: false, rows: [], property: null });
   const dimension = c.req.query('dimension') ?? 'query';
   if (!DIMS.includes(dimension as Dimension)) return c.json({ error: 'Invalid dimension' }, 400);
+  // Keep the original combined response for compatibility with older clients.
+  // The dashboard requests overview and breakdown independently so tab changes
+  // cannot refetch site-wide KPIs or daily chart data.
+  const view = c.req.query('view') ?? 'all';
+  if (!['all', 'overview', 'breakdown'].includes(view)) return c.json({ error: 'Invalid GSC view' }, 400);
   const selectedPeriod = c.req.query('period') ?? (c.req.query('from') && c.req.query('to') ? 'custom' : '30d');
   if (!PERIODS.includes(selectedPeriod as (typeof PERIODS)[number])) {
     return c.json({ error: 'Invalid period' }, 400);
@@ -213,30 +218,46 @@ export async function gscSearch(c: Context<AppEnv>) {
   const { from, to } = window;
   if (!window.available) {
     return c.json({ connected: true, property, dimension, ...window,
-      totals: { ...EMPTY_TOTALS }, previous: { ...EMPTY_TOTALS }, series: [], rows: [] });
+      ...(view === 'breakdown' ? {} : {
+        totals: { ...EMPTY_TOTALS }, previous: { ...EMPTY_TOTALS }, series: [],
+      }),
+      ...(view === 'overview' ? {} : { rows: [] }),
+    });
   }
   if (!validGscDates(from, to)) {
     return c.json({ error: 'Selected Search Console window is outside the supported 366-day range' }, 400);
   }
   try {
     const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
-    const previousRange = previousGscWindow(from, to);
-    // Site-wide aggregates are independent of the dimension table, whose top rows
-    // can exclude anonymized search queries. Do not sum top rows into KPI cards.
-    const [rows, daily, totals, previous] = await Promise.all([
-      searchAnalytics(token, property, from, to, [dimension], 250),
-      searchAnalytics(token, property, from, to, ['date'], 1000),
-      searchAnalytics(token, property, from, to, [], 1),
-      searchAnalytics(token, property, previousRange.from, previousRange.to, [], 1),
+    const getOverview = async () => {
+      const previousRange = previousGscWindow(from, to);
+      // Site-wide totals must not be computed by summing privacy-filtered top rows.
+      const [daily, totals, previous] = await Promise.all([
+        searchAnalytics(token, property, from, to, ['date'], 1000),
+        searchAnalytics(token, property, from, to, [], 1),
+        searchAnalytics(token, property, previousRange.from, previousRange.to, [], 1),
+      ]);
+      return {
+        totals: totalsFrom(totals), previous: totalsFrom(previous),
+        series: gscDailySeries(from, to, daily),
+      };
+    };
+    const getBreakdown = async () => {
+      const rows = await searchAnalytics(token, property, from, to, [dimension], 250);
+      return {
+        rows: rows.map((row) => ({
+          label: row.keys?.[0] ?? '', clicks: row.clicks, impressions: row.impressions,
+          ctr: row.ctr, position: row.position,
+        })),
+      };
+    };
+    const [overview, breakdown] = await Promise.all([
+      view === 'breakdown' ? Promise.resolve(null) : getOverview(),
+      view === 'overview' ? Promise.resolve(null) : getBreakdown(),
     ]);
     return c.json({
       connected: true, property, dimension, ...window,
-      totals: totalsFrom(totals), previous: totalsFrom(previous),
-      series: gscDailySeries(from, to, daily),
-      rows: rows.map((row) => ({
-        label: row.keys?.[0] ?? '', clicks: row.clicks, impressions: row.impressions,
-        ctr: row.ctr, position: row.position,
-      })),
+      ...(overview ?? {}), ...(breakdown ?? {}),
     });
   } catch (error) { return c.json({ error: (error as Error).message }, 502); }
 }
