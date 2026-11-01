@@ -11,6 +11,7 @@ type Dimension = 'query' | 'page' | 'country' | 'device';
 type Result = {
   connected: boolean; rows: Row[]; property: string | null; from?: string; to?: string;
   totals: GscTotals; previous: GscTotals; series: GscDaily[];
+  available: boolean; truncated: boolean; requestedFrom: string; requestedTo: string;
 };
 type Metric = keyof GscTotals;
 const DIMENSIONS: { value: Dimension; label: string }[] = [
@@ -25,13 +26,6 @@ const METRICS: { key: Metric; label: string }[] = [
 ];
 const fmt = new Intl.NumberFormat('en-US');
 const pct = (value: number) => (100 * value).toFixed(1) + '%';
-const date = (offset: number) => {
-  const now = new Date();
-  now.setUTCHours(0, 0, 0, 0);
-  now.setUTCDate(now.getUTCDate() + offset);
-  return now.toISOString().slice(0, 10);
-};
-
 function metricValue(metric: Metric, totals: GscTotals): string {
   if (metric === 'clicks' || metric === 'impressions') return fmt.format(totals[metric]);
   if (!totals.impressions) return '—';
@@ -88,7 +82,7 @@ function MetricCard({ metric, label, current, previous, series }: {
   const tone = change.tone === 'good' ? 'bg-emerald-50 text-emerald-700'
     : change.tone === 'bad' ? 'bg-red-50 text-red-600' : 'bg-stone-100 text-stone-500';
   return (
-    <div className="min-w-0 rounded-xl border border-stone-200/80 bg-white px-3 py-3.5 sm:px-4">
+    <div className="min-w-0 bg-white px-3 py-3.5 sm:px-4">
       <div className="text-xs text-stone-500">{label}</div>
       <div className="mt-2 flex min-w-0 flex-col items-start gap-1 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-2xl">
@@ -104,33 +98,35 @@ function MetricCard({ metric, label, current, previous, series }: {
   );
 }
 
-export function SearchPerformance({ site }: { site: Site }) {
+export function SearchPerformance({ site, period, from, to, reloadKey }: {
+  site: Site; period: string; from?: string; to?: string; reloadKey: number;
+}) {
   const [dimension, setDimension] = useState<Dimension>('query');
-  const [from, setFrom] = useState(() => date(-30));
-  const [to, setTo] = useState(() => date(-3));
   const [property, setProperty] = useState(site.gsc_property ?? '');
   const [properties, setProperties] = useState<string[]>([]);
   const [data, setData] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
-  const invalidRange = from > to;
 
   useEffect(() => { setProperty(site.gsc_property ?? ''); }, [site.id, site.gsc_property]);
   useEffect(() => {
-    if (!site.gsc_property || invalidRange) { setData(null); setBusy(false); return; }
+    if (!site.gsc_property) { setData(null); setBusy(false); return; }
     let cancelled = false;
     setBusy(true);
     setData(null);
     setError('');
-    const params = new URLSearchParams({ dimension, from, to });
+    const params = new URLSearchParams({ dimension, period });
+    if (period === 'custom' && from && to) {
+      params.set('from', from);
+      params.set('to', to);
+    }
     api<Result>('/api/sites/' + site.id + '/gsc?' + params)
       .then((result) => { if (!cancelled) setData(result); })
       .catch((e: Error) => { if (!cancelled) { setError(e.message); setData(null); } })
       .finally(() => { if (!cancelled) setBusy(false); });
     return () => { cancelled = true; };
-  }, [site.id, site.gsc_property, dimension, from, to, reload, invalidRange]);
+  }, [site.id, site.gsc_property, dimension, period, from, to, reloadKey]);
 
   async function showProperties() {
     setEditing(true);
@@ -188,26 +184,21 @@ export function SearchPerformance({ site }: { site: Site }) {
         <p className="mt-5 text-sm text-stone-500">Connect a Search Console property to view search performance.</p>
       ) : (
         <>
-          <div className="mt-5 flex flex-wrap items-end gap-2 rounded-xl border border-stone-200/80 bg-stone-50/70 p-3">
-            <label className="min-w-0 text-xs text-stone-500">From
-              <input className="input mt-1 w-[150px] max-w-full" type="date" value={from} max={date(-1)}
-                onChange={(event) => setFrom(event.target.value)} />
-            </label>
-            <label className="min-w-0 text-xs text-stone-500">To
-              <input className="input mt-1 w-[150px] max-w-full" type="date" value={to} max={date(-1)}
-                onChange={(event) => setTo(event.target.value)} />
-            </label>
-            <div className="w-[150px] min-w-0">
-              <span className="mb-1 block text-xs text-stone-500">Breakdown</span>
-              <SelectDropdown value={dimension} options={DIMENSIONS}
-                onChange={(value) => setDimension(value as Dimension)} ariaLabel="Search dimension"
-                buttonClassName="input" />
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-4">
+            <div className="tabs flex-wrap" role="group" aria-label="Search dimension">
+              {DIMENSIONS.map(({ value, label }) => (
+                <button key={value} type="button"
+                  className={'tab ' + (dimension === value ? 'tab-active' : '')}
+                  aria-pressed={dimension === value}
+                  onClick={() => setDimension(value)}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <button type="button" className="btn" onClick={() => setReload((v) => v + 1)} disabled={busy || invalidRange}>
-              Refresh
-            </button>
+            <span className="text-xs text-stone-500">
+              Follows dashboard date range · Daily in Pacific Time
+            </span>
           </div>
-          {invalidRange && <p role="alert" className="mt-2 text-xs text-red-600">From must be on or before To.</p>}
 
           {busy && !data ? (
             <div className="mt-4 space-y-3" role="status" aria-label="Loading Search Console performance">
@@ -216,9 +207,19 @@ export function SearchPerformance({ site }: { site: Site }) {
               </div>
               <div className="h-64 animate-pulse rounded-xl bg-stone-100" />
             </div>
+          ) : data && !data.available ? (
+            <div className="mt-4 rounded-xl bg-stone-50 px-4 py-6 text-center text-sm text-stone-600">
+              No completed Pacific Time search dates fall within this dashboard period.
+              GSC does not provide hourly or live results. Choose an earlier period above.
+            </div>
           ) : data ? (
             <>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+              <p className="mt-4 text-xs text-stone-500">
+                Showing {data.from} – {data.to} (Pacific Time)
+                {data.truncated ? ' · Limited to the most recent 366 calendar days' : ''}
+                {data.requestedTo > data.to ? ' · Current incomplete day excluded' : ''}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stone-200 bg-stone-200 sm:grid-cols-4">
                 {METRICS.map(({ key, label }) => (
                   <MetricCard key={key} metric={key} label={label}
                     current={data.totals} previous={data.previous} series={data.series} />
@@ -226,8 +227,8 @@ export function SearchPerformance({ site }: { site: Site }) {
               </div>
               <GscTrendChart series={data.series} />
               <p className="mt-3 text-xs leading-relaxed text-stone-500">
-                Search Console site totals can differ from the top query rows below because anonymized queries
-                may be omitted. Search data can lag several days.
+                Search Console reports daily in Pacific Time, while other dashboard charts use the site's timezone.
+                Data may lag several days; anonymized queries can make the table totals differ from site totals.
               </p>
               <div className="mt-4 min-w-0 overflow-hidden rounded-xl border border-stone-200/80">
                 <div className="max-h-[420px] overflow-auto">
@@ -259,7 +260,7 @@ export function SearchPerformance({ site }: { site: Site }) {
                 </div>
               </div>
             </>
-          ) : !error && !invalidRange ? (
+          ) : !error ? (
             <p className="mt-5 text-sm text-stone-500">No search data for this period.</p>
           ) : null}
         </>

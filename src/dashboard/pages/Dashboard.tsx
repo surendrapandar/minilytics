@@ -164,7 +164,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
         </div>
 
-        {(!me.hosted || me.user?.admin) && <div className="mt-5"><SearchPerformance site={site} /></div>}
+        {(!me.hosted || me.user?.admin) && <div className="mt-5"><SearchPerformance site={site} period={q.period} from={q.from} to={q.to} reloadKey={reloadKey} /></div>}
 
         <p className="mt-8 text-center text-xs text-stone-400">
           Times in {site.timezone} · Revenue in {site.currency} ·{' '}

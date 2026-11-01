@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gscDailySeries, previousGscWindow, validGscDates, validGscProperty } from '../src/worker/gsc';
+import { gscDailySeries, previousGscWindow, resolveGscWindow, validGscDates, validGscProperty } from '../src/worker/gsc';
 
 describe('Google Search Console service account input validation', () => {
   it('accepts exact domain and URL-prefix property formats', () => {
@@ -46,5 +46,59 @@ describe('Google Search Console date aggregation', () => {
       { date: '2026-10-03', clicks: 0, impressions: 0, ctr: 0, position: 0 },
       { date: '2026-10-04', clicks: 2, impressions: 10, ctr: 0.2, position: 7.5 },
     ]);
+  });
+});
+
+describe('GSC periods follow the shared dashboard selector', () => {
+  // November 1 2026 includes a Pacific DST transition; the date ranges stay calendar based.
+  const now = Date.parse('2026-11-01T20:00:00Z');
+  const created = Date.parse('2024-01-01T12:00:00Z');
+
+  it('uses the same last-seven-days preset, excluding only the incomplete PT date', () => {
+    expect(resolveGscWindow({ period: '7d' }, created, now)).toEqual({
+      from: '2026-10-26', to: '2026-10-31',
+      requestedFrom: '2026-10-26', requestedTo: '2026-11-01',
+      available: true, truncated: false,
+    });
+  });
+
+  it('retains custom dates exactly and does not apply a separate date selection', () => {
+    expect(resolveGscWindow({
+      period: 'custom', from: '2026-10-02', to: '2026-10-29',
+    }, created, now)).toEqual({
+      from: '2026-10-02', to: '2026-10-29',
+      requestedFrom: '2026-10-02', requestedTo: '2026-10-29',
+      available: true, truncated: false,
+    });
+  });
+
+  it('does not silently substitute earlier results for Today', () => {
+    const range = resolveGscWindow({ period: 'today' }, created, now);
+    expect(range.available).toBe(false);
+    expect(range.requestedFrom).toBe('2026-11-01');
+    expect(range.to).toBe('2026-10-31');
+  });
+
+  it('maps hourly periods to overlapping daily Pacific dates', () => {
+    const range = resolveGscWindow({ period: '24h' }, created, now);
+    expect(range.from).toBe('2026-10-31');
+    expect(range.to).toBe('2026-10-31');
+    expect(range.available).toBe(true);
+  });
+
+  it('caps a long shared custom period instead of rejecting the dashboard selection', () => {
+    const range = resolveGscWindow({
+      period: 'custom', from: '2024-01-10', to: '2026-10-29',
+    }, created, now);
+    expect(range.from).toBe('2025-10-29');
+    expect(range.to).toBe('2026-10-29');
+    expect(range.truncated).toBe(true);
+  });
+
+  it('caps All time to the existing 366-day API limit and labels the truncation', () => {
+    const range = resolveGscWindow({ period: 'all' }, created, now);
+    expect(range.from).toBe('2025-10-31');
+    expect(range.to).toBe('2026-10-31');
+    expect(range.truncated).toBe(true);
   });
 });

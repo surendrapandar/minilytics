@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { AppEnv } from './env';
+import { PERIODS, resolveRange } from './lib/time';
 
 type Dimension = 'query' | 'page' | 'country' | 'device';
 const DIMS: Dimension[] = ['query', 'page', 'country', 'device'];
@@ -97,6 +98,39 @@ export function validGscDates(from: string, to: string, today = dayOffset(0)): b
   return valid(from) && valid(to) && from <= to && to < today &&
     (Date.parse(to) - Date.parse(from)) / 86_400_000 <= 365;
 }
+const GSC_TZ = 'America/Los_Angeles';
+
+/**
+ * The same period selection drives every dashboard section. Search Console
+ * reports calendar days in Pacific Time, so hourly periods are represented by
+ * overlapping PT dates and the current incomplete PT day is excluded.
+ */
+export function resolveGscWindow(
+  selection: { period?: string; from?: string; to?: string },
+  siteCreatedAt: number,
+  now = Date.now(),
+) {
+  const { from, to } = resolveRange(selection, GSC_TZ, siteCreatedAt, now);
+  const ptDate = (time: number) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: GSC_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(time));
+    const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+    return value('year') + '-' + value('month') + '-' + value('day');
+  };
+  const requestedFrom = ptDate(from);
+  const requestedTo = ptDate(to - 1);
+  const yesterday = new Date(Date.parse(ptDate(now) + 'T00:00:00Z') - 86_400_000).toISOString().slice(0, 10);
+  const effectiveTo = requestedTo < yesterday ? requestedTo : yesterday;
+  const oldest = new Date(Date.parse(effectiveTo + 'T00:00:00Z') - 365 * 86_400_000).toISOString().slice(0, 10);
+  const effectiveFrom = requestedFrom < oldest ? oldest : requestedFrom;
+  return {
+    from: effectiveFrom, to: effectiveTo, requestedFrom, requestedTo,
+    available: effectiveFrom <= effectiveTo,
+    truncated: requestedFrom < oldest,
+  };
+}
+
 interface GscApiRow {
   keys?: string[];
   clicks: number;
@@ -159,11 +193,30 @@ export async function gscSearch(c: Context<AppEnv>) {
   if (!property) return c.json({ connected: false, rows: [], property: null });
   const dimension = c.req.query('dimension') ?? 'query';
   if (!DIMS.includes(dimension as Dimension)) return c.json({ error: 'Invalid dimension' }, 400);
-  // Search Console can lag several days; exclude the most recent three UTC dates by default.
-  const from = c.req.query('from') ?? dayOffset(-30);
-  const to = c.req.query('to') ?? dayOffset(-3);
+  const selectedPeriod = c.req.query('period') ?? (c.req.query('from') && c.req.query('to') ? 'custom' : '30d');
+  if (!PERIODS.includes(selectedPeriod as (typeof PERIODS)[number])) {
+    return c.json({ error: 'Invalid period' }, 400);
+  }
+  const selection = { period: selectedPeriod, from: c.req.query('from'), to: c.req.query('to') };
+  // Preserve the dashboard's custom window even if it exceeds the GSC 366-day
+  // query limit; resolveGscWindow caps the fetch and labels it as truncated.
+  const calendarDate = (value: string | undefined) => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const time = Date.parse(value + 'T00:00:00Z');
+    return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+  };
+  if (selectedPeriod === 'custom' && (
+    !calendarDate(selection.from) || !calendarDate(selection.to) ||
+    (selection.from ?? '') > (selection.to ?? '')
+  )) return c.json({ error: 'Invalid custom date range' }, 400);
+  const window = resolveGscWindow(selection, c.get('site').created_at);
+  const { from, to } = window;
+  if (!window.available) {
+    return c.json({ connected: true, property, dimension, ...window,
+      totals: { ...EMPTY_TOTALS }, previous: { ...EMPTY_TOTALS }, series: [], rows: [] });
+  }
   if (!validGscDates(from, to)) {
-    return c.json({ error: 'Select a valid date range of at most 366 days, ending before today' }, 400);
+    return c.json({ error: 'Selected Search Console window is outside the supported 366-day range' }, 400);
   }
   try {
     const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
@@ -177,7 +230,7 @@ export async function gscSearch(c: Context<AppEnv>) {
       searchAnalytics(token, property, previousRange.from, previousRange.to, [], 1),
     ]);
     return c.json({
-      connected: true, property, dimension, from, to,
+      connected: true, property, dimension, ...window,
       totals: totalsFrom(totals), previous: totalsFrom(previous),
       series: gscDailySeries(from, to, daily),
       rows: rows.map((row) => ({
