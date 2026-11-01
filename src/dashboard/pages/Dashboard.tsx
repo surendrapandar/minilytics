@@ -43,8 +43,13 @@ export function Dashboard({ siteId }: { siteId: string }) {
   // "M" opens the live map, like DataFast.
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !/INPUT|TEXTAREA|SELECT/.test(t.tagName)) setLive(true);
+      // Do not steal typed letters from custom listboxes or focused controls.
+      const interactive = e.target instanceof Element && !!e.target.closest(
+        'input, textarea, select, button, a, [role="listbox"], [role="option"], [contenteditable="true"]',
+      );
+      if (e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.defaultPrevented && !interactive) {
+        setLive(true);
+      }
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);

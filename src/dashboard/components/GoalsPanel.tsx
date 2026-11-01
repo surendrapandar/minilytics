@@ -1,3 +1,4 @@
+import { SelectDropdown } from './SelectDropdown';
 import { useState, type ReactNode } from 'react';
 import { usePref } from '../lib/prefs';
 import { api, qs, type BreakdownRow } from '../lib/api';
@@ -133,13 +134,15 @@ function Funnels() {
   return (
     <div className="px-3 pb-3">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <select className="input w-auto min-w-0 max-w-full truncate py-1.5" value={current?.id} title={current?.name} onChange={(e) => setSelected(e.target.value)}>
-          {funnels.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
+        <SelectDropdown
+          ariaLabel="Funnel"
+          value={current?.id ?? ''}
+          options={funnels.map((f) => ({ value: f.id, label: f.name }))}
+          onChange={setSelected}
+          className="w-full min-w-0 max-w-[260px] sm:w-auto sm:min-w-[160px]"
+          buttonClassName="input py-1.5"
+          menuClassName="min-w-[180px]"
+        />
         <button className="btn py-1.5" onClick={() => setCreating(true)}>
           + New funnel
         </button>
@@ -218,10 +221,14 @@ function FunnelForm({ onDone, canCancel }: { onDone: (id?: string) => void; canC
       <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Funnel name" />
       {steps.map((s, i) => (
         <div key={i} className="flex gap-2">
-          <select className="input w-28" value={s.type} onChange={(e) => set(i, { type: e.target.value as 'page' | 'goal' })}>
-            <option value="page">Page</option>
-            <option value="goal">Goal</option>
-          </select>
+          <SelectDropdown
+            ariaLabel={`Step ${i + 1} type`}
+            value={s.type}
+            options={[{ value: 'page', label: 'Page' }, { value: 'goal', label: 'Goal' }]}
+            onChange={(value) => set(i, { type: value as 'page' | 'goal' })}
+            className="w-28 shrink-0"
+            buttonClassName="input"
+          />
           <input className="input" value={s.value} onChange={(e) => set(i, { value: e.target.value })} placeholder={s.type === 'page' ? '/pricing' : 'signup'} />
           <button type="button" className="btn px-3" onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} disabled={steps.length <= 2}>
             ✕

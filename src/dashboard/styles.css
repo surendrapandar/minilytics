@@ -17,3 +17,12 @@ body { font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
   .tab-active { @apply bg-white text-ink shadow-card; }
   .code { @apply block overflow-x-auto whitespace-pre rounded-xl bg-stone-900 p-4 font-mono text-[13px] leading-relaxed text-stone-100; }
 }
+
+/* Match the website switcher: a restrained opening transition across all menus. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ml-dropdown-enter {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .dropdown-enter { animation: ml-dropdown-enter 140ms ease-out both; }
+}
