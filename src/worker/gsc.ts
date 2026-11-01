@@ -97,6 +97,61 @@ export function validGscDates(from: string, to: string, today = dayOffset(0)): b
   return valid(from) && valid(to) && from <= to && to < today &&
     (Date.parse(to) - Date.parse(from)) / 86_400_000 <= 365;
 }
+interface GscApiRow {
+  keys?: string[];
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+interface GscApiResult { rows?: GscApiRow[] }
+interface GscTotals { clicks: number; impressions: number; ctr: number; position: number }
+
+const EMPTY_TOTALS: GscTotals = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+const DAY_MS = 86_400_000;
+
+function utcDay(timestamp: number): string { return new Date(timestamp).toISOString().slice(0, 10); }
+
+/** Equal-length comparison immediately before the selected (inclusive) GSC date window. */
+export function previousGscWindow(from: string, to: string): { from: string; to: string } {
+  const start = Date.parse(from + 'T00:00:00Z');
+  const end = Date.parse(to + 'T00:00:00Z');
+  const span = end - start + DAY_MS;
+  return { from: utcDay(start - span), to: utcDay(start - DAY_MS) };
+}
+
+/** A missing daily row means no recorded search activity on that date. */
+export function gscDailySeries(from: string, to: string, rows: GscApiRow[]) {
+  const byDate = new Map(rows.map((row) => [row.keys?.[0], row]));
+  const series: Array<{ date: string } & GscTotals> = [];
+  const end = Date.parse(to + 'T00:00:00Z');
+  for (let day = Date.parse(from + 'T00:00:00Z'); day <= end; day += DAY_MS) {
+    const date = utcDay(day);
+    const row = byDate.get(date);
+    series.push({ date, clicks: row?.clicks ?? 0, impressions: row?.impressions ?? 0,
+      ctr: row?.ctr ?? 0, position: row?.position ?? 0 });
+  }
+  return series;
+}
+
+async function searchAnalytics(
+  token: string, property: string, from: string, to: string,
+  dimensions: string[], rowLimit: number,
+): Promise<GscApiRow[]> {
+  const response = await fetch('https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', {
+    method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ startDate: from, endDate: to, dimensions, type: 'web', rowLimit }),
+  });
+  if (!response.ok) throw new Error('GSC query failed (' + response.status + '). Check property permissions.');
+  const body = await response.json<GscApiResult>();
+  return body.rows ?? [];
+}
+
+function totalsFrom(rows: GscApiRow[]): GscTotals {
+  const row = rows[0];
+  return row ? { clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position } : { ...EMPTY_TOTALS };
+}
+
 export async function gscSearch(c: Context<AppEnv>) {
   const user = c.get('user');
   if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user.admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
@@ -104,7 +159,7 @@ export async function gscSearch(c: Context<AppEnv>) {
   if (!property) return c.json({ connected: false, rows: [], property: null });
   const dimension = c.req.query('dimension') ?? 'query';
   if (!DIMS.includes(dimension as Dimension)) return c.json({ error: 'Invalid dimension' }, 400);
-  // Search Console can lag several days; exclude the most recent three UTC dates.
+  // Search Console can lag several days; exclude the most recent three UTC dates by default.
   const from = c.req.query('from') ?? dayOffset(-30);
   const to = c.req.query('to') ?? dayOffset(-3);
   if (!validGscDates(from, to)) {
@@ -112,14 +167,23 @@ export async function gscSearch(c: Context<AppEnv>) {
   }
   try {
     const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
-    const response = await fetch('https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', {
-      method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
-      body: JSON.stringify({ startDate: from, endDate: to, dimensions: [dimension], type: 'web', rowLimit: 250 }),
+    const previousRange = previousGscWindow(from, to);
+    // Site-wide aggregates are independent of the dimension table, whose top rows
+    // can exclude anonymized search queries. Do not sum top rows into KPI cards.
+    const [rows, daily, totals, previous] = await Promise.all([
+      searchAnalytics(token, property, from, to, [dimension], 250),
+      searchAnalytics(token, property, from, to, ['date'], 1000),
+      searchAnalytics(token, property, from, to, [], 1),
+      searchAnalytics(token, property, previousRange.from, previousRange.to, [], 1),
+    ]);
+    return c.json({
+      connected: true, property, dimension, from, to,
+      totals: totalsFrom(totals), previous: totalsFrom(previous),
+      series: gscDailySeries(from, to, daily),
+      rows: rows.map((row) => ({
+        label: row.keys?.[0] ?? '', clicks: row.clicks, impressions: row.impressions,
+        ctr: row.ctr, position: row.position,
+      })),
     });
-    if (!response.ok) return c.json({ error: 'GSC query failed (' + response.status + '). Check property permissions.' }, 502);
-    const body = await response.json<{ rows?: { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }[] }>();
-    return c.json({ connected: true, property, dimension, from, to, rows: (body.rows ?? []).map((row) => ({
-      label: row.keys[0] ?? '', clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position,
-    })) });
   } catch (error) { return c.json({ error: (error as Error).message }, 502); }
 }

@@ -27,12 +27,13 @@ This optional integration displays Search Console performance on each site's das
 
 Sign in as the self-hosted owner or hosted admin. Open the site's Dashboard → **Search Performance** → **Connect Search Console**. Choose a listed property or enter its exact identifier (`sc-domain:example.com` or `https://www.example.com/`). The server verifies it is visible to the configured service account, and stores only the per-site property mapping in D1.
 
-The app supports Queries, Pages, Countries and Devices, with date filtering. Default dates exclude the most recent three calendar days because GSC data can lag. **GSC days are based on Pacific Time**, while other Minilytics charts may use your site's timezone.
+The app supports Queries, Pages, Countries and Devices, with date filtering. The dashboard shows site-level Clicks, Impressions, CTR and average Position, with real daily performance curves and a previous equal-length period comparison. The breakdown table is separate from these site-level totals. Default dates exclude the most recent three calendar days because GSC data can lag. **GSC days are based on Pacific Time**, while other Minilytics charts may use your site's timezone.
 
 ## Important boundaries
 
 - This first release is an **on-demand, read-only GSC MVP**, not the daily cached import/cron integration. Opening the panel or changing a dimension issues a Google API request.
-- The table fetches at most 250 top rows. The cards intentionally sum those rows, **not the full property totals**; Search Console can omit privacy-filtered queries. Do not treat the reported row sums as a comprehensive total.
+- The dimension table fetches at most 250 top rows and may omit anonymized queries. KPI cards come from a separate site-level aggregate request, not the sum of the displayed rows; daily curves come from date-grouped Search Console metrics. Some aggregate and row-level figures may differ because of Google's privacy filtering and reporting rules.
+- Each data refresh makes four Search Analytics calls: top dimension rows, daily series, site-level totals, and totals for the previous equal-length period. This is an on-demand implementation, without persisted caching.
 - GSC clicks and Minilytics visitors are different metrics. You cannot reliably attribute a payment to an individual GSC search keyword.
 - In hosted mode, service-account access is **admin-only**. Other users cannot enumerate service-account properties, change mappings or query GSC data. A future user-facing SaaS integration needs per-user OAuth rather than sharing this private service account.
 - A permission or token error appears in the panel without showing the private key. Review Google Cloud API enablement, GSC permissions and the Cloudflare Secret if you see one.

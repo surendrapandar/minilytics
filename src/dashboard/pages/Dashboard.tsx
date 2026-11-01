@@ -127,8 +127,6 @@ export function Dashboard({ siteId }: { siteId: string }) {
           <OverviewCard data={overview} onLive={() => setLive(true)} />
         </div>
 
-        {(!me.hosted || me.user?.admin) && <div className="mt-5"><SearchPerformance site={site} /></div>}
-
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <Panel
             tabs={[
@@ -165,6 +163,8 @@ export function Dashboard({ siteId }: { siteId: string }) {
         <div className="mt-5">
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
         </div>
+
+        {(!me.hosted || me.user?.admin) && <div className="mt-5"><SearchPerformance site={site} /></div>}
 
         <p className="mt-8 text-center text-xs text-stone-400">
           Times in {site.timezone} · Revenue in {site.currency} ·{' '}
