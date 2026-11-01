@@ -1,3 +1,4 @@
+import { SelectDropdown } from '../components/SelectDropdown';
 import { useEffect, useState, type ReactNode } from 'react';
 import { BackButton } from '../components/BackButton';
 import { navigate } from '../App';
@@ -519,11 +520,14 @@ function LinkBuilder({ domain }: { domain: string }) {
         </div>
         <div>
           <label className="label">Where you post it</label>
-          <select className="input" value={preset.label} onChange={(e) => setPreset(PRESETS.find((p) => p.label === e.target.value)!)}>
-            {PRESETS.map((p) => (
-              <option key={p.label}>{p.label}</option>
-            ))}
-          </select>
+          <SelectDropdown
+            ariaLabel="Where you post it"
+            value={preset.label}
+            options={PRESETS.map((item) => ({ value: item.label, label: item.label }))}
+            onChange={(value) => setPreset(PRESETS.find((item) => item.label === value)!)}
+            className="w-full"
+            buttonClassName="input"
+          />
         </div>
         <div className="sm:col-span-2">
           <label className="label">Post name</label>

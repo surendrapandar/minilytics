@@ -52,7 +52,7 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
               {k.dot && <span className={`h-2.5 w-2.5 rounded-sm ${k.dot} ${hidden[k.metric!] ? 'opacity-25' : ''}`} />}
               {k.label}
             </div>
-            <div className="mt-1 text-[28px] font-semibold leading-tight tracking-tight">{k.value}</div>
+            <div className="mt-1 text-2xl font-semibold leading-tight tracking-tight sm:text-[28px]">{k.value}</div>
             <Change cur={c![k.key as keyof Kpis]} prev={p![k.key as keyof Kpis]} invert={k.invert} />
           </button>
         ))}
@@ -71,7 +71,7 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
       <div className="h-[340px] px-2 pb-3 pt-6 sm:px-4">
         {data && (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data.series} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+            <ComposedChart accessibilityLayer data={data.series} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="vis" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#8dbdf0" stopOpacity={0.35} />

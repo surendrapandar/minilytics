@@ -11,12 +11,14 @@
     // Static files skip the Worker. Anything else (client routes, unknown paths) runs it so missing pages return a real 404.
     "run_worker_first": ["/api/*"]
   },
+  "routes": [
+    { "pattern": "analytics.yololab.cc", "custom_domain": true }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "minilytics",
-      // Replace with the id printed by `npx wrangler d1 create minilytics`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "c40912d6-6905-4892-ae76-d7c2cba59c4b",
       "migrations_dir": "migrations"
     }
   ]

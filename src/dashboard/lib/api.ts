@@ -33,6 +33,7 @@ export interface Site {
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
   created_at: number;
+  gsc_property?: string | null;
   visitors24h?: number;
   online?: number;
 }
@@ -66,6 +67,19 @@ export interface Overview {
   previous: Kpis;
   online: number;
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
+}
+
+export interface SiteTrends {
+  period: string;
+  range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
+  buckets: string[];
+  sites: Record<string, { visitors: number; pageviews: number; sessions: number; series: { visitors: number; pageviews: number; sessions: number }[] }>;
+  comparison: {
+    mode: 'previous' | 'custom';
+    range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
+    buckets: string[];
+    sites: SiteTrends['sites'];
+  } | null;
 }
 
 export interface BreakdownRow {

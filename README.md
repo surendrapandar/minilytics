@@ -61,7 +61,13 @@ Cloudflare's free plan.
 - **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
-- Multiple websites, one login
+- Multiple websites, one login; the all-websites page supports Today, Yesterday, custom UTC dates (including a single day), and optional previous-period or independently selected date comparisons with animated trends
+
+## Optional: Google Search Console
+
+Minilytics can display read-only Google search queries, landing pages, countries and devices in each site's **Search Performance** panel via a private **Service Account**. The JSON credentials belong in a Cloudflare Worker Secret, never in GitHub. In hosted mode the shared service account is restricted to administrators.
+
+For property authorization, setup instructions and the required D1 migration, see [Service Account setup](docs/gsc-service-account.md). This initial implementation queries the Search Analytics API on demand; scheduled D1 caching is a separate future enhancement.
 
 ## Deploy for free (about 10 minutes)
 

@@ -29,17 +29,34 @@ export function Dropdown({ button, children, align = 'left' }: { button: ReactNo
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const on = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', on);
-    return () => document.removeEventListener('mousedown', on);
+    const on = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('pointerdown', on);
+    return () => document.removeEventListener('pointerdown', on);
   }, [open]);
   return (
-    <div className="relative flex" ref={ref}>
+    <div className="relative flex" ref={ref}
+      onBlur={(event) => {
+        // A native date picker can temporarily clear DOM focus; do not dismiss it.
+        if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+          ref.current?.querySelector<HTMLButtonElement>('button')?.focus();
+        }
+        if (event.key === 'ArrowDown' && !open) {
+          event.preventDefault();
+          setOpen(true);
+          requestAnimationFrame(() => ref.current?.querySelector<HTMLButtonElement>('[data-dropdown-menu] button')?.focus());
+        }
+      }}>
       <div className="flex" onClick={() => setOpen((o) => !o)}>
         {button}
       </div>
       {open && (
-        <div className={`card absolute top-full z-40 mt-2 min-w-[200px] overflow-hidden p-1 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+        <div data-dropdown-menu className={`card dropdown-enter absolute top-full z-40 mt-2 max-h-[min(70vh,24rem)] min-w-[200px] overflow-y-auto overscroll-contain p-1 ${align === 'right' ? 'right-0' : 'left-0'}`}>
           {children(() => setOpen(false))}
         </div>
       )}
@@ -54,7 +71,7 @@ const Chevron = () => (
 );
 
 function itemCls(active: boolean) {
-  return `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-stone-100 ${active ? 'font-medium text-ink' : 'text-stone-600'}`;
+  return `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none hover:bg-stone-100 focus-visible:bg-stone-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-stone-300 ${active ? 'bg-stone-50 font-medium text-ink' : 'text-stone-600'}`;
 }
 
 export function Toolbar({
