@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
+import { monotoneCurvePath } from '../lib/curvePath';
 
 export interface SparklineSeries {
   key: string;
@@ -32,9 +33,7 @@ function coordinates(values: number[]) {
 }
 
 function pathFor(values: number[]) {
-  return coordinates(values)
-    .map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`)
-    .join(' ');
+  return monotoneCurvePath(coordinates(values));
 }
 
 /** A fixed path is revealed from left to right by the parent SVG clip. */
