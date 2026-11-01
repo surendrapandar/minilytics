@@ -105,6 +105,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
   const [dimension, setDimension] = useState<Dimension>('query');
   const [property, setProperty] = useState(site.gsc_property ?? '');
   const [properties, setProperties] = useState<string[]>([]);
+  const [editing, setEditing] = useState(false);
   // KPI cards and daily chart are independent of the active breakdown tab.
   // Keyed results prevent stale periods from flashing during date changes.
   const rangeKey = JSON.stringify([site.id, site.gsc_property, period, from, to, reloadKey]);
