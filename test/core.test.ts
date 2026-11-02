@@ -5,7 +5,7 @@ import { parseTiers, planInfo } from '../src/worker/billing';
 import { belongsTo, normalizePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
 import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
-import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
+import { bucketLabels, granularitiesForSpan, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
 describe('classify', () => {
@@ -84,6 +84,18 @@ describe('time ranges', () => {
   it('weekly buckets start on Monday', () => {
     const r = resolveRange({ period: '30d', granularity: 'week' }, 'UTC', 0, now);
     for (const l of bucketLabels(r, 0)) expect(new Date(l + 'T00:00:00Z').getUTCDay()).toBe(1);
+  });
+  it('limits granularities to the selected time span', () => {
+    const hour = 3_600_000;
+    const day = 24 * hour;
+    expect(granularitiesForSpan(24 * hour)).toEqual(['hour']);
+    expect(granularitiesForSpan(7 * day)).toEqual(['hour', 'day']);
+    expect(granularitiesForSpan(30 * day)).toEqual(['day', 'week']);
+  });
+  it('falls back to a sensible granularity when the query requests an invalid one', () => {
+    expect(resolveRange({ period: '24h', granularity: 'day' }, 'UTC', 0, now).granularity).toBe('hour');
+    expect(resolveRange({ period: '7d', granularity: 'week' }, 'UTC', 0, now).granularity).toBe('day');
+    expect(resolveRange({ period: '30d', granularity: 'month' }, 'UTC', 0, now).granularity).toBe('day');
   });
 });
 
