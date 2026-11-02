@@ -1,14 +1,9 @@
 import type { Context } from 'hono';
 import { getSite, type AppEnv, type Site } from './env';
 import { verifyStandardWebhook, verifyStripeWebhook } from './lib/crypto';
+import { currencyDecimals } from '../shared/currency';
 
-export function currencyDecimals(currency: string): number {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
-}
+export { currencyDecimals };
 
 interface PaymentInput {
   id: string;
@@ -266,9 +261,13 @@ async function ownsDodoPayment(db: D1Database, site: Site, products: string[], v
     if (sites.length) return { owned: false, learn: false };
   }
   if (products.length) {
+    // Product ids belong to one Dodo account, so only the same owner's sites can claim them.
     const r = await db
-      .prepare(`SELECT site_id FROM dodo_products WHERE product_id IN (${products.map(() => '?').join(',')})`)
-      .bind(...products)
+      .prepare(
+        `SELECT dp.site_id FROM dodo_products dp JOIN sites s ON s.id = dp.site_id
+         WHERE dp.product_id IN (${products.map(() => '?').join(',')}) AND s.owner_id IS ?`,
+      )
+      .bind(...products, site.owner_id ?? null)
       .all<{ site_id: string }>();
     const sites = r.results.map((x) => x.site_id);
     if (sites.includes(site.id)) return { owned: true, learn: false };
@@ -303,7 +302,13 @@ export async function learnDodoProducts(db: D1Database, site: Site, products: st
     .all<{ payload: string }>();
   await db.batch([
     ...products.map((id) => db.prepare('INSERT OR IGNORE INTO dodo_products (product_id, site_id) VALUES (?, ?)').bind(id, site.id)),
-    db.prepare(`DELETE FROM pending_payments WHERE product_id IN (${ph}) OR payment_id = ?`).bind(...products, paymentId ?? ''),
+    // Only payments this site holds too: a site that never got the payment can't drop another site's only copy.
+    db
+      .prepare(
+        `DELETE FROM pending_payments WHERE payment_id IN
+           (SELECT payment_id FROM pending_payments WHERE site_id = ? AND (product_id IN (${ph}) OR payment_id = ?))`,
+      )
+      .bind(site.id, ...products, paymentId ?? ''),
   ]);
   for (const row of pending.results) await recordPayment(db, site, JSON.parse(row.payload) as PaymentInput);
 }

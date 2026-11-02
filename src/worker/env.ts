@@ -24,8 +24,11 @@ export interface Env {
   PLAN_NEXT_PRICE?: string; // shown as "then $49" next to the spots counter
   /** Price tiers that step up as spots sell, e.g. "$29:5, $49:pdt_b:5, $100" (a tier without a pdt_ id is
    *  sold out or only announced). Overrides the single-price PLAN_* values above (except PLAN_INTERVAL).
-   *  Spots count every paying customer from the start. */
+   *  Spots count every lifetime buyer from the start (monthly subscribers don't use them up). */
   PLAN_TIERS?: string;
+  /** Optional monthly subscription offered next to the lifetime deal, e.g. pdt_xxx and "$9". */
+  MONTHLY_PRODUCT_ID?: string;
+  MONTHLY_PRICE?: string;
   SUPPORT_EMAIL?: string;
 }
 

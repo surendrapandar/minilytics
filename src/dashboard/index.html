@@ -3,8 +3,53 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Minilytics</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231c1917'/><path d='M8 22l5-7 4 4 7-10' stroke='%23e07b5f' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+    <title>Minilytics: Revenue-First Web Analytics for Indie Makers</title>
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Surendra Pandar" />
+    <meta name="description" content="See which tweet, post or AI chat made you money. Minilytics follows every visitor from first click to payment. Open source, privacy-friendly, unlimited sites." />
+    <link rel="canonical" href="https://minilytics.app/" />
+    <meta name="theme-color" content="#f8f6f3" />
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Minilytics" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://minilytics.app/" />
+    <meta property="og:title" content="Minilytics: Revenue-First Web Analytics for Indie Makers" />
+    <meta property="og:description" content="See which tweet, post or AI chat made you money. Minilytics follows every visitor from first click to payment." />
+    <meta property="og:image" content="https://minilytics.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Minilytics dashboard showing visitors and revenue by traffic source" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@surendra_pandar" />
+    <meta name="twitter:creator" content="@surendra_pandar" />
+    <meta name="twitter:title" content="Minilytics: Revenue-First Web Analytics for Indie Makers" />
+    <meta name="twitter:description" content="See which tweet, post or AI chat made you money. Minilytics follows every visitor from first click to payment." />
+    <meta name="twitter:image" content="https://minilytics.app/og-image.png" />
+    <meta name="twitter:image:alt" content="Minilytics dashboard showing visitors and revenue by traffic source" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Minilytics",
+        "url": "https://minilytics.app/",
+        "description": "Revenue-first web analytics for indie makers. See which tweet, post or AI chat made you money.",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "image": "https://minilytics.app/og-image.png",
+        "author": { "@type": "Person", "name": "Surendra Pandar", "url": "https://x.com/surendra_pandar" },
+        "sameAs": ["https://github.com/surendrapandar/minilytics", "https://x.com/surendra_pandar"]
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet" />
@@ -22,7 +67,13 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown to crawlers and before JS runs; React replaces it on first render. -->
+    <div id="root">
+      <main style="max-width: 42rem; margin: 4rem auto; padding: 0 1rem; text-align: center; font-family: system-ui, sans-serif; color: #1c1917">
+        <h1>See which tweet, post or AI chat made you money.</h1>
+        <p>Minilytics is revenue-first web analytics for indie makers. It follows every visitor from the first click to the payment, so you know exactly what to post more of.</p>
+      </main>
+    </div>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

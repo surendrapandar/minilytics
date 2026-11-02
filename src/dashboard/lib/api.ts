@@ -37,6 +37,14 @@ export interface Site {
   online?: number;
 }
 
+export interface SiteSpark {
+  id: string;
+  visitors: number;
+  revenue: number;
+  online: number;
+  series: { visitors: number; revenue: number }[];
+}
+
 export interface Kpis {
   visitors: number;
   sessions: number;
@@ -102,6 +110,7 @@ export interface Me {
     paid: boolean;
     plan_status: string;
     plan_until: number | null;
+    plan: string | null;
   } | null;
 }
 
@@ -116,4 +125,6 @@ export interface PlanInfo {
   soldOut?: { price: string; spots: number }[];
   checkout: boolean;
   supportEmail: string | null;
+  /** Monthly subscription offered next to the main plan, when configured. */
+  monthly?: { price: string } | null;
 }

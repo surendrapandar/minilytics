@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { classify } from '../shared/sources';
 import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
+import { isOwnerVisit } from './owner';
 import { isBot, parseUA } from './lib/ua';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
@@ -73,6 +74,8 @@ export async function handleEvent(c: Context<AppEnv>) {
   }
   // Only accept data for the site's own domain, so nobody can pollute your stats from elsewhere.
   if (!belongsTo(url.hostname, site.domain)) return c.body(null, 403);
+  // Owners checking their own site would otherwise show up as visitors and "online".
+  if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
   await ingest(c.env.DB, site, body, url, ua, geoOf(c), Date.now());
   return c.body(null, 202);

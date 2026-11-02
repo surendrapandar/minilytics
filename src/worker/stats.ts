@@ -522,3 +522,71 @@ export async function realtime(db: D1Database, site: Site, now = Date.now()) {
 
   return { now, currency: site.currency, decimals: currencyDecimals(site.currency), domain: site.domain, visitors: active, feed };
 }
+
+/** Sparkline sizes for the all-websites view: [range, bucket count]. Rolling windows, so no timezone maths. */
+const SPARK_PERIODS: Record<string, [number, number]> = {
+  '24h': [86_400_000, 24],
+  '7d': [7 * 86_400_000, 28],
+  '30d': [30 * 86_400_000, 30],
+  '90d': [90 * 86_400_000, 45],
+};
+
+export interface SiteSpark {
+  id: string;
+  visitors: number;
+  revenue: number;
+  online: number;
+  series: { visitors: number; revenue: number }[];
+}
+
+/** Totals and a small visitors/revenue series for every site the user can see, in one round trip. */
+export async function sparklines(db: D1Database, siteIds: string[], period: string, now = Date.now()): Promise<SiteSpark[]> {
+  if (!siteIds.length) return [];
+  // D1 allows 100 bound parameters per statement.
+  if (siteIds.length > 90) {
+    const chunks = [];
+    for (let i = 0; i < siteIds.length; i += 90) chunks.push(sparklines(db, siteIds.slice(i, i + 90), period, now));
+    return (await Promise.all(chunks)).flat();
+  }
+  const [span, n] = SPARK_PERIODS[period] ?? SPARK_PERIODS['30d'];
+  const width = span / n;
+  const from = now - span;
+  const ids = siteIds.map(() => '?').join(', ');
+  const bucket = (col: string) => `MIN(${n - 1}, CAST((${col} - ${from}) / ${width} AS INTEGER))`;
+
+  const [totals, pay, online, vs, rs] = await db.batch([
+    db
+      .prepare(`SELECT site_id, COUNT(DISTINCT visitor_id) AS v FROM sessions WHERE site_id IN (${ids}) AND started_at >= ? GROUP BY site_id`)
+      .bind(...siteIds, from),
+    db.prepare(`SELECT site_id, SUM(amount) AS r FROM payments WHERE site_id IN (${ids}) AND ts >= ? GROUP BY site_id`).bind(...siteIds, from),
+    db
+      .prepare(
+        `SELECT site_id, COUNT(DISTINCT visitor_id) AS n FROM sessions
+         WHERE site_id IN (${ids}) AND started_at > ? AND last_seen_at > ? GROUP BY site_id`,
+      )
+      .bind(...siteIds, now - 6 * 3_600_000, now - 5 * 60_000),
+    db
+      .prepare(
+        `SELECT site_id, ${bucket('started_at')} AS b, COUNT(DISTINCT visitor_id) AS v FROM sessions
+         WHERE site_id IN (${ids}) AND started_at >= ? GROUP BY site_id, b`,
+      )
+      .bind(...siteIds, from),
+    db
+      .prepare(`SELECT site_id, ${bucket('ts')} AS b, SUM(amount) AS r FROM payments WHERE site_id IN (${ids}) AND ts >= ? GROUP BY site_id, b`)
+      .bind(...siteIds, from),
+  ]);
+
+  const byId = (rows: unknown[], field: string) => new Map((rows as any[]).map((r) => [r.site_id, r[field] as number]));
+  const v = byId(totals.results, 'v');
+  const r = byId(pay.results, 'r');
+  const o = byId(online.results, 'n');
+  const out = new Map(
+    siteIds.map((id) => [
+      id,
+      { id, visitors: v.get(id) ?? 0, revenue: r.get(id) ?? 0, online: o.get(id) ?? 0, series: Array.from({ length: n }, () => ({ visitors: 0, revenue: 0 })) },
+    ]),
+  );
+  for (const row of vs.results as any[]) out.get(row.site_id)!.series[row.b].visitors = row.v;
+  for (const row of rs.results as any[]) out.get(row.site_id)!.series[row.b].revenue = row.r;
+  return [...out.values()];
+}

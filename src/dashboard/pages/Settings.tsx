@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { BackButton } from '../components/BackButton';
 import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
 import { buildAiPrompt } from '../lib/aiPrompt';
@@ -139,9 +140,7 @@ export function Settings({ siteId }: { siteId: string }) {
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:py-12">
       <div className="flex items-center justify-between">
-        <button className="btn" onClick={() => navigate(`/site/${site.id}`)}>
-          ← Dashboard
-        </button>
+        <BackButton fallback={`/site/${site.id}`} />
         <div className="flex items-center gap-2 font-semibold">
           <Favicon domain={site.domain} size={22} /> {site.name}
         </div>
@@ -170,7 +169,8 @@ export function Settings({ siteId }: { siteId: string }) {
           </div>
         </details>
         <p className="mt-3 text-sm text-stone-500">
-          Skip your own visits: open <code>{site.domain}/?ml_ignore=true</code> once per browser.
+          Your own visits aren't counted from any browser you've opened this dashboard in. For other devices (like your phone), open{' '}
+          <code>{site.domain}/?ml_ignore=true</code> once.
         </p>
       </Section>
 

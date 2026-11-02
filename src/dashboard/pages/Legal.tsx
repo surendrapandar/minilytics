@@ -1,3 +1,4 @@
+import { BackButton } from '../components/BackButton';
 import { Logo } from '../components/Logo';
 import { usePlan } from './Landing';
 
@@ -16,9 +17,12 @@ export function Legal({ page }: { page: 'terms' | 'privacy' | 'refund' }) {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <a href="/">
-        <Logo />
-      </a>
+      <div className="flex items-center justify-between gap-2">
+        <BackButton />
+        <a href="/">
+          <Logo />
+        </a>
+      </div>
       <article className="card mt-8 space-y-4 p-8 text-[15px] leading-relaxed text-stone-700 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:text-ink [&_h2]:pt-2 [&_h2]:font-semibold [&_h2]:text-ink">
         {page === 'terms' && (
           <>

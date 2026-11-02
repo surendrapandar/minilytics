@@ -94,8 +94,18 @@ function Section({ id, eyebrow, title, sub, children, className = '' }: { id?: s
   );
 }
 
-function Shot({ src, alt, className = '' }: { src: string; alt: string; className?: string }) {
-  return <img src={src} alt={alt} loading="lazy" className={`w-full rounded-2xl border border-stone-200 bg-white shadow-xl ${className}`} />;
+function Shot({ src, alt, size, eager = false, className = '' }: { src: string; alt: string; size: [number, number]; eager?: boolean; className?: string }) {
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={size[0]}
+      height={size[1]}
+      loading={eager ? 'eager' : 'lazy'}
+      fetchPriority={eager ? 'high' : 'auto'}
+      className={`w-full rounded-2xl border border-stone-200 bg-white shadow-xl ${className}`}
+    />
+  );
 }
 
 const Check = () => <span className="text-emerald-600">✓</span>;
@@ -115,6 +125,7 @@ export function Landing() {
   const soldCount = soldOut.reduce((n, t) => n + t.spots, 0);
   const lastSold = soldOut[soldOut.length - 1];
   const cta = plan ? `Get started for ${priceLabel(plan)}` : 'Get started';
+  const monthly = plan?.monthly?.price;
 
   return (
     <div className="min-h-screen overflow-x-hidden">
@@ -157,7 +168,7 @@ export function Landing() {
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg text-stone-600 sm:text-xl">
           Minilytics follows every visitor from the first click to the payment, so you know exactly what to post more of. Unlimited
-          websites and events, {lifetime ? <>one payment of {price}. No subscription.</> : <>{priceText}.</>}
+          websites and events, {lifetime ? <>one payment of {price}{monthly ? <>, or {monthly}/month</> : '. No subscription'}.</> : <>{priceText}.</>}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <GoogleButton label={cta} location="hero" />
@@ -171,7 +182,7 @@ export function Landing() {
       </section>
 
       <section className="relative mx-auto max-w-6xl px-4">
-        <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" />
+        <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" size={[2160, 1500]} eager />
         <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
           <div className="text-stone-500">Revenue from</div>
           <div className="font-semibold">𝕏 launch-tweet</div>
@@ -226,20 +237,20 @@ export function Landing() {
             title="Revenue next to every source"
             text="Blue is visitors, orange is money. See at a glance that X brings traffic and Indie Hackers brings customers, then click any source to filter the whole dashboard."
             points={['X, Google, ChatGPT, Reddit, YouTube… by name', 'Campaigns and keywords', 'Conversion rate and revenue per visitor']}
-            image={<Shot src="/landing/referrers.png" alt="Referrers with revenue" />}
+            image={<Shot src="/landing/referrers.png" alt="Referrers with revenue" size={[1029, 840]} />}
           />
           <Feature
             reverse
             title="Know exactly which post worked"
             text="Generate a tagged link for each tweet, article or newsletter. It shows up by name, with the visitors and revenue it brought."
             points={['Built-in link builder', 'Works with utm_campaign and ?ref=', 'Credit goes to the post, even if they buy 2 weeks later']}
-            image={<Shot src="/landing/campaigns.png" alt="Revenue by campaign" />}
+            image={<Shot src="/landing/campaigns.png" alt="Revenue by campaign" size={[1029, 441]} />}
           />
           <Feature
             title="Every customer’s full journey"
             text="Who paid, where they came from, and how long it took. Open anyone to see every page and click from first visit to payment."
             points={['First source and every visit', 'Button clicks and goals', 'Time from first visit to payment']}
-            image={<Shot src="/landing/journey.png" alt="Customer journeys" />}
+            image={<Shot src="/landing/journey.png" alt="Customer journeys" size={[1428, 785]} />}
           />
           <Feature
             reverse
@@ -248,7 +259,7 @@ export function Landing() {
             points={['3D globe or 2D map', 'Live feed of pages, goals and payments', 'Cha-ching sound on every payment']}
             image={
               <div className="flex justify-center rounded-2xl bg-[#0b1020] p-6 shadow-xl sm:p-10">
-                <img src="/landing/feed.png" alt="Live event feed" loading="lazy" className="w-full max-w-sm rounded-2xl" />
+                <img src="/landing/feed.png" alt="Live event feed" width={570} height={675} loading="lazy" className="w-full max-w-sm rounded-2xl" />
               </div>
             }
           />
@@ -274,7 +285,7 @@ export function Landing() {
             </thead>
             <tbody className="text-[15px]">
               {[
-                ['Price', priceText, '$9/month', '$9/month'],
+                ['Price', monthly ? <>{priceText}<div className="text-sm font-normal text-stone-500">or {monthly}/month</div></> : priceText, '$9/month', '$9/month'],
                 ...(lifetime ? [['First year', price, '$108', '$108'], ['Every year after', '$0', '$108', '$108']] : []),
                 ['Websites', 'Unlimited', '1', '1'],
                 ['Monthly events', 'Unlimited', '10k', '10k pageviews'],
@@ -314,12 +325,12 @@ export function Landing() {
       </section>
 
       {/* ---------- Pricing */}
-      <Section id="pricing" eyebrow="Pricing" title="One plan. Everything included.">
-        <div className="mx-auto max-w-md">
-          <div className="card relative p-8">
+      <Section id="pricing" eyebrow="Pricing" title={monthly ? 'Everything included. Pay once or monthly.' : 'One plan. Everything included.'}>
+        <div className={`mx-auto grid items-start gap-6 ${monthly ? 'max-w-4xl md:grid-cols-[1.15fr_1fr]' : 'max-w-md'}`}>
+          <div className={`card relative p-8 ${monthly ? 'ring-2 ring-revenue' : ''}`}>
             {spots && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-revenue px-3 py-1 text-xs font-semibold text-white">
-                {lifetime ? 'Lifetime deal' : 'Founding member price'}
+                {lifetime ? (monthly ? 'Lifetime deal · Best value' : 'Lifetime deal') : 'Founding member price'}
               </div>
             )}
             <div className="flex items-baseline gap-1">
@@ -359,9 +370,27 @@ export function Landing() {
               </div>
             )}
           </div>
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-stone-600">
-            <span className="text-lg">🛡️</span> 14-day money-back guarantee. No questions asked.
-          </div>
+          {monthly && (
+            <div className="card p-8">
+              <div className="text-sm font-semibold uppercase tracking-wider text-stone-500">Monthly</div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="text-5xl font-semibold tracking-tight">{monthly}</span>
+                <span className="text-lg text-stone-500">/month</span>
+              </div>
+              <p className="mt-4 text-stone-600">Want to try it first? Get the same unlimited plan month to month and cancel anytime.</p>
+              <ul className="mt-6 space-y-2.5">
+                {['Everything in lifetime', 'Cancel anytime', 'Upgrade to lifetime whenever you like'].map((f) => (
+                  <li key={f} className="flex gap-2">
+                    <Check /> {f}
+                  </li>
+                ))}
+              </ul>
+              <GoogleButton label="Start monthly" light className="mt-8 w-full border border-stone-200" location="pricing-monthly" />
+            </div>
+          )}
+        </div>
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-stone-600">
+          <span className="text-lg">🛡️</span> 14-day money-back guarantee. No questions asked.
         </div>
       </Section>
 
@@ -374,6 +403,9 @@ export function Landing() {
             ['Which payment providers work?', 'Stripe and Dodo Payments work out of the box (one webhook each). Any other provider can send payments with a simple API call.'],
             ['What about ad blockers?', 'You can serve the script from your own domain with a one-line rewrite, so blockers don’t see it. Payments are always recorded either way, because they come from the webhook.'],
             ['Do I need a cookie banner?', 'It uses two first-party cookies and no IP storage. Whether you need a consent banner depends on your visitors’ country; in the EU you may.'],
+            ...(monthly
+              ? [['Can I pay monthly instead?', `Yes, ${monthly}/month with everything unlimited, cancel anytime. Most people pick lifetime: at ${price} it pays for itself in about ${Math.ceil(Number(price.replace(/[^\d.]/g, '')) / Number(monthly.replace(/[^\d.]/g, '')))} months.`]]
+              : []),
             ...(lifetime
               ? [['Is lifetime really lifetime?', 'Yes. Pay once and keep unlimited access for as long as Minilytics runs. No renewals, no surprise bills.']]
               : []),

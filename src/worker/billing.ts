@@ -26,8 +26,9 @@ export function parseTiers(raw: string | undefined): Tier[] {
     }));
 }
 
+/** Lifetime buyers so far: they fill the spots of each price tier. Monthly subscribers don't. */
 async function paidCount(env: Env) {
-  const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE paid_at IS NOT NULL').first<{ n: number }>();
+  const r = await env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE plan = 'lifetime'`).first<{ n: number }>();
   return r?.n ?? 0;
 }
 
@@ -61,7 +62,8 @@ async function currentTier(env: Env) {
 /** Public plan info for the landing/pricing page. */
 export async function planInfo(env: Env) {
   const hosted = isHosted(env);
-  const base = { hosted, interval: env.PLAN_INTERVAL || 'lifetime', supportEmail: env.SUPPORT_EMAIL || null };
+  const monthly = hosted && env.MONTHLY_PRODUCT_ID ? { price: env.MONTHLY_PRICE || '$9' } : null;
+  const base = { hosted, interval: env.PLAN_INTERVAL || 'lifetime', supportEmail: env.SUPPORT_EMAIL || null, monthly };
   const cur = hosted ? await currentTier(env) : null;
   if (cur) {
     const { tier, spots, spotsLeft, nextPrice, soldOut } = cur;
@@ -80,18 +82,19 @@ export async function planInfo(env: Env) {
   };
 }
 
-/** Payment link of the tier on sale now, else PLAN_CHECKOUT_URL. Test-mode links keep their test host. */
-async function checkoutUrl(env: Env) {
+/** Payment link of the monthly plan or the tier on sale now, else PLAN_CHECKOUT_URL. Test-mode links keep their test host. */
+async function checkoutUrl(env: Env, plan: string | undefined) {
+  const origin = env.PLAN_CHECKOUT_URL ? new URL(env.PLAN_CHECKOUT_URL).origin : 'https://checkout.dodopayments.com';
+  if (plan === 'monthly' && env.MONTHLY_PRODUCT_ID) return new URL(`${origin}/buy/${env.MONTHLY_PRODUCT_ID}?quantity=1`);
   const cur = await currentTier(env);
   if (!cur) return env.PLAN_CHECKOUT_URL ? new URL(env.PLAN_CHECKOUT_URL) : null;
-  const origin = env.PLAN_CHECKOUT_URL ? new URL(env.PLAN_CHECKOUT_URL).origin : 'https://checkout.dodopayments.com';
   return new URL(`${origin}/buy/${cur.tier.productId}?quantity=1`);
 }
 
-/** GET /api/billing/checkout: send the signed-in user to the Dodo payment link, tagged with their account. */
+/** GET /api/billing/checkout[?plan=monthly]: send the signed-in user to the Dodo payment link, tagged with their account. */
 export async function checkout(c: Context<AppEnv>) {
   const user = c.get('user');
-  const url = await checkoutUrl(c.env);
+  const url = await checkoutUrl(c.env, c.req.query('plan'));
   if (!url) return c.json({ error: 'Billing is not configured yet' }, 503);
   url.searchParams.set('metadata_user_id', user.id);
   if (user.email) {
@@ -143,7 +146,9 @@ export async function billingWebhook(c: Context<AppEnv>) {
     return c.json({ ok: true });
   }
   // The same Dodo account may sell other products (your apps); only the plan products (every tier) matter here.
-  const planIds = [c.env.PLAN_PRODUCT_ID, ...parseTiers(c.env.PLAN_TIERS).map((t) => t.productId)].filter(Boolean) as string[];
+  const planIds = [c.env.PLAN_PRODUCT_ID, c.env.MONTHLY_PRODUCT_ID, ...parseTiers(c.env.PLAN_TIERS).map((t) => t.productId)].filter(
+    Boolean,
+  ) as string[];
   if (planIds.length && !productIds.some((id) => planIds.includes(id))) return c.json({ ok: true, ignored: 'other product' });
 
   const meta = { ...(d.customer?.metadata ?? {}), ...(d.metadata ?? {}) } as Record<string, unknown>;
@@ -161,16 +166,25 @@ export async function billingWebhook(c: Context<AppEnv>) {
 
   let sql: string | null = null;
   let params: unknown[] = [];
+  // A lifetime buyer who still has (or later cancels) a monthly subscription keeps lifetime access: subscription
+  // events leave them alone. A refunded lifetime buyer can subscribe monthly like anyone else.
+  const notLifetime = `NOT (plan IS 'lifetime' AND plan_status = 'active')`;
   switch (event.type) {
     case 'payment.succeeded':
-      // One-time payment = lifetime access (plan_until NULL). Subscription payments get a month until the
-      // subscription webhook says otherwise.
-      sql = `UPDATE users SET plan_status = 'active', paid_at = COALESCE(paid_at, ?),
-               plan_until = CASE WHEN ? IS NULL THEN NULL ELSE MAX(COALESCE(plan_until, 0), ?) END,
-               dodo_customer_id = COALESCE(?, dodo_customer_id), dodo_subscription_id = COALESCE(?, dodo_subscription_id),
-               dodo_payment_id = ?
-             WHERE id = ?`;
-      params = [now, subId, now + 31 * DAY + GRACE_MS, customerId, subId, str(d.payment_id), user.id];
+      if (!subId) {
+        // One-time payment = lifetime access (plan_until NULL), also for someone upgrading from monthly.
+        sql = `UPDATE users SET plan = 'lifetime', plan_status = 'active', paid_at = COALESCE(paid_at, ?), plan_until = NULL,
+                 dodo_customer_id = COALESCE(?, dodo_customer_id), dodo_payment_id = ?
+               WHERE id = ?`;
+        params = [now, customerId, str(d.payment_id), user.id];
+      } else {
+        // Subscription payments get a month until the subscription webhook says otherwise.
+        sql = `UPDATE users SET plan = 'monthly', plan_status = 'active', paid_at = COALESCE(paid_at, ?),
+                 plan_until = MAX(COALESCE(plan_until, 0), ?),
+                 dodo_customer_id = COALESCE(?, dodo_customer_id), dodo_subscription_id = ?, dodo_payment_id = ?
+               WHERE id = ? AND ${notLifetime}`;
+        params = [now, now + 31 * DAY + GRACE_MS, customerId, subId, str(d.payment_id), user.id];
+      }
       break;
     case 'subscription.active':
     case 'subscription.renewed':
@@ -178,21 +192,21 @@ export async function billingWebhook(c: Context<AppEnv>) {
     case 'subscription.plan_changed':
     case 'subscription.unpaused':
       if (d.status && d.status !== 'active') break;
-      sql = `UPDATE users SET plan_status = 'active', paid_at = COALESCE(paid_at, ?), plan_until = COALESCE(?, plan_until),
+      sql = `UPDATE users SET plan = 'monthly', plan_status = 'active', paid_at = COALESCE(paid_at, ?), plan_until = COALESCE(?, plan_until),
                dodo_customer_id = COALESCE(?, dodo_customer_id), dodo_subscription_id = COALESCE(?, dodo_subscription_id)
-             WHERE id = ?`;
+             WHERE id = ? AND ${notLifetime}`;
       params = [now, until, customerId, subId, user.id];
       break;
     case 'subscription.cancelled':
       // Cancelled subscriptions keep access until the end of the period they paid for.
-      sql = `UPDATE users SET plan_status = 'cancelled', plan_until = COALESCE(?, plan_until, ?) WHERE id = ?`;
+      sql = `UPDATE users SET plan_status = 'cancelled', plan_until = COALESCE(?, plan_until, ?) WHERE id = ? AND ${notLifetime}`;
       params = [until, now, user.id];
       break;
     case 'subscription.expired':
     case 'subscription.failed':
     case 'subscription.on_hold':
     case 'subscription.paused':
-      sql = `UPDATE users SET plan_status = ?, plan_until = ? WHERE id = ?`;
+      sql = `UPDATE users SET plan_status = ?, plan_until = ? WHERE id = ? AND ${notLifetime}`;
       params = [event.type.split('.')[1], now, user.id];
       break;
   }

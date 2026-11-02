@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { navigate } from '../App';
 import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
+import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
 
 export const PERIODS: { value: string; label: string }[] = [
@@ -98,6 +99,7 @@ export function Toolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <BackButton label="" className="btn h-11 w-11 justify-center px-0" />
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">

@@ -1,3 +1,16 @@
 /js/script.js
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=3600
+
+# Vite file names change with every build, so these can be cached forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/landing/*
+  Cache-Control: public, max-age=86400
+
+/sponsors/*
+  Cache-Control: public, max-age=86400
+
+/site.webmanifest
+  Content-Type: application/manifest+json

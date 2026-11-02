@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePref } from '../lib/prefs';
 import { api, qs, type BreakdownRow } from '../lib/api';
 import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
@@ -10,7 +11,7 @@ import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Ico
 type Tab = 'goal' | 'funnel' | 'user' | 'journey';
 
 export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
-  const [tab, setTab] = useState<Tab>('journey');
+  const [tab, setTab] = usePref<Tab>('ml_tab_goals', 'journey');
   const [search, setSearch] = useState('');
   return (
     <div className="card p-3">

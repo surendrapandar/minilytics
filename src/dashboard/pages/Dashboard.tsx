@@ -35,7 +35,7 @@ const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
 };
 
 export function Dashboard({ siteId }: { siteId: string }) {
-  const [q, update] = useQueryState();
+  const [q, update] = useQueryState(siteId);
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
   const [live, setLive] = useState(() => new URLSearchParams(window.location.search).get('live') === '1');

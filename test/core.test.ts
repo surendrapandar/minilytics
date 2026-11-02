@@ -151,6 +151,10 @@ describe('price tiers', () => {
       price: '$49', spots: 5, spotsLeft: 3, nextPrice: '$100', soldOut: [{ price: '$29', spots: 5 }],
     });
   });
+  it('offers a monthly plan next to the tiers when its product is set', async () => {
+    expect((await planInfo(env(7))).monthly).toBeNull();
+    expect(await planInfo({ ...env(7), MONTHLY_PRODUCT_ID: 'pdt_m', MONTHLY_PRICE: '$9' } as Env)).toMatchObject({ price: '$49', monthly: { price: '$9' } });
+  });
   it('keeps selling the last buyable tier when the next price has no product yet', async () => {
     expect(await planInfo(env(12))).toMatchObject({ price: '$49', spotsLeft: null, nextPrice: '$100' });
   });
