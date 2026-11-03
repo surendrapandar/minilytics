@@ -42,6 +42,16 @@ export function SourceIcon({ source, domain, size }: { source: string | null; do
   return <Favicon domain={domainForSource(source) ?? domain ?? (source.includes('.') ? source : null)} size={size} />;
 }
 
+// Provider names come from the crawler panel; aggregate/unknown bots keep initials.
+export function CrawlerIcon({ name, size = 22 }: { name: string; size?: number }) {
+  const domain = domainForSource(name) ?? ({
+    Bytespider: 'bytedance.com',
+    Baiduspider: 'baidu.com',
+    YandexBot: 'yandex.com',
+  } as Record<string, string>)[name];
+  return <Favicon key={name} domain={domain} size={size} fallback={name.slice(0, 2)} />;
+}
+
 const CHANNEL_EMOJI: Record<string, string> = {
   Direct: '🔗',
   'Organic Search': '🔎',
