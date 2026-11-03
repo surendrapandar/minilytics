@@ -492,6 +492,11 @@ export function Landing() {
             </a>
           )}
         </div>
+        <div className="flex w-full flex-wrap items-center gap-4">
+          <span className="font-medium text-stone-600">Other products</span>
+          <a href="https://diskmate.app" target="_blank" rel="noopener" className="hover:text-ink">DiskMate: Disk space analyzer for Mac</a>
+          <a href="https://pastebuddy.app" target="_blank" rel="noopener" className="hover:text-ink">PasteBuddy: Clipboard history for Mac</a>
+        </div>
       </footer>
     </div>
   );

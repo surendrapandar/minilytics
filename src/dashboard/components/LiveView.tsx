@@ -86,9 +86,13 @@ function markerElement(v: LiveVisitor, onClick: () => void): HTMLElement {
   el.className = 'ml-live-bubble';
   el.title = `${displayName(v.visitor_id, v.name, v.email)}${v.city ? ` · ${v.city}` : ''}`;
   el.style.cssText = `width:44px;height:44px;border-radius:9999px;background:${p.color};border:3px solid ${v.spent > 0 ? '#e07b5f' : '#fff'};
-    box-shadow:0 4px 14px rgba(0,0,0,.35);font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,.35);padding:0;overflow:hidden;cursor:pointer;
     transition:transform .2s;`;
-  el.textContent = p.emoji;
+  const img = document.createElement('img');
+  img.src = p.avatar;
+  img.alt = '';
+  img.style.cssText = 'width:100%;height:100%;display:block;';
+  el.appendChild(img);
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     onClick();

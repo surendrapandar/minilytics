@@ -234,6 +234,10 @@ clicked (unless you already set your own). Set the link's confirmation page to r
 
 Subscription renewals (`invoice.paid`) are credited to the visitor who first subscribed. Refunds are subtracted.
 
+One Stripe account selling for several of your sites? Point each site's webhook at Stripe as usual: a payment is
+skipped by sites it clearly isn't for (the buyer was only seen on another site, or a renewal from a customer who only
+paid on another site). To make it explicit, add `ml_site_id: '<SITE_ID>'` to the checkout's `metadata`.
+
 ### How credit is given
 
 A payment goes to the paying visitor's last visit that came from a real source (last non-direct

@@ -8,8 +8,10 @@ import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Sites } from './pages/Sites';
 
-export function navigate(to: string) {
-  window.history.pushState({ app: true }, '', to);
+export function navigate(to: string, { replace = false }: { replace?: boolean } = {}) {
+  // A replaced entry keeps its state, so a page opened from a bookmark still knows there is no in-app page behind it.
+  if (replace) window.history.replaceState(window.history.state, '', to);
+  else window.history.pushState({ app: true }, '', to);
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 

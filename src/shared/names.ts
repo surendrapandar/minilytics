@@ -1,4 +1,4 @@
-// Friendly, stable names for anonymous visitors ("brown toucan"), like DataFast. Same visitor id = same name.
+// Friendly, stable names and avatars for anonymous visitors ("brown toucan"), like DataFast. Same visitor id = same name.
 
 const COLORS: [string, string][] = [
   ['brown', '#e7cfb4'],
@@ -21,45 +21,45 @@ const COLORS: [string, string][] = [
   ['jade', '#a7f3d0'],
 ];
 
-const ANIMALS: [string, string][] = [
-  ['fox', '🦊'],
-  ['panda', '🐼'],
-  ['koala', '🐨'],
-  ['tiger', '🐯'],
-  ['lion', '🦁'],
-  ['frog', '🐸'],
-  ['monkey', '🐵'],
-  ['unicorn', '🦄'],
-  ['octopus', '🐙'],
-  ['owl', '🦉'],
-  ['penguin', '🐧'],
-  ['rabbit', '🐰'],
-  ['cat', '🐱'],
-  ['puppy', '🐶'],
-  ['hamster', '🐹'],
-  ['bear', '🐻'],
-  ['otter', '🦦'],
-  ['sloth', '🦥'],
-  ['hedgehog', '🦔'],
-  ['whale', '🐳'],
-  ['dolphin', '🐬'],
-  ['turtle', '🐢'],
-  ['parrot', '🦜'],
-  ['flamingo', '🦩'],
-  ['giraffe', '🦒'],
-  ['zebra', '🦓'],
-  ['elephant', '🐘'],
-  ['butterfly', '🦋'],
-  ['bee', '🐝'],
-  ['ladybug', '🐞'],
-  ['duck', '🦆'],
-  ['swan', '🦢'],
-  ['peacock', '🦚'],
-  ['raccoon', '🦝'],
-  ['deer', '🦌'],
-  ['seal', '🦭'],
-  ['crab', '🦀'],
-  ['shark', '🦈'],
+const ANIMALS = [
+  'fox',
+  'panda',
+  'koala',
+  'tiger',
+  'lion',
+  'frog',
+  'monkey',
+  'unicorn',
+  'octopus',
+  'owl',
+  'penguin',
+  'rabbit',
+  'cat',
+  'puppy',
+  'hamster',
+  'bear',
+  'otter',
+  'sloth',
+  'hedgehog',
+  'whale',
+  'dolphin',
+  'turtle',
+  'parrot',
+  'flamingo',
+  'giraffe',
+  'zebra',
+  'elephant',
+  'butterfly',
+  'bee',
+  'ladybug',
+  'duck',
+  'swan',
+  'peacock',
+  'raccoon',
+  'deer',
+  'seal',
+  'crab',
+  'shark',
 ];
 
 function hash(s: string): number {
@@ -70,15 +70,15 @@ function hash(s: string): number {
 
 export interface Persona {
   name: string; // "brown toucan"
-  emoji: string;
-  color: string; // avatar background
+  avatar: string; // static SVG in public/avatars/, one per animal (see scripts/generate-avatars.mjs)
+  color: string; // placeholder background while the avatar loads
 }
 
 export function persona(visitorId: string): Persona {
   const h = hash(visitorId);
   const [color, bg] = COLORS[h % COLORS.length];
-  const [animal, emoji] = ANIMALS[Math.floor(h / COLORS.length) % ANIMALS.length];
-  return { name: `${color} ${animal}`, emoji, color: bg };
+  const i = Math.floor(h / COLORS.length) % ANIMALS.length;
+  return { name: `${color} ${ANIMALS[i]}`, avatar: `/avatars/${i}.svg`, color: bg };
 }
 
 /** A real name when we know it (identify() or a payment), otherwise the animal name. */

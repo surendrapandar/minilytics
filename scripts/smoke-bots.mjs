@@ -1,4 +1,4 @@
-// Local-only integration test. Requires wrangler dev and migration 0008.
+// Local-only integration test. Requires wrangler dev and migration 0010.
 import assert from 'node:assert/strict';
 const base = process.env.BASE ?? 'http://localhost:8787';
 if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname)) throw new Error('Use a local test server');

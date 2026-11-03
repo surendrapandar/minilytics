@@ -403,6 +403,35 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
   return c.json({ ok: true });
 }
 
+/**
+ * One Stripe account can feed several sites, and Stripe sends every event to every endpoint. Without this,
+ * a payment lands on whichever site's webhook happens to arrive first. A payment is another site's when its
+ * checkout is tagged for that site (metadata ml_site_id), when the buyer's visitor id was only ever seen on
+ * other sites, or (renewals, which carry no visitor) when the customer has only ever paid on other sites.
+ * With no evidence either way it's recorded, as before.
+ */
+export async function stripePaymentIsElsewhere(
+  db: D1Database,
+  site: Site,
+  p: { taggedSite?: string | null; visitorId?: string | null; customerId?: string | null },
+): Promise<boolean> {
+  if (p.taggedSite) return p.taggedSite !== site.id;
+  if (p.visitorId) {
+    const r = await db.prepare('SELECT site_id FROM visitors WHERE id = ? LIMIT 20').bind(p.visitorId).all<{ site_id: string }>();
+    const sites = r.results.map((x) => x.site_id);
+    if (sites.length) return !sites.includes(site.id);
+  }
+  if (p.customerId) {
+    const r = await db
+      .prepare("SELECT DISTINCT site_id FROM payments WHERE provider = 'stripe' AND customer_id = ? LIMIT 20")
+      .bind(p.customerId)
+      .all<{ site_id: string }>();
+    const sites = r.results.map((x) => x.site_id);
+    if (sites.length) return !sites.includes(site.id);
+  }
+  return false;
+}
+
 /** Stripe webhook: POST /api/webhooks/stripe/:siteId */
 export async function handleStripeWebhook(c: Context<AppEnv>) {
   const site = await getSite(c.env.DB, c.req.param('siteId')!);
@@ -424,6 +453,13 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
     if (o.payment_status !== 'paid') return c.json({ ok: true, ignored: 'not paid yet' });
     // Payment links can't carry metadata, so the script puts the visitor in client_reference_id: ml_<vid>__<sid>.
     const ref = /^ml_([\w-]+?)__([\w-]+)$/.exec(o.client_reference_id ?? '');
+    const visitorId = pickMeta(o.metadata, ['ml_visitor_id', 'visitor_id']) ?? ref?.[1];
+    const elsewhere = await stripePaymentIsElsewhere(c.env.DB, site, {
+      taggedSite: pickMeta(o.metadata, ['ml_site_id']),
+      visitorId,
+      customerId: str(o.customer),
+    });
+    if (elsewhere) return c.json({ ok: true, ignored: 'not this site\'s payment' });
     await recordPayment(c.env.DB, site, {
       // A subscription's first invoice also arrives as invoice.paid; the same id makes them one payment.
       id: (o.mode === 'subscription' ? str(o.invoice) : str(o.payment_intent)) ?? String(o.id),
@@ -432,7 +468,7 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
       amount: Number(o.amount_total) || 0,
       kind: 'payment',
       currency: String(o.currency ?? site.currency),
-      visitorId: pickMeta(o.metadata, ['ml_visitor_id', 'visitor_id']) ?? ref?.[1],
+      visitorId,
       sessionId: pickMeta(o.metadata, ['ml_session_id', 'session_id']) ?? ref?.[2],
       customerId: str(o.customer),
       email: str(o.customer_details?.email)?.toLowerCase() ?? null,
@@ -444,6 +480,10 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
     // One-time Checkout payments are counted above; here only subscription invoices (first payment and renewals).
     if (!String(o.billing_reason).startsWith('subscription') || !(Number(o.amount_paid) > 0)) {
       return c.json({ ok: true, ignored: 'not a subscription payment' });
+    }
+    const meta = { ...(o.parent?.subscription_details?.metadata as object), ...(o.subscription_details?.metadata as object), ...(o.metadata as object) };
+    if (await stripePaymentIsElsewhere(c.env.DB, site, { taggedSite: pickMeta(meta, ['ml_site_id']), customerId: str(o.customer) })) {
+      return c.json({ ok: true, ignored: 'not this site\'s payment' });
     }
     await recordPayment(c.env.DB, site, {
       id: String(o.id),

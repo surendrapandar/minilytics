@@ -1,3 +1,11 @@
+# Every static file. The dashboard can't be framed by other sites (clickjacking); nothing is MIME-sniffed.
+# No script/style restrictions here: the app uses an inline theme script, map tiles and Google avatars.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'
+
 /js/script.js
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=3600
@@ -14,3 +22,6 @@
 
 /site.webmanifest
   Content-Type: application/manifest+json
+
+/avatars/*
+  Cache-Control: public, max-age=604800

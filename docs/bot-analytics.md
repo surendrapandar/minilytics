@@ -22,6 +22,6 @@ Keep this key on the server. Use your framework's supported background-task mech
 
 Only HTTP(S) URLs matching the key's site or its subdomains are accepted. Ordinary browser user agents are ignored. Stored data contains receipt time, bot label/category, hostname and normalized path; query strings, IPs and raw user agents are not stored. Classification is based on user-agent strings and can be spoofed. Data is retained until the site is deleted; consider storage usage before enabling high-volume reporting.
 
-Apply local migrations, start the dev server, then run `node scripts/smoke-bots.mjs` to test collection and isolation with temporary sites. Before deployment, apply migration `0008_bot_requests.sql` through the normal deployment workflow.
+Apply local migrations, start the dev server, then run `node scripts/smoke-bots.mjs` to test collection and isolation with temporary sites. Before deployment, apply migration `0010_bot_requests.sql` through the normal deployment workflow.
 
 For a 30-day synthetic crawler chart on the local ShipKit demo, run `npm run seed:bots` after the normal demo seed. This replaces bot requests for `demo0001` only. Run `npm run smoke:bots` for bot integration checks.
