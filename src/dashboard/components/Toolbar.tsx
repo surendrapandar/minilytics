@@ -99,7 +99,7 @@ export function Toolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <BackButton label="" className="btn h-11 w-11 justify-center px-0" />
+      <BackButton to="/" label="" className="btn h-11 w-11 justify-center px-0" />
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">
@@ -117,7 +117,9 @@ export function Toolbar({
                 className={itemCls(s.id === site.id)}
                 onClick={() => {
                   close();
-                  navigate(`/site/${s.id}${window.location.search}`);
+                  // Switching sites replaces the history entry, so the browser's back button returns to the
+                  // all-websites page rather than stepping through every site viewed.
+                  navigate(`/site/${s.id}${window.location.search}`, { replace: true });
                 }}
               >
                 <Favicon domain={s.domain} size={16} /> {s.name}

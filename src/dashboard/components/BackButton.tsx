@@ -3,10 +3,22 @@ import { navigate } from '../App';
 /**
  * Steps back to the previous in-app page. When there is none (a bookmark, a fresh tab, a link from
  * elsewhere), going back would leave the site, so it goes to `fallback` instead.
+ * With `to`, it always goes to that page instead of stepping back through history.
  */
-export function BackButton({ fallback = '/', label = 'Back', className = 'btn' }: { fallback?: string; label?: string; className?: string }) {
+export function BackButton({
+  fallback = '/',
+  to,
+  label = 'Back',
+  className = 'btn',
+}: {
+  fallback?: string;
+  to?: string;
+  label?: string;
+  className?: string;
+}) {
   const back = () => {
-    if ((window.history.state as { app?: boolean } | null)?.app) window.history.back();
+    if (to) navigate(to);
+    else if ((window.history.state as { app?: boolean } | null)?.app) window.history.back();
     else navigate(fallback);
   };
   return (
