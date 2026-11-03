@@ -13,6 +13,22 @@ const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
 const LOCKOUT_MS = 15 * 60_000;
 
+// Basic hardening for everything the Worker answers (API and app pages). Static files get the same
+// headers from public/_headers. The tracking script and endpoint stay embeddable on customers' sites.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (c.req.path.startsWith('/api/')) {
+    // Stats, settings and secrets must never sit in a shared or browser cache.
+    if (c.req.path !== '/api/event' && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
+  } else {
+    // The dashboard can't be framed by another site (clickjacking).
+    c.header('X-Frame-Options', 'DENY');
+    c.header('Content-Security-Policy', "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+  }
+});
+
 // ---------- public: tracking, webhooks, server-side API
 
 app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
@@ -30,20 +46,20 @@ app.post('/api/auth/login', async (c) => {
     return c.json({ error: 'Set ADMIN_PASSWORD and SESSION_SECRET (see README).' }, 500);
   }
   // Lock an IP out after too many wrong passwords, so a public dashboard can't be brute-forced.
+  // The attempt is recorded and counted in one atomic batch BEFORE the password is checked: checking first
+  // and recording afterwards would let a burst of parallel guesses all slip under the limit.
   const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
   const now = Date.now();
-  const recent = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?')
-    .bind(ip, now - LOCKOUT_MS)
-    .first<{ n: number }>();
-  if ((recent?.n ?? 0) >= MAX_FAILURES) {
+  const [, , attempts] = await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
+    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
+    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(ip, now - LOCKOUT_MS),
+  ]);
+  if (((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES) {
     return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
   }
   const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
   if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
-    await c.env.DB.batch([
-      c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
-      c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
-    ]);
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: 'Wrong password' }, 401);
   }
@@ -219,7 +235,8 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
-    ['events', 'sessions', 'visitors', 'payments', 'funnels'].map((t) =>
+    // Everything stored for the site, so deleting it really removes its visitors' data.
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );

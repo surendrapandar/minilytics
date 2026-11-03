@@ -414,6 +414,7 @@ await stripe.checkout.sessions.create({
   metadata: {
     ml_visitor_id: jar.get('ml_vid')?.value ?? '',
     ml_session_id: jar.get('ml_sid')?.value ?? '',
+    ml_site_id: '${site.id}', // only needed if one Stripe account sells for several sites
   },
 });`}</Code>
           <p className="text-stone-500">
