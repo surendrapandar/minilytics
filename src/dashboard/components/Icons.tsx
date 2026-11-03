@@ -104,16 +104,18 @@ export function Flag({ cc, size = 18 }: { cc: string | null; size?: number }) {
   );
 }
 
-/** A friendly, stable avatar per visitor; matches their animal name ("brown fox" → 🦊). */
+/** A friendly, stable avatar per visitor (same visitor id = same face and animal name). */
 export function Avatar({ id, size = 40 }: { id: string; size?: number }) {
   const p = persona(id);
   return (
-    <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full ring-2 ring-white"
-      style={{ width: size, height: size, background: p.color, fontSize: size * 0.55 }}
+    <img
+      src={p.avatar}
+      alt=""
       title={p.name}
-    >
-      {p.emoji}
-    </span>
+      width={size}
+      height={size}
+      className="inline-block shrink-0 rounded-full ring-2 ring-white"
+      style={{ width: size, height: size, background: p.color }}
+    />
   );
 }
