@@ -9,7 +9,7 @@ const REMEMBER_MS = 30 * 86_400_000;
  * The visitor's real IP. When the tracker is proxied through the customer's own domain (Vercel),
  * Cloudflare sees the proxy, so use the forwarded address instead (same rule as geo).
  */
-function clientIp(c: Context<AppEnv>): string {
+export function clientIp(c: Context<AppEnv>): string {
   if (c.req.header('x-vercel-ip-country')) {
     const fwd = c.req.header('x-real-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
     if (fwd) return fwd;

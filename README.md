@@ -173,6 +173,7 @@ The Terms, Privacy and Refund pages (`/terms`, `/privacy`, `/refund`) are plain-
 - **Ignore your own visits:** open `https://yoursite.com/?ml_ignore=true` once per browser
 - **Single-page apps** (Next.js, React Router…) are handled automatically
 - **Subdomains:** `app.yoursite.com` and `yoursite.com` share the same visitor, because the cookie is set on the root domain
+- **No cookies at all:** add `data-cookieless` (see [Cookieless mode](#cookieless-mode))
 
 ### Tracking a specific tweet / article
 
@@ -186,6 +187,28 @@ https://yoursite.com/?ref=launch-tweet            (short version)
 
 For SEO, Google never shares the search keyword, but **Entry page** with the **Google** referrer tells you which
 article people found you through.
+
+### Cookieless mode
+
+Add `data-cookieless` to store nothing in the visitor's browser (no cookie, no local storage), for sites that can't
+set cookies without asking for consent first (e.g. in the EU):
+
+```html
+<script defer data-website-id="SITE_ID" data-cookieless src="https://YOUR-MINILYTICS-HOST/js/script.js"></script>
+```
+
+The server then identifies a visitor by a hash of a random daily salt, the site, the IP and the user agent. The salt
+is deleted when its UTC day ends, so a hash can't be traced back to an IP, and the raw IP is never stored. A visit
+still ends after 30 minutes of inactivity. What changes:
+
+- **A visitor is new every day.** Visitor counts over several days add up the daily uniques, and journeys spread
+  over several days aren't linked (subscription renewals still go to the first payment's visitor).
+- **Checkouts must be tagged on the day of the visit.** There is no cookie to read on your server: send
+  `window.minilytics.attribution()` from the browser with the checkout or sign-up request and put it in the
+  checkout metadata (Stripe: also in `subscription_data.metadata`, so the first invoice after a free trial is
+  credited too). Payment links are tagged automatically, as in the default mode.
+- **A proxied script must forward the visitor's IP**, or every visitor looks the same (Vercel rewrites do).
+- **Subdomains** count as your own site for outbound links only when you set `data-domain="yoursite.com"`.
 
 ## Revenue attribution
 
@@ -264,7 +287,7 @@ No analytics tool is 100% accurate. These are the main gaps and how this project
 - **Ad blockers** block some analytics domains. Proxy the script through your own domain (Settings shows a Next.js
   rewrite). Payments are always recorded by the webhook, even when the visitor's browser blocked tracking.
 - **Safari** keeps cookies set by JavaScript for at most 7 days. A Safari visitor who returns after more than a week counts as new. The
-  email fallback above recovers most of these payments.
+  email fallback above recovers most of these payments. Cookieless mode has no such cap, but counts a visitor as new every day.
 - **Bots** are filtered by user agent and the `navigator.webdriver` flag.
 - Revenue in a different currency than the site's is converted only when Dodo gives a settlement amount in the site's currency.
 
