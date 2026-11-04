@@ -17,7 +17,7 @@ export function Favicon({ domain, size = 18, fallback }: { domain?: string | nul
   }
   return (
     <img
-      src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`}
+      src={`/api/favicon?domain=${encodeURIComponent(domain)}`}
       width={size}
       height={size}
       className="shrink-0 rounded"

@@ -94,6 +94,74 @@ const loadSite = async (c: Context<AppEnv>, next: Next) => {
 app.use('/api/sites/:id', loadSite);
 app.use('/api/sites/:id/*', loadSite);
 
+const FAVICON_TTL_SECONDS = 7 * 24 * 60 * 60;
+const FAVICON_MAX_BYTES = 256 * 1024;
+
+function safeFaviconDomain(value: string): string {
+  const domain = cleanDomain(value);
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return '';
+  if (/(^|\.)(localhost|local|internal|arpa)$/.test(domain) || domain.includes('metadata')) return '';
+  return domain;
+}
+
+async function fetchRemoteFavicon(domain: string): Promise<{ body: ArrayBuffer; type: string } | null> {
+  const sources = [
+    `https://${domain}/favicon.ico`,
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`,
+  ];
+  for (const url of sources) {
+    try {
+      const response = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(3500),
+        headers: {
+          accept: 'image/*',
+          'user-agent': 'MinilyticsFavicon/1.0 (+https://github.com/surendrapandar/minilytics)',
+        },
+      });
+      if (!response.ok) continue;
+      const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      const isIcon = type.startsWith('image/') || (type === 'application/octet-stream' && url.endsWith('.ico'));
+      if (!isIcon) continue;
+      const body = await response.arrayBuffer();
+      if (body.byteLength < 64 || body.byteLength > FAVICON_MAX_BYTES) continue;
+      return { body, type: type.startsWith('image/') ? type : 'image/x-icon' };
+    } catch {
+      // Try the next source.
+    }
+  }
+  return null;
+}
+
+// Proxy site icons through the Worker so the dashboard does not depend on
+// third-party icon hosts (Google is blocked on some networks).
+app.get('/api/favicon', requireUser, async (c) => {
+  const domain = safeFaviconDomain(c.req.query('domain') ?? '');
+  if (!domain) return c.notFound();
+  const access = siteAccessSql(c.env, c.get('user'));
+  const site = await c.env.DB.prepare(`SELECT s.id FROM sites s WHERE s.domain = ? AND ${access.sql}`)
+    .bind(domain, ...access.params)
+    .first();
+  if (!site) return c.notFound();
+
+  const cache = (caches as unknown as { default: Cache }).default;
+  const cacheKey = new Request(new URL(`/api/favicon?domain=${encodeURIComponent(domain)}`, c.req.url).toString());
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const icon = await fetchRemoteFavicon(domain);
+  if (!icon) return c.notFound();
+  const response = new Response(icon.body, {
+    headers: {
+      'content-type': icon.type,
+      'cache-control': `public, max-age=${FAVICON_TTL_SECONDS}`,
+      'x-content-type-options': 'nosniff',
+    },
+  });
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
+  return response;
+});
+
 function cleanDomain(input: string): string {
   return input
     .trim()
