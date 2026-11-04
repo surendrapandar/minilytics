@@ -7,6 +7,7 @@ import { Legal } from './pages/Legal';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Sites } from './pages/Sites';
+import { useApplyTheme } from './lib/theme';
 
 export function navigate(to: string) {
   window.history.pushState({ app: true }, '', to);
@@ -81,6 +82,9 @@ export function App() {
   const path = usePath();
   const [me, setMe] = useState<Me | null>(null);
   usePageMeta(path);
+  // The landing and legal pages are designed light; the app follows the theme. Left alone until we know who's signed in.
+  const marketing = LEGAL.test(path) || (!!me && !me.loggedIn && me.hosted);
+  useApplyTheme(LEGAL.test(path) ? false : me ? !marketing : null);
 
   const refresh = useCallback(async () => {
     const r = await api<Me>('/api/auth/me').catch(() => ({ loggedIn: false, hosted: false, user: null }) as Me);

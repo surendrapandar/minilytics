@@ -4,6 +4,7 @@ import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
 import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 
 export const PERIODS: { value: string; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -220,6 +221,7 @@ export function Toolbar({
           <path d="M21 3v5h-5" />
         </svg>
       </button>
+      <ThemeToggle className="btn h-11 w-11 px-0" />
     </div>
   );
 }

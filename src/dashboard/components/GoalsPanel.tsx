@@ -276,7 +276,7 @@ function Journey({ search }: { search: string }) {
   return (
     <div className="overflow-x-auto">
       {unmatched > 0 && (
-        <div className="mx-3 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mx-3 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           <span>
             {unmatched} payment{unmatched > 1 ? 's' : ''} not linked to a visitor yet.{' '}
             <a className="underline" href={`/site/${site.id}/settings`}>
@@ -299,7 +299,7 @@ function Journey({ search }: { search: string }) {
             {rematch === 'working' ? 'Matching…' : rematch ?? 'Try matching again'}
           </button>
           {reasons.length > 0 && (
-            <ul className="w-full space-y-1 border-t border-amber-200 pt-2 text-xs">
+            <ul className="w-full space-y-1 border-t border-amber-200 dark:border-amber-500/30 pt-2 text-xs">
               {reasons.map((r) => (
                 <li key={r.id}>
                   <b>{r.name ?? r.id}</b>: {r.matched ? '✓ matched' : '✗ not matched'}

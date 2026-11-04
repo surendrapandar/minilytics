@@ -7,7 +7,7 @@ import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
-import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { breakdown, customers, funnel, geo, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -237,6 +237,8 @@ app.get('/api/sites/:id/breakdown', async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 });
+
+app.get('/api/sites/:id/geo', async (c) => c.json(await geo(makeCtx(c))));
 
 // Dodo payments that couldn't be placed on a site yet, grouped by product.
 app.get('/api/sites/:id/pending-payments', async (c) => {

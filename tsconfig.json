@@ -10,6 +10,8 @@
     "noEmit": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/dashboard/*"] },
     "types": ["@cloudflare/workers-types", "node"]
   },
   "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]

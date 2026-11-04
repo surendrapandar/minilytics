@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { navigate } from '../App';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
-import { Panel, renderLabel } from '../components/Panel';
+import { MAP_TAB, Panel, renderLabel } from '../components/Panel';
 import { Toolbar } from '../components/Toolbar';
 import { VisitorModal } from '../components/VisitorModal';
 import { qs, type Overview, type Site } from '../lib/api';
@@ -11,7 +11,7 @@ import { fmtMoney } from '../lib/format';
 import { useApi } from '../lib/useApi';
 import { useQueryState } from '../lib/useQueryState';
 
-// The globe pulls in a map library, so it's only downloaded when opened.
+// The live view (dithered globe, dot map and street map) is only downloaded when opened.
 const LiveView = lazy(() => import('../components/LiveView'));
 
 const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
@@ -134,6 +134,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
               { label: 'Country', dim: 'country', filter: 'country' },
               { label: 'Region', dim: 'region', filter: 'region' },
               { label: 'City', dim: 'city', filter: 'city' },
+              { label: 'Map', dim: MAP_TAB },
             ]}
           />
           <Panel
@@ -165,7 +166,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
         </p>
       </div>
       {live && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 bg-[#070b1a]" />}>
+        <Suspense fallback={<div className="fixed inset-0 z-50 bg-paper" />}>
           <LiveView onClose={() => setLive(false)} />
         </Suspense>
       )}

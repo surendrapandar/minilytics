@@ -335,6 +335,50 @@ function merge(visits: any[], revenue: any[]): BreakdownRow[] {
   return rows;
 }
 
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  country: string | null;
+  city: string | null;
+  visitors: number;
+  revenue: number;
+}
+
+/** Where visitors were in the period: one point per city, for sessions that have a location. */
+export async function geo(ctx: Ctx, limit = 150): Promise<GeoPoint[]> {
+  const { db } = ctx;
+  const lim = Math.max(1, Math.min(500, limit));
+  const w = sessionsWhere(ctx);
+  const pay = paymentsFrom(ctx);
+  const payJoin = hasFilters(ctx.filters)
+    ? pay
+    : {
+        sql: `payments p JOIN sessions s ON s.site_id = p.site_id AND s.id = p.session_id WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`,
+        params: pay.params,
+      };
+  const key = `COALESCE(s.country, '') || '|' || COALESCE(s.city, '')`;
+  const [v, r] = await db.batch([
+    db
+      .prepare(
+        `SELECT ${key} AS k, MAX(s.country) AS country, MAX(s.city) AS city, AVG(s.lat) AS lat, AVG(s.lon) AS lon,
+                COUNT(DISTINCT s.visitor_id) AS visitors
+         FROM sessions s WHERE ${w.sql} AND s.lat IS NOT NULL AND s.lon IS NOT NULL
+         GROUP BY k ORDER BY visitors DESC LIMIT ${lim}`,
+      )
+      .bind(...w.params),
+    db.prepare(`SELECT ${key} AS k, SUM(p.amount) AS revenue FROM ${payJoin.sql} AND s.lat IS NOT NULL GROUP BY k`).bind(...payJoin.params),
+  ]);
+  const revenue = new Map((r.results as { k: string; revenue: number }[]).map((x) => [x.k, x.revenue]));
+  return (v.results as any[]).map((x) => ({
+    lat: x.lat,
+    lon: x.lon,
+    country: x.country,
+    city: x.city,
+    visitors: x.visitors,
+    revenue: revenue.get(x.k) ?? 0,
+  }));
+}
+
 /** Customers in the period, with where they came from (the "Journey" tab). */
 export async function customers(ctx: Ctx) {
   const { db, site, range } = ctx;

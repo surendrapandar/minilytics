@@ -5,7 +5,9 @@ import { useDash } from '../lib/context';
 import { countryName, fmtNumber, fmtPct } from '../lib/format';
 import { useApi } from '../lib/useApi';
 import { BrowserIcon, ChannelIcon, DeviceIcon, Favicon, Flag, OSIcon, SourceIcon } from './Icons';
+import { DitherBar } from './DitherBar';
 import { Modal } from './Modal';
+import { VisitorDotMap } from './VisitorDotMap';
 
 export interface TabDef {
   label: string;
@@ -13,6 +15,9 @@ export interface TabDef {
   /** Session filter applied when a row is clicked (omit for non-filterable tabs). */
   filter?: string;
 }
+
+/** The `dim` of a tab that shows the visitor dot map instead of a list. */
+export const MAP_TAB = 'map';
 
 /** How each dimension's label and icon are shown. */
 export function renderLabel(dim: string, row: Pick<BreakdownRow, 'label' | 'extra'>): ReactNode {
@@ -109,14 +114,14 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
         return (
           <div
             key={`${r.label}-${i}`}
-            className={`group relative flex h-10 items-center rounded-lg ${tab.filter ? 'cursor-pointer' : ''}`}
+            className={`group relative flex h-10 items-center rounded-md ${tab.filter ? 'cursor-pointer' : ''}`}
             onClick={() => onPick?.(r)}
           >
-            <div className="absolute inset-0 flex">
-              <div className="rounded-l-lg bg-visitorsSoft transition-all" style={{ width: `${vw}%`, minWidth: r.visitors ? 4 : 0 }} />
-              {rw > 0 && <div className="rounded-r-lg bg-revenueSoft" style={{ width: `${rw}%` }} />}
+            <div className="absolute inset-0 flex gap-px">
+              <DitherBar width={`${vw}%`} minWidth={r.visitors ? 4 : 0} color="blue" />
+              {rw > 0 && <DitherBar width={`${rw}%`} color="orange" />}
             </div>
-            <div className="absolute inset-0 hidden rounded-lg ring-1 ring-stone-300/70 group-hover:block" />
+            <div className="absolute inset-0 hidden rounded-md ring-1 ring-stone-300/70 group-hover:block" />
             <div className="relative flex min-w-0 flex-1 items-center gap-2.5 px-3 text-[15px]">{renderLabel(dim, r)}</div>
             <div className="relative flex shrink-0 items-center gap-3 pr-3 text-[15px] font-medium">
               {r.revenue !== 0 && <span className="hidden text-sm font-normal text-revenue group-hover:inline">{money(r.revenue)}</span>}
@@ -146,7 +151,8 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
   const [details, setDetails] = useState(false);
   const [search, setSearch] = useState('');
   const tab = tabs.find((t) => t.dim === active)!;
-  const { data, loading, error } = useApi<BreakdownRow[]>(`/api/sites/${site.id}/breakdown?${qs(q, { dim: active })}`, reloadKey);
+  const isMap = active === MAP_TAB;
+  const { data, loading, error } = useApi<BreakdownRow[]>(isMap ? null : `/api/sites/${site.id}/breakdown?${qs(q, { dim: active })}`, reloadKey);
 
   const pick = (r: BreakdownRow) => {
     if (!tab.filter) return;
@@ -167,19 +173,23 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
           ))}
         </div>
         <button
-          className="flex shrink-0 items-center gap-1 px-2 text-sm font-medium text-stone-600 hover:text-ink"
+          className="flex shrink-0 items-center gap-1 px-2 font-mono text-[11px] uppercase tracking-[0.06em] text-stone-600 hover:text-ink"
           onClick={() => setSort((s) => (s === 'visitors' ? 'revenue' : 'visitors'))}
           title="Sort by visitors or revenue"
         >
           {sort === 'visitors' ? 'Visitors' : 'Revenue'} <span className="text-stone-400">↑↓</span>
         </button>
       </div>
-      <div className={`flex-1 ${loading && !data ? 'animate-pulse' : ''}`}>
-        {error && <p className="p-3 text-sm text-red-600">{error}</p>}
-        {data && data.length === 0 && <p className="p-6 text-center text-sm text-stone-400">No data for this period</p>}
-        {data && <Bars rows={data} dim={active} tab={tab} sort={sort} limit={10} onPick={pick} />}
-      </div>
-      {data && data.length > 10 && (
+      {isMap ? (
+        <VisitorDotMap sort={sort} />
+      ) : (
+        <div className={`flex-1 ${loading && !data ? 'animate-pulse' : ''}`}>
+          {error && <p className="p-3 text-sm text-red-600">{error}</p>}
+          {data && data.length === 0 && <p className="p-6 text-center text-sm text-stone-400">No data for this period</p>}
+          {data && <Bars rows={data} dim={active} tab={tab} sort={sort} limit={10} onPick={pick} />}
+        </div>
+      )}
+      {!isMap && data && data.length > 10 && (
         <button className="mx-auto mt-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:text-ink" onClick={() => setDetails(true)}>
           ⛶ Details
         </button>

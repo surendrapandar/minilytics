@@ -77,6 +77,16 @@ export interface BreakdownRow {
   extra?: string | null;
 }
 
+/** Visitors in one city, from /geo. */
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  country: string | null;
+  city: string | null;
+  visitors: number;
+  revenue: number;
+}
+
 export type Filters = Record<string, string>;
 
 export interface Query {

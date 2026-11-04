@@ -50,10 +50,10 @@ function CopyButton({ text, label = 'Copy', className = '' }: { text: string; la
 /** A code block with a small header bar, so the copy button never covers the code. */
 function Code({ label, children }: { label?: string; children: string }) {
   return (
-    <div className="overflow-hidden rounded-xl bg-stone-900">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
-        <span className="font-mono text-xs text-stone-400">{label}</span>
-        <CopyButton text={children} className={`${SMALL_BUTTON} text-stone-300 hover:bg-white/10 hover:text-white`} />
+    <div className="overflow-hidden rounded-xl bg-night dark:ring-1 dark:ring-stone-200">
+      <div className="flex items-center justify-between border-b border-night-line px-4 py-1.5">
+        <span className="font-mono text-xs text-night-muted">{label}</span>
+        <CopyButton text={children} className={`${SMALL_BUTTON} text-night-muted hover:bg-night-line hover:text-night-fg`} />
       </div>
       <code className="code rounded-none">{children}</code>
     </div>
@@ -215,7 +215,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
 
       <Section title="Danger zone">
         <button
-          className="btn border-red-200 text-red-600"
+          className="btn border-red-200 dark:border-red-500/40 text-red-600"
           onClick={async () => {
             if (prompt(`Type ${site.domain} to delete this site and all of its data`) !== site.domain) return;
             await api(`/api/sites/${siteId}`, { method: 'DELETE' });
@@ -353,9 +353,9 @@ function PendingDodoPayments({ site }: { site: Site }) {
   }, [site.id]);
   if (!rows.length) return null;
   return (
-    <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-      <p className="font-medium text-amber-900">Payments waiting for a site</p>
-      <p className="mt-1 text-amber-800">
+    <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm">
+      <p className="font-medium text-amber-900 dark:text-amber-200">Payments waiting for a site</p>
+      <p className="mt-1 text-amber-800 dark:text-amber-200">
         These came from a product none of your sites links to yet, so they aren't counted anywhere. They're placed automatically once a buyer
         comes from {site.name}. Know they're {site.name}'s? Count them now.
       </p>
@@ -471,7 +471,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
   const [open, setOpen] = useState(false);
   const prompt = buildAiPrompt(site, origin);
   return (
-    <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6">
+    <section className="card border-violet-200 dark:border-violet-500/30 bg-gradient-to-br from-violet-50 dark:from-violet-500/10 to-white p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
@@ -479,7 +479,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
         </div>
         <CopyButton text={prompt} label="Copy AI prompt" className="btn-dark shrink-0" />
       </div>
-      <button className="mt-3 text-sm font-medium text-violet-700 hover:underline" onClick={() => setOpen((o) => !o)}>
+      <button className="mt-3 text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline" onClick={() => setOpen((o) => !o)}>
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}

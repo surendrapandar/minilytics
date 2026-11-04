@@ -2,17 +2,122 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #f8f6f3; color: #1c1917; }
+:root {
+  --white: 255 255 255;
+  --paper: 248 246 243;
+  --ink: 28 25 23;
+  --night: 28 25 23;
+  --stone-50: 250 250 249;
+  --stone-100: 245 245 244;
+  --stone-200: 231 229 228;
+  --stone-300: 214 211 209;
+  --stone-400: 168 162 158;
+  --stone-500: 120 113 108;
+  --stone-600: 87 83 78;
+  --stone-700: 68 64 60;
+  --stone-800: 41 37 36;
+  --stone-900: 28 25 23;
+  --stone-950: 12 10 9;
+  --visitors: 47 127 214;
+  --revenue: 224 106 69;
+  --visitors-soft: 225 237 251;
+  --revenue-soft: 251 224 214;
+
+  --background: 248 246 243;
+  --foreground: 28 25 23;
+  --border: 231 229 228;
+  --muted-foreground: 120 113 108;
+  --popover: 255 255 255;
+  --popover-foreground: 28 25 23;
+  --ring: 168 162 158;
+
+  /* dithercn tokens. Paper is the card colour: charts knock out to it. */
+  --dither-ink: rgb(var(--ink));
+  --dither-paper: rgb(var(--white));
+  --dither-cell: 3px;
+  --dither-color-blue: rgb(var(--visitors));
+  --dither-color-purple: oklch(0.53 0.22 302);
+  --dither-color-green: oklch(0.58 0.15 152);
+  --dither-color-pink: oklch(0.58 0.21 355);
+  --dither-color-orange: rgb(var(--revenue));
+  --dither-color-red: oklch(0.55 0.21 27);
+  --dither-color-grey: #a8a29e;
+  --dither-bloom: 0.6;
+}
+
+/* Warm near-black. The stone scale runs the other way, so text-stone-500 stays "muted" and border-stone-200 stays "faint". */
+.dark {
+  color-scheme: dark;
+  --white: 26 24 23;
+  --paper: 15 14 13;
+  --ink: 245 245 244;
+  --night: 10 9 8;
+  --stone-50: 35 32 30;
+  --stone-100: 42 39 37;
+  --stone-200: 51 48 45;
+  --stone-300: 68 64 60;
+  --stone-400: 120 113 108;
+  --stone-500: 168 162 158;
+  --stone-600: 196 191 187;
+  --stone-700: 214 211 209;
+  --stone-800: 231 229 228;
+  --stone-900: 245 245 244;
+  --stone-950: 250 250 249;
+  --visitors: 96 162 236;
+  --revenue: 240 130 96;
+  --visitors-soft: 26 41 60;
+  --revenue-soft: 58 36 29;
+
+  --background: 15 14 13;
+  --foreground: 245 245 244;
+  --border: 51 48 45;
+  --muted-foreground: 168 162 158;
+  --popover: 26 24 23;
+  --popover-foreground: 245 245 244;
+  --ring: 120 113 108;
+
+  --dither-color-purple: oklch(0.7 0.18 304);
+  --dither-color-green: oklch(0.78 0.17 152);
+  --dither-color-pink: oklch(0.74 0.17 354);
+  --dither-color-red: oklch(0.68 0.2 25);
+  --dither-color-grey: #57534e;
+  --dither-bloom: 1;
+}
+
+html, body { background: rgb(var(--paper)); color: rgb(var(--ink)); }
 body { font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
 
 @layer components {
-  .card { @apply rounded-2xl border border-stone-200/80 bg-white shadow-card; }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-sm font-medium shadow-card transition hover:bg-stone-50 disabled:opacity-50; }
-  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:opacity-50; }
-  .input { @apply w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
+  .card { @apply rounded-xl border border-stone-200 bg-white; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-sm font-medium transition hover:border-stone-300 hover:bg-stone-50 disabled:opacity-50; }
+  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:opacity-50; }
+  .input { @apply w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
   .label { @apply mb-1 block text-sm font-medium text-stone-600; }
-  .tabs { @apply inline-flex rounded-xl bg-stone-100/80 p-1; }
-  .tab { @apply rounded-lg px-3 py-1 text-sm text-stone-500 transition hover:text-stone-800; }
-  .tab-active { @apply bg-white text-ink shadow-card; }
-  .code { @apply block overflow-x-auto whitespace-pre rounded-xl bg-stone-900 p-4 font-mono text-[13px] leading-relaxed text-stone-100; }
+  .tabs { @apply inline-flex rounded-lg border border-stone-200 bg-stone-50 p-0.5; }
+  .tab { @apply rounded-md px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.06em] text-stone-500 transition hover:text-stone-800; }
+  .tab-active { @apply bg-white text-ink shadow-card ring-1 ring-stone-200; }
+  .code { @apply block overflow-x-auto whitespace-pre rounded-lg bg-night p-4 font-mono text-[13px] leading-relaxed text-night-fg; }
+  /* Small mono caps for labels above numbers. */
+  .eyebrow { @apply font-mono text-[11px] uppercase tracking-[0.08em] text-stone-500; }
+}
+
+/* dithercn dot map: marker pulses and light running along the arcs. */
+@keyframes dcn-dot-map-pulse {
+  from { transform: scale(0.6); opacity: 0.9; }
+  to { transform: scale(3.4); opacity: 0; }
+}
+@keyframes dcn-dot-map-run {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+.dcn-dot-map-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: dcn-dot-map-pulse 2.8s cubic-bezier(0.23, 1, 0.32, 1) infinite both;
+}
+.dcn-dot-map-run {
+  animation: dcn-dot-map-run 3.2s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dcn-dot-map-pulse, .dcn-dot-map-run { animation: none; opacity: 0; }
 }

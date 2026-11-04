@@ -33,7 +33,21 @@ const SOURCES = [
 ];
 const CAMPAIGNS = { X: ['launch-tweet', 'build-in-public-thread', 'revenue-screenshot'], Medium: ['how-i-built-article'], LinkedIn: ['founder-post'] };
 const PAGES = ['/', '/', '/', '/pricing', '/blog/seo-for-saas', '/blog/how-to-get-first-customers', '/features', '/docs', '/changelog', '/about'];
-const COUNTRIES = [['US', 'California', 'San Francisco'], ['US', 'New York', 'New York'], ['GB', 'England', 'London'], ['IN', 'Karnataka', 'Bengaluru'], ['IN', 'Maharashtra', 'Mumbai'], ['DE', 'Berlin', 'Berlin'], ['FR', 'Île-de-France', 'Paris'], ['CA', 'Ontario', 'Toronto'], ['SG', 'Singapore', 'Singapore'], ['ES', 'Madrid', 'Madrid'], ['BR', 'São Paulo', 'São Paulo'], ['NL', 'North Holland', 'Amsterdam']];
+// [country, region, city, lat, lon]
+const COUNTRIES = [
+  ['US', 'California', 'San Francisco', 37.77, -122.42],
+  ['US', 'New York', 'New York', 40.71, -74.01],
+  ['GB', 'England', 'London', 51.51, -0.13],
+  ['IN', 'Karnataka', 'Bengaluru', 12.97, 77.59],
+  ['IN', 'Maharashtra', 'Mumbai', 19.08, 72.88],
+  ['DE', 'Berlin', 'Berlin', 52.52, 13.4],
+  ['FR', 'Île-de-France', 'Paris', 48.86, 2.35],
+  ['CA', 'Ontario', 'Toronto', 43.65, -79.38],
+  ['SG', 'Singapore', 'Singapore', 1.35, 103.82],
+  ['ES', 'Madrid', 'Madrid', 40.42, -3.7],
+  ['BR', 'São Paulo', 'São Paulo', -23.55, -46.63],
+  ['NL', 'North Holland', 'Amsterdam', 52.37, 4.9],
+];
 const DEVICES = [[['Chrome', 'Mac OS', 'Desktop'], 40], [['Safari', 'Mac OS', 'Desktop'], 12], [['Mobile Safari', 'iOS', 'Mobile'], 18], [['Chrome', 'Windows', 'Desktop'], 14], [['Chrome', 'Android', 'Mobile'], 8], [['Firefox', 'Linux', 'Desktop'], 4], [['Edge', 'Windows', 'Desktop'], 3], [['Twitter', 'iOS', 'Mobile'], 3]];
 const NAMES = ['Vlad Petrov', 'Jordan Lee', 'Ricardo Alves', 'Mia Schmidt', 'Jack Turner', 'Aisha Khan', 'Lucas Martin', 'Priya Sharma', 'Noah Kim', 'Emma Rossi', 'Ravi Patel', 'Sofia Garcia', 'Liam Chen', 'Chloe Dubois'];
 
@@ -52,7 +66,7 @@ for (let d = 34; d >= 0; d--) {
     const src = weighted(SOURCES);
     const s = d === 9 && rand() < 0.6 ? SOURCES[0][0] : src;
     const vid = uuid(), sid = uuid();
-    const [country, region, city] = pick(COUNTRIES);
+    const [country, region, city, lat, lon] = pick(COUNTRIES);
     const [browser, os, device] = weighted(DEVICES);
     const camp = CAMPAIGNS[s.source] && rand() < 0.7 ? pick(CAMPAIGNS[s.source]) : null;
     const entry = s.source === 'Google' ? pick(['/blog/seo-for-saas', '/blog/how-to-get-first-customers', '/']) : s.source === 'Medium' ? '/blog/how-to-get-first-customers' : pick(PAGES.slice(0, 5));
@@ -78,7 +92,7 @@ for (let d = 34; d >= 0; d--) {
     const name = paid ? pick(NAMES) : null;
     out.push(`INSERT INTO visitors (site_id, id, first_seen, name, email) VALUES ('${siteId}', '${vid}', ${start - (paid && rand() < 0.5 ? Math.floor(rand() * 10 * DAY) : 0)}, ${q(name)}, ${q(name ? name.toLowerCase().replace(' ', '.') + '@example.com' : null)});`);
     out.push(
-      `INSERT INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, duration, pageviews, goals, hostname, entry_page, exit_page, referrer, referrer_domain, source, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref, country, region, city, browser, os, device) VALUES ('${siteId}', '${sid}', '${vid}', ${start}, ${last}, ${duration}, ${pages.length}, ${goals}, 'shipkit.dev', ${q(entry)}, ${q(pages.at(-1))}, ${q(s.referrer)}, ${q(s.domain)}, ${q(s.source)}, ${q(s.channel)}, ${q(camp ? s.source.toLowerCase() : null)}, ${q(camp ? 'social' : null)}, ${q(camp)}, NULL, NULL, NULL, '${country}', ${q(region)}, ${q(city)}, '${browser}', '${os}', '${device}');`,
+      `INSERT INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, duration, pageviews, goals, hostname, entry_page, exit_page, referrer, referrer_domain, source, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref, country, region, city, browser, os, device, lat, lon) VALUES ('${siteId}', '${sid}', '${vid}', ${start}, ${last}, ${duration}, ${pages.length}, ${goals}, 'shipkit.dev', ${q(entry)}, ${q(pages.at(-1))}, ${q(s.referrer)}, ${q(s.domain)}, ${q(s.source)}, ${q(s.channel)}, ${q(camp ? s.source.toLowerCase() : null)}, ${q(camp ? 'social' : null)}, ${q(camp)}, NULL, NULL, NULL, '${country}', ${q(region)}, ${q(city)}, '${browser}', '${os}', '${device}', ${lat}, ${lon});`,
     );
     for (const [ts, type, n, p] of events) out.push(`INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path) VALUES ('${siteId}', '${sid}', '${vid}', ${ts}, '${type}', ${q(n)}, ${q(p)});`);
     if (paid) {

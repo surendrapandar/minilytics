@@ -3,7 +3,8 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
-import { Area, Bar, ComposedChart, ResponsiveContainer, YAxis } from 'recharts';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { TrafficChart } from '../components/TrafficChart';
 import { currencyDecimals } from '../../shared/currency';
 import { api, type Site, type SiteSpark } from '../lib/api';
 import { fmtMoney, fmtNumber } from '../lib/format';
@@ -55,6 +56,7 @@ export function Sites() {
               {me.user.email}
             </button>
           )}
+          <ThemeToggle />
           <button className="btn" onClick={logout}>
             Log out
           </button>
@@ -149,26 +151,11 @@ function Online({ n }: { n: number }) {
   );
 }
 
+const noMoney = () => '';
+
 function Sparkline({ series }: { series?: { visitors: number; revenue: number }[] }) {
-  if (!series) return <div className="mt-4 h-20 animate-pulse rounded-lg bg-stone-100" />;
-  return (
-    <div className="mt-4 h-20">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={series} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <defs>
-            <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8dbdf0" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="#8dbdf0" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <YAxis yAxisId="v" hide domain={[0, 'dataMax']} />
-          <YAxis yAxisId="r" hide domain={[0, 'dataMax']} />
-          <Bar yAxisId="r" dataKey="revenue" fill="#e07b5f" radius={[2, 2, 0, 0]} maxBarSize={6} isAnimationActive={false} />
-          <Area yAxisId="v" type="monotone" dataKey="visitors" stroke="#8dbdf0" strokeWidth={2} fill="url(#spark-fill)" isAnimationActive={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  if (!series) return <div className="mt-4 h-20 animate-pulse rounded-md bg-stone-100" />;
+  return <TrafficChart className="mt-4" data={series} label={() => ''} money={noMoney} compact height={80} />;
 }
 
 function Totals({ visitors, revenue }: { visitors?: number; revenue?: { currency: string; amount: number }[] }) {

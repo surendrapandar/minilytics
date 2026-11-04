@@ -50,9 +50,17 @@
         "sameAs": ["https://github.com/surendrapandar/minilytics", "https://x.com/surendra_pandar"]
       }
     </script>
+    <script>
+      // Dark mode before first paint, for people who have used the app (marketing pages stay light). See lib/theme.ts.
+      try {
+        var t = localStorage.getItem('ml_theme');
+        var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark && localStorage.getItem('ml_app') && !/^\/(terms|privacy|refund)\/?$/.test(location.pathname)) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script>
       // minilytics.app tracks itself with Minilytics. Only on that domain, so self-hosted dashboards load nothing extra.
       if (/(^|\.)minilytics\.app$/.test(location.hostname)) {

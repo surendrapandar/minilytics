@@ -81,8 +81,8 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                       <SourceIcon source={s.source} domain={s.referrer_domain} size={14} /> {s.source}
                     </span>
                     {s.referrer && <span className="max-w-[260px] truncate text-stone-500">{s.referrer}</span>}
-                    {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">campaign: {s.utm_campaign}</span>}
-                    {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">ref: {s.ref}</span>}
+                    {s.utm_campaign && <span className="rounded-md bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">campaign: {s.utm_campaign}</span>}
+                    {s.ref && <span className="rounded-md bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">ref: {s.ref}</span>}
                     <span className="text-stone-400">{fmtDuration(s.duration)}</span>
                   </div>
                   <ol className="mt-2 space-y-1 text-sm">
@@ -93,7 +93,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                         </span>
                         {e.type === 'pageview' && <span className="text-stone-700">📄 {e.path}</span>}
                         {e.type === 'goal' && (
-                          <span className="font-medium text-violet-700">
+                          <span className="font-medium text-violet-700 dark:text-violet-300">
                             🎯 {e.name} <span className="font-normal text-stone-400">on {e.path}</span>
                           </span>
                         )}
