@@ -199,6 +199,65 @@ export async function overview(ctx: Ctx) {
   };
 }
 
+/** Visitor trends per AI source, using the current date range and non-source filters. */
+export async function aiSourceSeries(ctx: Ctx) {
+  const filters = { ...ctx.filters, channel: 'AI' };
+  delete filters.source;
+  const aiCtx = { ...ctx, filters };
+  const where = sessionsWhere(aiCtx);
+  const bucket = bucketSql('s.started_at', ctx.range.granularity, ctx.offset);
+  const payment = paymentsFrom(aiCtx);
+  const paymentBucket = bucketSql('p.ts', ctx.range.granularity, ctx.offset);
+  const [visits, visitorTotals, revenue] = await ctx.db.batch([
+    ctx.db.prepare(
+      `SELECT ${bucket} AS b, COALESCE(s.source, 'Unknown') AS source, COUNT(DISTINCT s.visitor_id) AS visitors
+       FROM sessions s WHERE ${where.sql} GROUP BY b, source`,
+    ).bind(...where.params),
+    ctx.db.prepare(
+      `SELECT ${bucket} AS b, COUNT(DISTINCT s.visitor_id) AS visitors
+       FROM sessions s WHERE ${where.sql} GROUP BY b`,
+    ).bind(...where.params),
+    ctx.db.prepare(
+      `SELECT ${paymentBucket} AS b, COALESCE(SUM(p.amount), 0) AS revenue
+       FROM ${payment.sql} GROUP BY b`,
+    ).bind(...payment.params),
+  ]);
+  const visitRows = visits.results as { b: string; source: string; visitors: number }[];
+  const visitorsByBucket = new Map((visitorTotals.results as { b: string; visitors: number }[]).map((row) => [row.b, row.visitors]));
+  const revenueByBucket = new Map((revenue.results as { b: string; revenue: number }[]).map((row) => [row.b, row.revenue]));
+
+  const sourceTotals = new Map<string, number>();
+  for (const row of visitRows) sourceTotals.set(row.source, (sourceTotals.get(row.source) ?? 0) + row.visitors);
+  const topSources = [...sourceTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([source]) => source);
+  const hasOther = sourceTotals.size > topSources.length;
+  const sources = hasOther ? [...topSources, 'Other'] : topSources;
+  const byBucket = new Map<string, Record<string, number>>();
+
+  for (const row of visitRows) {
+    const values = byBucket.get(row.b) ?? Object.fromEntries(sources.map((source) => [source, 0]));
+    byBucket.set(row.b, values);
+    const source = topSources.includes(row.source) ? row.source : 'Other';
+    values[source] = (values[source] ?? 0) + row.visitors;
+  }
+
+  return {
+    granularity: ctx.range.granularity,
+    sources,
+    series: bucketLabels(ctx.range, ctx.offset).map((b) => {
+      const sourceValues = sources.reduce<Record<string, number>>((values, source) => {
+        values[source] = byBucket.get(b)?.[source] ?? 0;
+        return values;
+      }, {});
+      return {
+        bucket: b,
+        visitors: visitorsByBucket.get(b) ?? 0,
+        revenue: revenueByBucket.get(b) ?? 0,
+        ...sourceValues,
+      };
+    }),
+  };
+}
+
 /** Session dimensions, keyed by the name the dashboard asks for. */
 const SESSION_DIMS: Record<string, string> = {
   channel: 's.channel',

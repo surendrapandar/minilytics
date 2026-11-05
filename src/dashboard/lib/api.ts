@@ -68,6 +68,12 @@ export interface Overview {
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
 }
 
+export interface AiSourceSeries {
+  granularity: 'hour' | 'day' | 'week' | 'month';
+  sources: string[];
+  series: ({ bucket: string; visitors: number; revenue: number } & Record<string, string | number>)[];
+}
+
 export interface BreakdownRow {
   label: string | null;
   visitors: number;

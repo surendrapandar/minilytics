@@ -7,7 +7,7 @@ import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
-import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { aiSourceSeries, breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 import { sendTrafficAlerts } from './telegram';
 
 const app = new Hono<AppEnv>();
@@ -230,6 +230,7 @@ app.delete('/api/sites/:id', async (c) => {
 // ---------- stats
 
 app.get('/api/sites/:id/overview', async (c) => c.json(await overview(makeCtx(c))));
+app.get('/api/sites/:id/ai-sources', async (c) => c.json(await aiSourceSeries(makeCtx(c))));
 
 app.get('/api/sites/:id/breakdown', async (c) => {
   try {

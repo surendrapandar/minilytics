@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { navigate } from '../App';
+import { AiSearchOverview } from '../components/AiSearchOverview';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
 import { Panel, renderLabel } from '../components/Panel';
@@ -118,6 +119,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
         <div className="mt-5">
           <OverviewCard data={overview} onLive={() => setLive(true)} />
+        </div>
+
+        <div className="mt-5">
+          <AiSearchOverview />
         </div>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
