@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { User } from './auth';
 import type { AppEnv, Site } from './env';
+import { keyedHash } from './lib/crypto';
 
 /** How long a dashboard visit keeps that browser excluded from the owner's stats. */
 const REMEMBER_MS = 30 * 86_400_000;
@@ -9,7 +10,7 @@ const REMEMBER_MS = 30 * 86_400_000;
  * The visitor's real IP. When the tracker is proxied through the customer's own domain (Vercel),
  * Cloudflare sees the proxy, so use the forwarded address instead (same rule as geo).
  */
-function clientIp(c: Context<AppEnv>): string {
+export function clientIp(c: Context<AppEnv>): string {
   if (c.req.header('x-vercel-ip-country')) {
     const fwd = c.req.header('x-real-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
     if (fwd) return fwd;
@@ -17,13 +18,15 @@ function clientIp(c: Context<AppEnv>): string {
   return c.req.header('cf-connecting-ip') ?? '';
 }
 
-/** A hash of IP + browser, so the raw IP is never stored. Null when there's nothing to go on. */
+/**
+ * A keyed hash of IP + browser, so the raw IP is never stored. Keyed with SESSION_SECRET: there are only 4 billion
+ * IPv4 addresses, so a plain hash could be reversed by trying them all. Null when there's nothing to go on.
+ */
 async function fingerprint(c: Context<AppEnv>): Promise<string | null> {
   const ip = clientIp(c);
   const ua = c.req.header('user-agent') ?? '';
-  if (!ip || !ua) return null;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}|${ua}`));
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (!ip || !ua || !c.env.SESSION_SECRET) return null;
+  return keyedHash(`${c.env.SESSION_SECRET}\nowner-device`, `${ip}|${ua}`);
 }
 
 /** Sites with no owner (self-hosted, or legacy hosted sites) belong to the admin. */

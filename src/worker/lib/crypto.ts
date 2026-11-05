@@ -86,6 +86,17 @@ export async function verifyToken(secret: string, token: string | undefined): Pr
   return safeEqual(expected, token) ? value : null;
 }
 
-export function passwordsMatch(a: string, b: string): boolean {
-  return safeEqual(a, b);
+/**
+ * Constant-time password check. Both sides are hashed first, so the comparison always covers 32 bytes and
+ * the response time doesn't reveal how long the real password is.
+ */
+export async function passwordsMatch(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([a, b].map((s) => crypto.subtle.digest('SHA-256', enc.encode(s))));
+  return safeEqual(bytesToB64(x), bytesToB64(y));
+}
+
+/** HMAC-SHA256 as hex: a hash only someone holding `secret` can recompute (unlike a plain hash of a guessable input). */
+export async function keyedHash(secret: string, data: string): Promise<string> {
+  const mac = new Uint8Array(await hmac(enc.encode(secret), data));
+  return Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
 }

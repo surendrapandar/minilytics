@@ -93,11 +93,12 @@ If Wrangler asks *"Would you like Wrangler to add it on your behalf?"*, answer *
 **3. Set your password and a signing secret**
 
 ```bash
-npx wrangler secret put ADMIN_PASSWORD     # the password you'll log in with (use a strong one)
-npx wrangler secret put SESSION_SECRET     # any long random text, e.g. the output of: openssl rand -hex 32
+npx wrangler secret put ADMIN_PASSWORD     # the password you'll log in with: at least 12 characters
+npx wrangler secret put SESSION_SECRET     # at least 32 random characters: paste the output of openssl rand -hex 32
 ```
 
-Typing is hidden; that's normal. If asked *"There doesn't seem to be a Worker called minilytics… create it?"*, answer **Yes**.
+The dashboard refuses to sign anyone in with a shorter password or secret (local `npm run dev` excepted), because
+the dashboard is on the public internet and these two values are all that protects it. Typing is hidden; that's normal. If asked *"There doesn't seem to be a Worker called minilytics… create it?"*, answer **Yes**.
 
 **4. Deploy**
 
@@ -133,6 +134,30 @@ npm run deploy
 | 5 GB D1 storage | Years of data at side-project traffic |
 
 At 5–10k visitors a month you'll use a few percent of this. If you outgrow it, Cloudflare's Workers Paid plan is $5/month.
+
+### Keeping the dashboard safe
+
+Your dashboard's address is public, so anyone can reach the sign-in page. What's built in:
+
+- **Password guessing is capped.** 10 wrong tries per address (per /64 for IPv6) locks that address out for 15
+  minutes, and more than 100 failed tries across all addresses together closes sign-in for 15 minutes to every
+  browser that hasn't signed in before. Your own browsers keep a device cookie, so you can still sign in.
+- **Weak secrets are refused.** `ADMIN_PASSWORD` needs 12+ characters and `SESSION_SECRET` 32+. A login cookie
+  signed with a guessable secret could be forged, so with a weak secret every cookie is ignored.
+- **Signing out everywhere:** change `ADMIN_PASSWORD` (`npx wrangler secret put ADMIN_PASSWORD`). Every existing
+  login cookie stops working, including any that was copied from your browser.
+- Other sites can't make your signed-in browser change settings or delete sites (cross-site request checks), can't
+  frame the dashboard, and API responses are never cached.
+
+For more protection:
+
+- **Turn on the rate-limit bindings** at the bottom of `wrangler.jsonc` (uncomment them). Floods against the sign-in
+  page and the tracking endpoint are then turned away before they use any of your D1 quota.
+- **Put Cloudflare Access in front of the dashboard** (free for up to 50 users): Zero Trust → Access → Applications
+  → add your dashboard's hostname, and add *bypass* rules for `/js/*`, `/api/event`, `/api/webhooks/*` and `/api/v1/*`
+  so tracking and payments keep working. Nobody reaches the password page without first proving their email.
+- **On a custom domain, turn off the `workers.dev` address** (Workers & Pages → minilytics → Settings → Domains &
+  Routes), so there's only one way in.
 
 ## Run it as a hosted SaaS (optional)
 

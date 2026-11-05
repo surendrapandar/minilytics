@@ -2,16 +2,24 @@ import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
-import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
+import {
+  clearSession,
+  crossSiteRequest,
+  currentUser,
+  googleCallback,
+  googleStart,
+  isHosted,
+  passwordLogin,
+  requireUser,
+  siteAccessSql,
+} from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
-import { passwordsMatch, randomId } from './lib/crypto';
+import { randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
-const MAX_FAILURES = 10;
-const LOCKOUT_MS = 15 * 60_000;
 
 // Basic hardening for everything the Worker answers (API and app pages). Static files get the same
 // headers from public/_headers. The tracking script and endpoint stay embeddable on customers' sites.
@@ -19,14 +27,29 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Browsers only ever reach the dashboard over HTTPS after the first visit (no downgrade to plain HTTP).
+  c.header('Strict-Transport-Security', 'max-age=31536000');
   if (c.req.path.startsWith('/api/')) {
     // Stats, settings and secrets must never sit in a shared or browser cache.
     if (c.req.path !== '/api/event' && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
   } else {
-    // The dashboard can't be framed by another site (clickjacking).
+    // The dashboard can't be framed by another site (clickjacking), can't be scripted by a page that opened it,
+    // and has no use for the camera, microphone or location.
     c.header('X-Frame-Options', 'DENY');
     c.header('Content-Security-Policy', "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+    c.header('Cross-Origin-Opener-Policy', 'same-origin');
+    c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
   }
+});
+
+// Endpoints that other sites and servers call on purpose. Everything else under /api is the dashboard's own,
+// and a signed-in browser must not be made to call it from another page (cross-site request forgery).
+const PUBLIC_API = /^\/api\/(event$|webhooks\/|v1\/|billing\/webhook$)/;
+app.use('/api/*', async (c, next) => {
+  if (!PUBLIC_API.test(c.req.path) && crossSiteRequest(c.req.method, c.req.url, c.req.raw.headers)) {
+    return c.json({ error: 'cross-site request blocked' }, 403);
+  }
+  await next();
 });
 
 // ---------- public: tracking, webhooks, server-side API
@@ -40,33 +63,8 @@ app.post('/api/v1/goals', handleGoalApi);
 
 // ---------- login
 
-app.post('/api/auth/login', async (c) => {
-  if (isHosted(c.env)) return c.json({ error: 'Use "Continue with Google".' }, 400);
-  if (!c.env.ADMIN_PASSWORD || !c.env.SESSION_SECRET) {
-    return c.json({ error: 'Set ADMIN_PASSWORD and SESSION_SECRET (see README).' }, 500);
-  }
-  // Lock an IP out after too many wrong passwords, so a public dashboard can't be brute-forced.
-  // The attempt is recorded and counted in one atomic batch BEFORE the password is checked: checking first
-  // and recording afterwards would let a burst of parallel guesses all slip under the limit.
-  const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-  const now = Date.now();
-  const [, , attempts] = await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
-    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
-    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(ip, now - LOCKOUT_MS),
-  ]);
-  if (((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES) {
-    return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
-  }
-  const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
-  if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
-    await new Promise((r) => setTimeout(r, 500));
-    return c.json({ error: 'Wrong password' }, 401);
-  }
-  await c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip).run();
-  await setSession(c, 'admin');
-  return c.json({ ok: true });
-});
+// Brute-force limits, secret-strength checks and the trusted-device cookie live in auth.ts.
+app.post('/api/auth/login', passwordLogin);
 
 app.get('/api/auth/google', googleStart);
 app.get('/api/auth/google/callback', googleCallback);
