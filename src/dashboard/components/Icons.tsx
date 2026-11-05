@@ -96,11 +96,26 @@ export function OSIcon({ name, size }: { name: string | null; size?: number }) {
 export function DeviceIcon({ name, size = 18 }: { name: string | null; size?: number }) {
   return <Favicon size={size} fallback={name === 'Mobile' ? 'M' : name === 'Tablet' ? 'T' : 'D'} />;
 }
-export function Flag({ cc, size = 18 }: { cc: string | null; size?: number }) {
+export function Flag({ cc, size = 22 }: { cc: string | null; size?: number }) {
+  const code = flag(cc);
+  if (code === '—') {
+    return (
+      <span className="inline-flex shrink-0 items-center justify-center text-stone-400" style={{ width: size, height: size }}>
+        {code}
+      </span>
+    );
+  }
+
   return (
-    <span className="inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size, fontSize: size * 0.9 }}>
-      {flag(cc)}
-    </span>
+    <img
+      src={`https://flagcdn.com/w40/${code.toLowerCase()}.png`}
+      width={size}
+      height={size}
+      className="shrink-0 object-contain rounded-sm"
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
   );
 }
 

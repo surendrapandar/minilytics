@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayName, persona } from "../../shared/names";
 import { api } from "../lib/api";
 import { useDash } from "../lib/context";
-import { countryName, flag, fmtAgo } from "../lib/format";
+import { countryName, fmtAgo } from "../lib/format";
 import { playPayment, playVisitor, unlockAudio } from "../lib/sounds";
 import { DeviceIcon, Favicon, Flag, SourceIcon } from "./Icons";
 
@@ -560,7 +560,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
                 {f.country && (
                   <span className={muted}>
                     {" "}
-                    from {flag(f.country)} {countryName(f.country)}
+                    from <Flag cc={f.country} size={14} /> {countryName(f.country)}
                   </span>
                 )}{" "}
                 {f.type === "pageview" && (
