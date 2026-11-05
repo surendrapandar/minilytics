@@ -20,7 +20,9 @@
     "db:migrate": "wrangler d1 migrations apply minilytics --remote",
     "deploy": "vite build && wrangler d1 migrations apply minilytics --remote && wrangler deploy",
     "seed": "node scripts/seed-demo.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed.sql",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "seed:bots": "node scripts/seed-bots.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed-bots.sql",
+    "smoke:bots": "node scripts/smoke-bots.mjs"
   },
   "dependencies": {
     "hono": "^4.13.13",
