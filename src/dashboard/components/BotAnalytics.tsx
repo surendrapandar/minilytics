@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { qs } from '../lib/api';
+import { CrawlerIcon } from './Icons';
 import { useApi } from '../lib/useApi';
 import { useDash } from '../lib/context';
 import { matchesPageSearch } from '../lib/botFilters';
@@ -147,6 +148,7 @@ export function BotAnalytics() {
           {menu === 'pages' && <div className="border-b border-stone-100 p-3"><input aria-label="Search pages" placeholder="Search (llms.txt, /blog/*)" className="w-full rounded-lg bg-stone-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-stone-300" value={search} onChange={e => setSearch(e.target.value)} /></div>}
           <div className="max-h-72 overflow-y-auto p-2">{filteredOptions.map(o => <label key={o.name} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 hover:bg-stone-50">
             <input type="checkbox" aria-label={o.name} checked={menuSelected === null || menuSelected.includes(o.name)} onChange={() => toggle(o.name, menuSelected, menuOptions.map(o => o.name), setMenuSelected)} className="h-4 w-4 shrink-0 accent-stone-700" />
+            {menu === 'crawlers' && <CrawlerIcon name={o.name} size={18} />}
             <span className="min-w-0 flex-1 break-all text-sm font-medium">{o.name}</span><span className="text-sm tabular-nums text-stone-400">{fmtNumber(o.requests)}</span>
           </label>)}{filteredOptions.length === 0 && <p className="p-4 text-sm text-stone-400">No matching {menu === 'pages' ? 'pages' : 'crawlers'}.</p>}</div>
           <div className="flex items-center justify-between border-t border-stone-100 px-4 py-3 text-sm text-stone-500"><button onClick={() => setMenuSelected([])}>Clear all</button>
@@ -179,14 +181,14 @@ export function BotAnalytics() {
               aria-label={`Only ${c.name}`} onClick={() => view === 'crawlers' ? setSelectedBots(selectedBots?.length === 1 && selectedBots[0] === c.name ? null : [c.name]) : setSelectedPages(selectedPages?.length === 1 && selectedPages[0] === c.name ? null : [c.name])}
               className="relative flex w-full items-center gap-3 overflow-hidden px-4 py-4 text-left transition-colors hover:bg-stone-50">
               <span className="absolute inset-y-1 left-0 rounded-r-xl opacity-[0.08]" style={{ width: `${100 * c.requests / content.rows[0].requests}%`, backgroundColor: c.color }} />
-              {view === 'crawlers' && <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: c.color }}>{c.name.slice(0, 2)}</span>}
+              {view === 'crawlers' && <span aria-hidden="true" className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-white text-sm font-semibold" style={{ borderColor: c.color }}><CrawlerIcon name={c.name} /></span>}
               <span className="relative min-w-0 flex-1 break-all font-medium">{c.name}</span><span className="relative font-semibold tabular-nums">{fmtNumber(c.requests)}</span>
             </button>)}{!content.rows.length && <p className="p-6 text-sm text-stone-400">No matching {view}.</p>}</div>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 px-5 py-3 text-xs text-stone-400"><p>Server-reported traffic · {site.timezone} · Human filters do not apply · Identities unverified</p><button className="font-medium text-stone-500 hover:text-ink" aria-expanded={showRecent} onClick={() => setShowRecent(!showRecent)}>{showRecent ? 'Hide' : 'Show'} recent requests {showRecent ? '↑' : '↓'}</button></div>
         {content.rows.length > 10 && <p className="px-5 pb-3 text-xs text-stone-400">Chart shows the top 10 {view}. Select specific items to compare them.</p>}
-        {showRecent && <div className="overflow-auto border-t border-stone-100 px-5 pb-4"><table className="w-full text-left text-sm"><thead><tr className="text-stone-400"><th scope="col" className="py-3">Time ({site.timezone})</th><th scope="col">Crawler</th><th scope="col">Page</th></tr></thead><tbody>{data.recent.map((r, i) => <tr key={i} className="border-t border-stone-100"><td className="whitespace-nowrap py-3 pr-4">{new Date(r.ts).toLocaleString(undefined, { timeZone: site.timezone })}</td><td className="pr-4">{r.bot}</td><td className="break-all">{r.hostname}{r.path}</td></tr>)}</tbody></table><p className="text-xs text-stone-400">Up to 30 recent matching requests. Page picker shows up to 100 paths.</p></div>}
+        {showRecent && <div className="overflow-auto border-t border-stone-100 px-5 pb-4"><table className="w-full text-left text-sm"><thead><tr className="text-stone-400"><th scope="col" className="py-3">Time ({site.timezone})</th><th scope="col">Crawler</th><th scope="col">Page</th></tr></thead><tbody>{data.recent.map((r, i) => <tr key={i} className="border-t border-stone-100"><td className="whitespace-nowrap py-3 pr-4">{new Date(r.ts).toLocaleString(undefined, { timeZone: site.timezone })}</td><td className="pr-4"><span className="inline-flex items-center gap-2 whitespace-nowrap"><CrawlerIcon name={provider(r.bot)} size={18} />{r.bot}</span></td><td className="break-all">{r.hostname}{r.path}</td></tr>)}</tbody></table><p className="text-xs text-stone-400">Up to 30 recent matching requests. Page picker shows up to 100 paths.</p></div>}
       </>}
   </section>;
 }
