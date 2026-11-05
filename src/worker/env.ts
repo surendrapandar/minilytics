@@ -5,6 +5,9 @@ export interface Env {
   ADMIN_PASSWORD: string;
   /** Random string used to sign the login cookie (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET: string;
+  /** Optional Workers rate limits (see wrangler.jsonc). Without them the D1-based limits still apply. */
+  LOGIN_LIMITER?: RateLimit;
+  EVENT_LIMITER?: RateLimit;
 
   // ---- Hosted (SaaS) mode, all optional. Setting the two Google values turns it on.
   GOOGLE_CLIENT_ID?: string;

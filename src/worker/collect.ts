@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 import { classify } from '../shared/sources';
-import { siteOwnerActive } from './auth';
+import { ipBucket, siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
-import { isOwnerVisit } from './owner';
+import { clientIp, isOwnerVisit } from './owner';
 import { isBot, parseUA } from './lib/ua';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
@@ -47,9 +47,13 @@ export function belongsTo(hostname: string, domain: string): boolean {
   return h === d || h.endsWith('.' + d);
 }
 
+const MAX_BODY = 8192;
+
 export async function handleEvent(c: Context<AppEnv>) {
+  // Turn big bodies away before reading them into memory.
+  if (Number(c.req.header('content-length')) > MAX_BODY) return c.body(null, 413);
   const raw = await c.req.text();
-  if (raw.length > 8192) return c.body(null, 413);
+  if (raw.length > MAX_BODY) return c.body(null, 413);
   let body: Payload;
   try {
     body = JSON.parse(raw);
@@ -60,6 +64,11 @@ export async function handleEvent(c: Context<AppEnv>) {
 
   const ua = c.req.header('user-agent') ?? '';
   if (isBot(ua)) return c.body(null, 202);
+  // Optional Workers rate limit (see wrangler.jsonc): one address flooding a site with fake events can't fill
+  // its stats with junk or use up the database's daily write quota. A real visitor sends a few events a minute.
+  if (c.env.EVENT_LIMITER && !(await c.env.EVENT_LIMITER.limit({ key: `${body.w}:${ipBucket(clientIp(c))}` })).success) {
+    return c.body(null, 429);
+  }
 
   const site = await getSite(c.env.DB, body.w);
   if (!site) return c.body(null, 404);
