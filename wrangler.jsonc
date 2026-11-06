@@ -3,6 +3,10 @@
   "name": "minilytics",
   "main": "src/worker/index.ts",
   "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "minilytics.isine.cc", "custom_domain": true }
+  ],
   "observability": { "enabled": true },
   "assets": {
     "directory": "./dist",
@@ -15,8 +19,7 @@
     {
       "binding": "DB",
       "database_name": "minilytics",
-      // Replace with the id printed by `npx wrangler d1 create minilytics`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "bef410fe-c921-4e43-87ab-da0bce0e5408",
       "migrations_dir": "migrations"
     }
   ]
