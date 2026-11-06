@@ -1,0 +1,62 @@
+# Checks surendrapandar/minilytics once a day. If it has new commits, merges them into a
+# branch and opens a PR into main. Merging that PR triggers the deploy workflow.
+# If the merge has conflicts, the run fails (GitHub emails you) and nothing is changed.
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # daily, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM: https://github.com/surendrapandar/minilytics.git
+  SYNC_BRANCH: upstream-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch upstream main
+          echo "BEHIND=$(git rev-list --count HEAD..upstream/main)" >> "$GITHUB_ENV"
+
+      - name: Merge upstream into sync branch
+        if: env.BEHIND != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$SYNC_BRANCH"
+          git merge --no-edit upstream/main -m "Merge upstream surendrapandar/minilytics main ($BEHIND commits)"
+          git push --force origin "$SYNC_BRANCH"
+
+      - name: Open or update PR
+        if: env.BEHIND != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            {
+              echo "Automatic sync with [surendrapandar/minilytics](https://github.com/surendrapandar/minilytics)."
+              echo
+              echo "New upstream commits:"
+              echo
+              git log --oneline --no-merges main..upstream/main | sed 's/^/- /'
+              echo
+              echo "Merging this PR deploys it to Cloudflare."
+            } > body.md
+            gh pr create --base main --head "$SYNC_BRANCH" \
+              --title "Sync upstream ($BEHIND new commits)" --body-file body.md
+          else
+            echo "PR already open; branch updated."
+          fi
