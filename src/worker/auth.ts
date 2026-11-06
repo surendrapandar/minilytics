@@ -20,6 +20,8 @@ export interface User {
   paid: boolean;
   plan_status: string;
   plan_until: number | null;
+  /** 'lifetime' | 'monthly' once they've paid. */
+  plan: string | null;
 }
 
 interface UserRow {
@@ -29,6 +31,7 @@ interface UserRow {
   avatar: string | null;
   plan_status: string;
   plan_until: number | null;
+  plan: string | null;
 }
 
 const SELF_HOSTED_OWNER: User = {
@@ -40,6 +43,7 @@ const SELF_HOSTED_OWNER: User = {
   paid: true,
   plan_status: 'active',
   plan_until: null,
+  plan: null,
 };
 
 export const AUTH_COOKIE = 'ml_auth';
@@ -104,6 +108,7 @@ export async function currentUser(c: Context<AppEnv>): Promise<User | null> {
     paid: admin || planActive(row.plan_status, row.plan_until),
     plan_status: row.plan_status,
     plan_until: row.plan_until,
+    plan: row.plan,
   };
 }
 

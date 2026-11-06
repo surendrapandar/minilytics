@@ -1,8 +1,37 @@
 import { useEffect, useState } from 'react';
+import { BackButton } from '../components/BackButton';
 import { navigate, useMe } from '../App';
 import { Logo } from '../components/Logo';
 import { api } from '../lib/api';
 import { priceLabel, usePlan } from './Landing';
+
+/** Cheaper way in for people who want to try it first. Lifetime stays the highlighted choice. */
+function MonthlyOption({ price, lifetime }: { price: string; lifetime: string }) {
+  const months = Math.ceil(Number(lifetime.replace(/[^\d.]/g, '')) / Number(price.replace(/[^\d.]/g, '')));
+  return (
+    <div className="mt-6 border-t border-stone-100 pt-5">
+      <div className="flex items-baseline justify-between">
+        <span className="font-medium">Or pay monthly</span>
+        <span>
+          <span className="text-xl font-semibold">{price}</span>
+          <span className="text-stone-500">/month</span>
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-stone-500">
+        Same unlimited plan, cancel anytime.{Number.isFinite(months) && months > 1 ? ` Lifetime pays for itself in ${months} months.` : ''}
+      </p>
+      <a
+        href="/api/billing/checkout?plan=monthly"
+        className="btn mt-3 h-11 w-full"
+        data-ml-goal="checkout_click"
+        data-ml-goal-plan="monthly"
+        data-ml-goal-price={price}
+      >
+        Start monthly for {price}/month
+      </a>
+    </div>
+  );
+}
 
 export function Billing() {
   const { me, refresh } = useMe();
@@ -43,8 +72,8 @@ export function Billing() {
 
   return (
     <div className="mx-auto max-w-md px-4 py-10">
-      <div className="flex items-center justify-between">
-        <Logo />
+      <div className="flex items-center justify-between gap-2">
+        {user.paid ? <BackButton /> : <Logo />}
         <button className="btn" onClick={logout}>
           Log out
         </button>
@@ -77,6 +106,23 @@ export function Billing() {
             <button className="btn-dark mt-6 w-full" onClick={() => navigate('/')}>
               Go to dashboard →
             </button>
+            {user.plan === 'monthly' && user.plan_status === 'active' && plan?.checkout && plan.interval === 'lifetime' && (
+              <div className="mt-6 rounded-xl border border-stone-200 p-4 text-sm">
+                <div className="font-medium">Switch to lifetime for {plan.price}</div>
+                <p className="mt-1 text-stone-500">
+                  Pay once and stop paying monthly.{plan.supportEmail ? ` After paying, email ${plan.supportEmail} and we'll cancel your subscription.` : ''}
+                </p>
+                <a
+                  href="/api/billing/checkout"
+                  className="btn mt-3 w-full"
+                  data-ml-goal="checkout_click"
+                  data-ml-goal-plan="lifetime-upgrade"
+                  data-ml-goal-price={plan.price}
+                >
+                  Upgrade to lifetime →
+                </a>
+              </div>
+            )}
           </>
         ) : waiting ? (
           <div className="mt-8 text-center">
@@ -93,7 +139,10 @@ export function Billing() {
                 {plan?.supportEmail ? ` or email ${plan.supportEmail}` : ''}.
               </div>
             )}
-            <div className="mt-6 text-sm font-medium uppercase tracking-wider text-revenue">{plan?.interval === 'lifetime' ? 'Lifetime deal' : 'Founding member'}</div>
+            <div className="mt-6 text-sm font-medium uppercase tracking-wider text-revenue">
+              {plan?.interval === 'lifetime' ? 'Lifetime deal' : 'Founding member'}
+              {plan?.monthly && <span className="ml-2 rounded-full bg-revenue px-2 py-0.5 text-[11px] text-white">Best value</span>}
+            </div>
             <div className="mt-1 flex items-baseline gap-1">
               <span className="text-4xl font-semibold">{plan?.price ?? ''}</span>
               <span className="text-stone-500">{plan ? (plan.interval === 'lifetime' ? 'lifetime' : `/${plan.interval}`) : ''}</span>
@@ -123,6 +172,7 @@ export function Billing() {
                 {plan.spotsLeft} of {plan.spots} spots left at this price{plan.nextPrice ? `, then ${plan.nextPrice}` : ''}
               </p>
             ) : null}
+            {plan?.monthly && <MonthlyOption price={plan.monthly.price} lifetime={plan.price} />}
           </>
         )}
       </div>

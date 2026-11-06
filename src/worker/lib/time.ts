@@ -38,6 +38,20 @@ function parseDay(s: string, tz: string): number | null {
 
 export type Granularity = 'hour' | 'day' | 'week' | 'month';
 
+/**
+ * Keep the chart useful by only offering bucket sizes that make sense for the
+ * selected time span. This is shared by the API's validation; the dashboard
+ * mirrors the same thresholds when rendering its picker.
+ */
+export function granularitiesForSpan(span: number): Granularity[] {
+  if (span <= 2 * DAY + HOUR) return ['hour'];
+  if (span <= 7 * DAY + HOUR) return ['hour', 'day'];
+  if (span <= 31 * DAY + HOUR) return ['day', 'week'];
+  if (span <= 120 * DAY + HOUR) return ['day', 'week', 'month'];
+  if (span <= 400 * DAY + HOUR) return ['week', 'month'];
+  return ['month'];
+}
+
 export interface Range {
   from: number;
   to: number;
@@ -100,8 +114,7 @@ export function resolveRange(
   const g = (['hour', 'day', 'week', 'month'] as const).includes(q.granularity as Granularity)
     ? (q.granularity as Granularity)
     : auto;
-  // Hourly buckets over months would be thousands of points; fall back to the automatic choice.
-  const granularity = g === 'hour' && span > 7 * DAY ? auto : g;
+  const granularity = granularitiesForSpan(span).includes(g) ? g : auto;
   return { from, to, granularity };
 }
 

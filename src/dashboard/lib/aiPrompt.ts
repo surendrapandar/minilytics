@@ -23,16 +23,17 @@ export function buildAiPrompt(site: Site, origin: string): string {
 - Keep the exact attributes. Load it once only. Single-page-app navigation is tracked automatically; do not add manual pageview calls.
 - If the project has a Content-Security-Policy, allow ${origin} in script-src and connect-src.
 
-## Task 2 — Revenue attribution with Dodo Payments (most important)
-The script stores two first-party cookies: \`ml_vid\` (visitor id) and \`ml_sid\` (session id). Every Dodo payment must carry them as metadata so Minilytics knows which visitor (and therefore which tweet / article / Google page) made the money.
-- Search the codebase for Dodo usage: "dodopayments", "DodoPayments", "checkoutSessions.create", "payments.create", "subscriptions.create", "checkout.dodopayments.com", "/buy/".
+## Task 2 — Revenue attribution with Dodo Payments or Stripe (most important)
+The script stores two first-party cookies: \`ml_vid\` (visitor id) and \`ml_sid\` (session id). Every Dodo or Stripe payment must carry them as metadata so Minilytics knows which visitor (and therefore which tweet / article / Google page) made the money.
+- Search the codebase for payment code. Dodo: "dodopayments", "DodoPayments", "checkoutSessions.create", "payments.create", "subscriptions.create", "checkout.dodopayments.com", "/buy/". Stripe: "stripe", "checkout.sessions.create", "buy.stripe.com".
 - Where a checkout/payment/subscription is created on the SERVER, read the cookies from the incoming request and MERGE them into the existing metadata (never drop existing metadata keys):
     metadata: { ...existingMetadata, ml_visitor_id: <cookie ml_vid> ?? '', ml_session_id: <cookie ml_sid> ?? '' }
   Next.js App Router example: const jar = await cookies(); jar.get('ml_vid')?.value
 - If the checkout request is made from the BROWSER to the server (fetch/axios), it normally already sends cookies on the same domain. If the API is on a different domain, read the ids in the browser with window.minilytics.attribution() (returns { ml_visitor_id, ml_session_id }) and send them in the request body, then put them in metadata on the server.
 - Static Dodo payment links (<a href="https://checkout.dodopayments.com/buy/...">) need no change — the script adds metadata to them automatically on click. But if code redirects to a payment link with JavaScript (window.location = ...), append the params yourself: ?metadata_ml_visitor_id=<id>&metadata_ml_session_id=<id> using window.minilytics.attribution().
 - Make sure every checkout has a return/redirect URL on this site (e.g. return_url: 'https://${site.domain}/thanks' for checkout sessions, or ?redirect_url=... on payment links), and that page loads the Minilytics script. Dodo appends ?payment_id=... (or ?subscription_id=...) to it, and Minilytics uses that to link the payment to the visitor even if metadata is lost. Keep those query params on the URL (don't strip them before the page loads).
-- Do NOT touch Dodo webhooks in this codebase for Minilytics. I connect Dodo → Minilytics myself in the Dodo dashboard (webhook URL: ${origin}/api/webhooks/dodo/${site.id}).
+- Stripe Checkout: put the same two keys in the session's metadata, and make success_url a page on this site ending in ?session_id={CHECKOUT_SESSION_ID} (Stripe fills it in; Minilytics uses it to match the payment). Stripe Payment Links (buy.stripe.com) need no change — the script sets client_reference_id on click, unless the code already sets its own.
+- Do NOT touch payment webhooks in this codebase for Minilytics. I connect them myself in the provider's dashboard (Dodo: ${origin}/api/webhooks/dodo/${site.id}, Stripe: ${origin}/api/webhooks/stripe/${site.id}).
 
 ## Task 3 — Identify logged-in users
 Right after a successful login/signup (and on app load when a user session exists), call:

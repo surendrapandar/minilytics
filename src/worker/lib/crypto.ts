@@ -57,6 +57,20 @@ export async function verifyStandardWebhook(
     .some((sig) => safeEqual(sig, expected));
 }
 
+/**
+ * Verify a Stripe webhook signature. The `Stripe-Signature` header is `t=<unix>,v1=<hex>[,v1=<hex>]`;
+ * signed content is `${t}.${body}`, HMAC-SHA256 with the whole `whsec_...` secret as the key.
+ */
+export async function verifyStripeWebhook(secret: string, header: string | null, body: string, now = Date.now()): Promise<boolean> {
+  if (!header) return false;
+  const parts = header.split(',').map((p) => p.trim().split('='));
+  const t = parts.find(([k]) => k === 't')?.[1] ?? '';
+  if (!/^\d+$/.test(t) || Math.abs(now / 1000 - Number(t)) > 5 * 60) return false;
+  const mac = new Uint8Array(await hmac(enc.encode(secret.trim()), `${t}.${body}`));
+  const expected = Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
+  return parts.some(([k, v]) => k === 'v1' && !!v && safeEqual(v, expected));
+}
+
 /** Sign a value for the dashboard login cookie. */
 export async function signToken(secret: string, value: string): Promise<string> {
   const sig = bytesToB64(await hmac(enc.encode(secret), value)).replace(/=+$/, '');

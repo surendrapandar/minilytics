@@ -1,36 +1,104 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { BackButton } from '../components/BackButton';
 import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
+import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
 import { CRAWLER_PREFILTER } from '../../shared/crawlers';
+import { fmtMoney } from '../lib/format';
 
-function Section({ title, desc, children }: { title: string; desc?: ReactNode; children: ReactNode }) {
+const DOCS = 'https://github.com/surendrapandar/minilytics#';
+
+function Section({ title, desc, docs, children }: { title: string; desc?: ReactNode; docs?: string; children: ReactNode }) {
   return (
     <section className="card p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {docs && <DocsLink anchor={docs} />}
+      </div>
       {desc && <p className="mt-1 text-sm text-stone-500">{desc}</p>}
       <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-function Code({ children }: { children: string }) {
+function DocsLink({ anchor, children = 'Docs →' }: { anchor: string; children?: ReactNode }) {
+  return (
+    <a className="shrink-0 text-sm font-medium text-stone-500 hover:text-ink" href={DOCS + anchor} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+const SMALL_BUTTON = 'rounded-md px-2 py-0.5 text-xs font-medium transition';
+
+function CopyButton({ text, label = 'Copy', className = '' }: { text: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="relative">
-      <code className="code">{children}</code>
-      <button
-        className="absolute right-2 top-2 rounded-lg bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20"
-        onClick={() => {
-          navigator.clipboard.writeText(children);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </button>
+    <button
+      className={className}
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? '✓ Copied' : label}
+    </button>
+  );
+}
+
+/** A code block with a small header bar, so the copy button never covers the code. */
+function Code({ label, children }: { label?: string; children: string }) {
+  return (
+    <div className="overflow-hidden rounded-xl bg-stone-900">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
+        <span className="font-mono text-xs text-stone-400">{label}</span>
+        <CopyButton text={children} className={`${SMALL_BUTTON} text-stone-300 hover:bg-white/10 hover:text-white`} />
+      </div>
+      <code className="code rounded-none">{children}</code>
     </div>
+  );
+}
+
+/** A single line to copy, e.g. a webhook URL. */
+function CopyField({ value }: { value: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 py-1.5 pl-3 pr-1.5">
+      <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{value}</code>
+      <CopyButton text={value} className={`${SMALL_BUTTON} border border-stone-200 bg-surface hover:bg-stone-100`} />
+    </div>
+  );
+}
+
+function SecretField({ value, configured, onChange, onSave }: { value: string; configured: boolean; onChange: (v: string) => void; onSave: () => void }) {
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input className="input font-mono" type="password" placeholder="whsec_..." value={value} onChange={(e) => onChange(e.target.value)} />
+        <button className="btn-dark" onClick={onSave}>
+          Save
+        </button>
+      </div>
+      {configured && <p className="mt-1 text-xs text-emerald-600">✓ Connected</p>}
+    </div>
+  );
+}
+
+function Steps({ children }: { children: ReactNode }) {
+  return <ol className="space-y-5 text-sm">{children}</ol>;
+}
+
+function Step({ n, title, children }: { n: number; title: ReactNode; children?: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-xs font-semibold text-stone-600">{n}</span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <p>{title}</p>
+        {children}
+      </div>
+    </li>
   );
 }
 
@@ -51,6 +119,7 @@ export function Settings({ siteId }: { siteId: string }) {
         currency: s.currency,
         dodo_webhook_secret: s.dodo_webhook_secret ?? '',
         dodo_product_ids: s.dodo_product_ids ?? '',
+        stripe_webhook_secret: s.stripe_webhook_secret ?? '',
       });
     });
   }, [siteId]);
@@ -68,15 +137,12 @@ export function Settings({ siteId }: { siteId: string }) {
   }
 
   if (!site) return null;
-  const snippet = `<script\n  defer\n  data-website-id="${site.id}"\n  src="${origin}/js/script.js"\n></script>`;
-  const webhookUrl = `${origin}/api/webhooks/dodo/${site.id}`;
+  const set = (patch: Partial<Site>) => setForm({ ...form, ...patch });
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:py-12">
       <div className="flex items-center justify-between">
-        <button className="btn" onClick={() => navigate(`/site/${site.id}`)}>
-          ← Dashboard
-        </button>
+        <BackButton fallback={`/site/${site.id}`} />
         <div className="flex items-center gap-2 font-semibold">
           <Favicon domain={site.domain} size={22} /> {site.name}
         </div>
@@ -84,162 +150,38 @@ export function Settings({ siteId }: { siteId: string }) {
 
       <AiSetup site={site} origin={origin} />
 
-      <Section title="1. Install the tracking script" desc={<>Paste this in the <code>&lt;head&gt;</code> of every page on {site.domain} (and its subdomains).</>}>
-        <Code>{snippet}</Code>
+      <Section title="1. Install the script" desc={<>Add it to the <code>&lt;head&gt;</code> of every page on {site.domain}.</>} docs="install-on-a-website">
+        <Code label="HTML">{`<script defer data-website-id="${site.id}" src="${origin}/js/script.js"></script>`}</Code>
         <details className="mt-4 text-sm">
-          <summary className="cursor-pointer font-medium">Next.js / React example</summary>
-          <div className="mt-3">
-            <Code>{`// app/layout.tsx
-import Script from 'next/script';
+          <summary className="cursor-pointer font-medium text-stone-600">Next.js, and beating ad blockers</summary>
+          <div className="mt-3 space-y-3">
+            <Code label="app/layout.tsx">{`import Script from 'next/script';
 
-<head>
-  <Script defer data-website-id="${site.id}" src="${origin}/js/script.js" strategy="afterInteractive" />
-</head>`}</Code>
-          </div>
-        </details>
-        <details className="mt-3 text-sm">
-          <summary className="cursor-pointer font-medium">Beat ad blockers (recommended for accuracy)</summary>
-          <p className="mt-2 text-stone-600">
-            Ad blockers can block third-party analytics domains. Serve the script and endpoint from your own domain with a rewrite, then point the
-            script at it:
-          </p>
-          <div className="mt-3">
-            <Code>{`// next.config.js
-async rewrites() {
+<Script defer data-website-id="${site.id}" src="${origin}/js/script.js" />`}</Code>
+            <p className="text-stone-500">Serve the script from your own domain so ad blockers don't stop it:</p>
+            <Code label="next.config.js">{`async rewrites() {
   return [
     { source: '/stats/script.js', destination: '${origin}/js/script.js' },
     { source: '/stats/event', destination: '${origin}/api/event' },
   ];
 }
-
-<script defer data-website-id="${site.id}" data-api="/stats/event" src="/stats/script.js"></script>`}</Code>
+// then: <script defer data-website-id="${site.id}" data-api="/stats/event" src="/stats/script.js"></script>`}</Code>
           </div>
         </details>
-        <p className="mt-4 text-sm text-stone-500">
-          Exclude your own visits: open <code>https://{site.domain}/?ml_ignore=true</code> once in each browser you use.
+        <p className="mt-3 text-sm text-stone-500">
+          Your own visits aren't counted from any browser you've opened this dashboard in. For other devices (like your phone), open{' '}
+          <code>{site.domain}/?ml_ignore=true</code> once.
         </p>
       </Section>
 
-      <Section title="2. Track button clicks & goals" desc="Goals show up in the Goals tab and can be used in funnels and filters.">
-        <Code>{`<!-- Any element: a click sends the goal -->
-<button data-ml-goal="signup_click">Get started</button>
+      <Section title="2. Track goals" desc="Button clicks and key actions, shown in the Goals tab." docs="install-on-a-website">
+        <Code label="HTML / JS">{`<button data-ml-goal="signup">Get started</button>
 
-<!-- Extra details are attached as properties -->
-<a href="/pricing" data-ml-goal="pricing_click" data-ml-goal-plan="pro">Pricing</a>
-
-<script>
-  // From your own code
-  window.minilytics('goal', 'signup', { plan: 'pro' });
-
-  // After login: attach a name/email to the visitor
-  window.minilytics('identify', { user_id: '123', email: 'jane@acme.com', name: 'Jane' });
-</script>`}</Code>
-        <p className="mt-3 text-sm text-stone-500">Outbound link clicks are tracked automatically (Exit link tab).</p>
+window.minilytics('goal', 'signup', { plan: 'pro' });
+window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       </Section>
 
-      <Section
-        title="3. Connect Dodo Payments (revenue attribution)"
-        desc="Payments are linked to the visitor who paid and credited to the source that brought them."
-      >
-        <ol className="list-decimal space-y-4 pl-5 text-sm">
-          <li>
-            In Dodo Payments → <b>Developer → Webhooks</b>, add this endpoint and subscribe to <code>payment.succeeded</code> and{' '}
-            <code>refund.succeeded</code>:
-            <div className="mt-2">
-              <Code>{webhookUrl}</Code>
-            </div>
-          </li>
-          <li>
-            Paste the webhook's <b>signing secret</b> (starts with <code>whsec_</code>):
-            <div className="mt-2 flex gap-2">
-              <input
-                className="input font-mono"
-                type="password"
-                placeholder="whsec_..."
-                value={form.dodo_webhook_secret ?? ''}
-                onChange={(e) => setForm({ ...form, dodo_webhook_secret: e.target.value })}
-              />
-              <button className="btn-dark" onClick={() => save({ dodo_webhook_secret: form.dodo_webhook_secret ?? '' }, 'Webhook secret saved')}>
-                Save
-              </button>
-            </div>
-            {site.dodo_webhook_secret && <p className="mt-1 text-xs text-emerald-600">✓ Secret configured</p>}
-          </li>
-          <li>
-            <b>Selling more than one product from the same Dodo account?</b> Dodo sends every payment to every webhook, so list this
-            site's product ids (from Dodo → Products) to count only those. Leave empty if this account only sells this site's products.
-            <div className="mt-2 flex gap-2">
-              <input
-                className="input font-mono"
-                placeholder="pdt_abc123, pdt_def456"
-                value={form.dodo_product_ids ?? ''}
-                onChange={(e) => setForm({ ...form, dodo_product_ids: e.target.value })}
-              />
-              <button className="btn-dark" onClick={() => save({ dodo_product_ids: form.dodo_product_ids ?? '' }, 'Products saved')}>
-                Save
-              </button>
-            </div>
-          </li>
-          <li>
-            Pass the visitor cookies as metadata when you create a checkout (this is what makes attribution exact):
-            <div className="mt-2">
-              <Code>{`import DodoPayments from 'dodopayments';
-import { cookies } from 'next/headers';
-
-const dodo = new DodoPayments({ bearerToken: process.env.DODO_PAYMENTS_API_KEY });
-const jar = await cookies();
-
-const session = await dodo.checkoutSessions.create({
-  product_cart: [{ product_id: 'pdt_xxx', quantity: 1 }],
-  return_url: 'https://${site.domain}/thanks',
-  metadata: {
-    ml_visitor_id: jar.get('ml_vid')?.value ?? '',
-    ml_session_id: jar.get('ml_sid')?.value ?? '',
-  },
-});`}</Code>
-            </div>
-            <p className="mt-2 text-stone-500">
-              Using Dodo <b>payment links</b> (checkout.dodopayments.com/buy/…) instead? The script adds the metadata to those links
-              automatically when clicked, but it doesn't always reach the payment, so also set the return URL (last step below). In the browser you can also read the ids with <code>window.minilytics.attribution()</code>.
-            </p>
-            <p className="mt-2 text-stone-500">
-              If metadata is missing, Minilytics still links the payment when the buyer lands back on your site, when their email matches a
-              visitor you <code>identify()</code>, when it's a renewal of an earlier payment, or when exactly one visitor clicked a checkout link
-              shortly before paying. The Journey tab shows how each payment was matched.
-            </p>
-          </li>
-          <li>
-            <b>Recommended:</b> set your product's <b>return / redirect URL</b> in Dodo to a page on your site, e.g.{' '}
-            <code>https://{site.domain}/thanks</code>. Dodo adds <code>?payment_id=…</code> to it, which lets Minilytics link the payment to
-            the exact visitor even when metadata doesn't come through (for example with payment links).
-          </li>
-        </ol>
-      </Section>
-
-      <Section title="Other payment providers / server-side API" desc="Send payments or goals from your backend using this site's API key.">
-        <div className="mb-3 flex gap-2">
-          <input className="input font-mono" readOnly value={site.api_key} />
-          <button
-            className="btn"
-            onClick={async () => {
-              if (!confirm('Rotate the API key? The old key stops working immediately.')) return;
-              const r = await api<{ api_key: string }>(`/api/sites/${siteId}/rotate-key`, { method: 'POST' });
-              setSite({ ...site, api_key: r.api_key });
-            }}
-          >
-            Rotate
-          </button>
-        </div>
-        <Code>{`curl -X POST ${origin}/api/v1/payments \\
-  -H "Authorization: Bearer ${site.api_key}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"transaction_id":"txn_123","amount":29.99,"currency":"${site.currency}","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
-
-curl -X POST ${origin}/api/v1/goals \\
-  -H "Authorization: Bearer ${site.api_key}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"visitor_id":"<ml_vid cookie>","name":"signup"}'`}</Code>
-      </Section>
+      <Revenue site={site} origin={origin} form={form} set={set} save={save} onKeyRotated={(api_key) => setSite({ ...site, api_key })} />
 
       <Section
         title="AI crawlers"
@@ -306,19 +248,19 @@ export const config = {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">Name</label>
-            <input className="input" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input className="input" value={form.name ?? ''} onChange={(e) => set({ name: e.target.value })} />
           </div>
           <div>
             <label className="label">Domain</label>
-            <input className="input" value={form.domain ?? ''} onChange={(e) => setForm({ ...form, domain: e.target.value })} />
+            <input className="input" value={form.domain ?? ''} onChange={(e) => set({ domain: e.target.value })} />
           </div>
           <div>
             <label className="label">Timezone</label>
-            <input className="input" value={form.timezone ?? ''} onChange={(e) => setForm({ ...form, timezone: e.target.value })} />
+            <TimezoneSelect value={form.timezone ?? 'UTC'} onChange={(timezone) => set({ timezone })} />
           </div>
           <div>
             <label className="label">Revenue currency</label>
-            <input className="input" value={form.currency ?? ''} maxLength={3} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+            <CurrencySelect value={form.currency ?? 'USD'} onChange={(currency) => set({ currency })} />
           </div>
         </div>
         <button className="btn-dark mt-4" onClick={() => save({ name: form.name, domain: form.domain, timezone: form.timezone, currency: form.currency })}>
@@ -348,39 +290,261 @@ export const config = {
   );
 }
 
+type Provider = 'dodo' | 'stripe' | 'api';
+
+interface RevenueProps {
+  site: Site;
+  origin: string;
+  form: Partial<Site>;
+  set: (patch: Partial<Site>) => void;
+  save: (patch: Partial<Site>, msg?: string) => Promise<void>;
+  onKeyRotated: (key: string) => void;
+}
+
+/** Revenue attribution: pick the payment provider, see only its setup. */
+function Revenue(props: RevenueProps) {
+  const { site } = props;
+  const [provider, setProvider] = useState<Provider>(site.stripe_webhook_secret && !site.dodo_webhook_secret ? 'stripe' : 'dodo');
+  const tabs: { id: Provider; label: string; icon: ReactNode; connected?: boolean }[] = [
+    { id: 'dodo', label: 'Dodo Payments', icon: <Favicon domain="dodopayments.com" size={18} />, connected: !!site.dodo_webhook_secret },
+    { id: 'stripe', label: 'Stripe', icon: <Favicon domain="stripe.com" size={18} />, connected: !!site.stripe_webhook_secret },
+    { id: 'api', label: 'Other / API', icon: <span className="font-mono text-xs text-stone-500">{'{ }'}</span> },
+  ];
+  return (
+    <Section title="3. Connect payments" desc="Each payment is linked to the visitor who paid and the source that brought them.">
+      <div className="mb-5 grid grid-cols-3 gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setProvider(t.id)}
+            className={`relative flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
+              provider === t.id ? 'border-ink bg-stone-50 ring-1 ring-ink' : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+            }`}
+          >
+            {t.icon}
+            <span className="truncate">{t.label}</span>
+            {t.connected && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-emerald-500" title="Connected" />}
+          </button>
+        ))}
+      </div>
+      {provider === 'dodo' && <DodoSetup {...props} />}
+      {provider === 'stripe' && <StripeSetup {...props} />}
+      {provider === 'api' && <ApiSetup {...props} />}
+    </Section>
+  );
+}
+
+function DodoSetup({ site, origin, form, set, save }: RevenueProps) {
+  return (
+    <>
+      <Steps>
+        <Step
+          n={1}
+          title={
+            <>
+              In Dodo → <b>Developer → Webhooks</b>, add this endpoint with <code>payment.succeeded</code> and <code>refund.succeeded</code>:
+            </>
+          }
+        >
+          <CopyField value={`${origin}/api/webhooks/dodo/${site.id}`} />
+        </Step>
+        <Step n={2} title="Paste its signing secret:">
+          <SecretField
+            value={form.dodo_webhook_secret ?? ''}
+            configured={!!site.dodo_webhook_secret}
+            onChange={(v) => set({ dodo_webhook_secret: v })}
+            onSave={() => save({ dodo_webhook_secret: form.dodo_webhook_secret ?? '' }, 'Dodo connected')}
+          />
+        </Step>
+        <Step n={3} title="Pass the visitor to your checkout. Payment links need nothing, the script tags them.">
+          <Code label="checkout.ts">{`const jar = await cookies(); // next/headers
+
+await dodo.checkoutSessions.create({
+  // ...your existing options
+  return_url: 'https://${site.domain}/thanks',
+  metadata: {
+    ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+    ml_session_id: jar.get('ml_sid')?.value ?? '',
+  },
+});`}</Code>
+        </Step>
+      </Steps>
+      <details className="mt-5 text-sm">
+        <summary className="cursor-pointer font-medium text-stone-600">Selling other products from the same Dodo account?</summary>
+        <p className="mt-2 text-stone-500">List this site's product ids so only their payments count.</p>
+        <div className="mt-2 flex gap-2">
+          <input
+            className="input font-mono"
+            placeholder="pdt_abc123, pdt_def456"
+            value={form.dodo_product_ids ?? ''}
+            onChange={(e) => set({ dodo_product_ids: e.target.value })}
+          />
+          <button className="btn-dark" onClick={() => save({ dodo_product_ids: form.dodo_product_ids ?? '' }, 'Products saved')}>
+            Save
+          </button>
+        </div>
+      </details>
+      <PendingDodoPayments site={site} />
+      <ProviderFooter anchor="dodo-payments" />
+    </>
+  );
+}
+
+const currencyDecimals = (c: string) => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: c }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+};
+
+interface PendingProduct {
+  product_id: string | null;
+  count: number;
+  amount: number;
+  currency: string | null;
+}
+
+/** Payments from a product Minilytics couldn't link to any site yet. Rare: most are placed automatically. */
+function PendingDodoPayments({ site }: { site: Site }) {
+  const [rows, setRows] = useState<PendingProduct[]>([]);
+  const load = () => api<PendingProduct[]>(`/api/sites/${site.id}/pending-payments`).then(setRows);
+  useEffect(() => {
+    load();
+  }, [site.id]);
+  if (!rows.length) return null;
+  return (
+    <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+      <p className="font-medium text-amber-900">Payments waiting for a site</p>
+      <p className="mt-1 text-amber-800">
+        These came from a product none of your sites links to yet, so they aren't counted anywhere. They're placed automatically once a buyer
+        comes from {site.name}. Know they're {site.name}'s? Count them now.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((r) => (
+          <li key={r.product_id ?? ''} className="flex items-center justify-between gap-3">
+            <span>
+              <code>{r.product_id ?? 'unknown product'}</code> · {r.count} payment{r.count === 1 ? '' : 's'},{' '}
+              {fmtMoney(r.amount, r.currency ?? site.currency, currencyDecimals(r.currency ?? site.currency))}
+            </span>
+            {r.product_id && (
+              <button
+                className="btn shrink-0"
+                onClick={() => api(`/api/sites/${site.id}/pending-payments`, { method: 'POST', json: { product_id: r.product_id } }).then(load)}
+              >
+                Count for {site.name}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StripeSetup({ site, origin, form, set, save }: RevenueProps) {
+  return (
+    <>
+      <Steps>
+        <Step
+          n={1}
+          title={
+            <>
+              In Stripe → <b>Developers → Webhooks</b>, add this endpoint with <code>checkout.session.completed</code>,{' '}
+              <code>invoice.paid</code> and <code>charge.refunded</code>:
+            </>
+          }
+        >
+          <CopyField value={`${origin}/api/webhooks/stripe/${site.id}`} />
+        </Step>
+        <Step n={2} title="Paste its signing secret:">
+          <SecretField
+            value={form.stripe_webhook_secret ?? ''}
+            configured={!!site.stripe_webhook_secret}
+            onChange={(v) => set({ stripe_webhook_secret: v })}
+            onSave={() => save({ stripe_webhook_secret: form.stripe_webhook_secret ?? '' }, 'Stripe connected')}
+          />
+        </Step>
+        <Step n={3} title="Pass the visitor to your checkout:">
+          <Code label="checkout.ts">{`const jar = await cookies(); // next/headers
+
+await stripe.checkout.sessions.create({
+  // ...your existing options
+  success_url: 'https://${site.domain}/thanks?session_id={CHECKOUT_SESSION_ID}',
+  metadata: {
+    ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+    ml_session_id: jar.get('ml_sid')?.value ?? '',
+    ml_site_id: '${site.id}', // only needed if one Stripe account sells for several sites
+  },
+});`}</Code>
+          <p className="text-stone-500">
+            Using <b>Payment Links</b>? No code needed. Set the link's confirmation page to redirect to{' '}
+            <code>https://{site.domain}/thanks?session_id={'{CHECKOUT_SESSION_ID}'}</code>.
+          </p>
+        </Step>
+      </Steps>
+      <ProviderFooter anchor="stripe" />
+    </>
+  );
+}
+
+function ApiSetup({ site, origin, onKeyRotated }: RevenueProps) {
+  return (
+    <>
+      <p className="mb-3 text-sm text-stone-500">Any other provider: send payments from your backend with this site's API key.</p>
+      <div className="mb-4 flex gap-2">
+        <input className="input font-mono" readOnly value={site.api_key} />
+        <button
+          className="btn"
+          onClick={async () => {
+            if (!confirm('Rotate the API key? The old key stops working immediately.')) return;
+            const r = await api<{ api_key: string }>(`/api/sites/${site.id}/rotate-key`, { method: 'POST' });
+            onKeyRotated(r.api_key);
+          }}
+        >
+          Rotate
+        </button>
+      </div>
+      <Code label="POST /api/v1/payments">{`curl -X POST ${origin}/api/v1/payments \\
+  -H "Authorization: Bearer ${site.api_key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "transaction_id": "txn_123",
+    "amount": 29.99,
+    "currency": "${site.currency}",
+    "visitor_id": "<ml_vid cookie>",
+    "email": "jane@acme.com"
+  }'`}</Code>
+      <ProviderFooter anchor="other-providers-api" note="Refunds, renewals and server-side goals are covered in the guide." />
+    </>
+  );
+}
+
+function ProviderFooter({ anchor, note = 'No metadata? Payments are still matched by return page, email or timing.' }: { anchor: string; note?: string }) {
+  return (
+    <p className="mt-5 border-t border-stone-100 pt-4 text-sm text-stone-500">
+      {note} <DocsLink anchor={anchor}>Full guide →</DocsLink>
+    </p>
+  );
+}
+
 /** One-click prompt for the owner's coding AI, so it can install everything in their codebase. */
 function AiSetup({ site, origin }: { site: Site; origin: string }) {
-  const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
   const prompt = buildAiPrompt(site, origin);
   return (
     <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-surface dark:border-violet-900 dark:from-violet-950/50 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
-          <p className="mt-1 max-w-lg text-sm text-stone-600">
-            Copy this prompt into Claude Code, Cursor or any coding AI opened in your project. It installs the script, connects Dodo Payments
-            attribution, identifies users and adds button goals, using this site's real values. It asks you only what it can't find in your code.
-          </p>
+          <p className="mt-1 text-sm text-stone-600">Paste into Claude Code or Cursor in your project. It does steps 1–3 for you.</p>
         </div>
-        <button
-          className="btn-dark shrink-0"
-          onClick={() => {
-            navigator.clipboard.writeText(prompt);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          }}
-        >
-          {copied ? '✓ Copied' : 'Copy AI prompt'}
-        </button>
+        <CopyButton text={prompt} label="Copy AI prompt" className="btn-dark shrink-0" />
       </div>
       <button className="mt-3 text-sm font-medium text-violet-700 hover:underline dark:text-violet-300" onClick={() => setOpen((o) => !o)}>
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
-      <p className="mt-3 text-xs text-stone-500">
-        The AI handles the code. You still connect the Dodo webhook yourself (step 3 below), because that's done in Dodo's dashboard.
-      </p>
     </section>
   );
 }
@@ -409,10 +573,7 @@ function LinkBuilder({ domain }: { domain: string }) {
     built = u.toString();
   } catch {}
   return (
-    <Section
-      title="Link builder"
-      desc="X, Medium and others hide which exact post sent a visitor. Use a tagged link in each post and it shows up by name in Referrer → Campaign, including the revenue it made."
-    >
+    <Section title="Link builder" desc="Tag the link in each post to see which one brought visitors and revenue (Referrer → Campaign)." docs="tracking-a-specific-tweet--article">
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="sm:col-span-3">
           <label className="label">Page</label>
@@ -427,18 +588,15 @@ function LinkBuilder({ domain }: { domain: string }) {
           </select>
         </div>
         <div className="sm:col-span-2">
-          <label className="label">Post name (campaign)</label>
-          <input className="input" placeholder="launch-tweet, seo-guide-article…" value={campaign} onChange={(e) => setCampaign(e.target.value)} />
+          <label className="label">Post name</label>
+          <input className="input" placeholder="launch-tweet" value={campaign} onChange={(e) => setCampaign(e.target.value)} />
         </div>
       </div>
       {built && (
         <div className="mt-4">
-          <Code>{built}</Code>
+          <CopyField value={built} />
         </div>
       )}
-      <p className="mt-2 text-xs text-stone-500">
-        Shorter alternative: <code>?ref=launch-tweet</code> also works and shows up as the referrer.
-      </p>
     </Section>
   );
 }

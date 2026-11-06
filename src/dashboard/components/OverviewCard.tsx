@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { usePref } from '../lib/prefs';
 import { Area, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Kpis, Overview } from '../lib/api';
 import { useDash } from '../lib/context';
@@ -21,7 +21,7 @@ function Change({ cur, prev, invert = false }: { cur: number; prev: number; inve
 
 export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: () => void }) {
   const { money } = useDash();
-  const [hidden, setHidden] = useState<Record<Metric, boolean>>({ visitors: false, revenue: false });
+  const [hidden, setHidden] = usePref<Record<Metric, boolean>>('ml_chart_hidden', { visitors: false, revenue: false });
   const c = data?.current;
   const p = data?.previous;
 
