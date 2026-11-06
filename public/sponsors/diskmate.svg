@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8E7BFF"/><stop offset="1" stop-color="#5A45E6"/></linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="27" fill="url(#bg)"/>
+  <rect width="100" height="100" rx="27" fill="url(#shine)"/>
+  <g transform="rotate(-90 50 50)">
+    <circle cx="50" cy="50" r="27" fill="none" stroke="#fff" stroke-opacity="1" stroke-width="9.5" stroke-linecap="round" stroke-dasharray="88.216 169.646" stroke-dashoffset="0.000"/>
+    <circle cx="50" cy="50" r="27" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="9.5" stroke-linecap="round" stroke-dasharray="25.447 169.646" stroke-dashoffset="-103.484"/>
+    <circle cx="50" cy="50" r="27" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="9.5" stroke-linecap="round" stroke-dasharray="10.179 169.646" stroke-dashoffset="-144.199"/>
+  </g>
+  <circle cx="50" cy="50" r="7.5" fill="#fff"/>
+</svg>

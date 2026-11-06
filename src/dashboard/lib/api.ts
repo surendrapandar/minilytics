@@ -31,9 +31,18 @@ export interface Site {
   api_key: string;
   dodo_webhook_secret: string | null;
   dodo_product_ids?: string | null;
+  stripe_webhook_secret?: string | null;
   created_at: number;
   visitors24h?: number;
   online?: number;
+}
+
+export interface SiteSpark {
+  id: string;
+  visitors: number;
+  revenue: number;
+  online: number;
+  series: { visitors: number; revenue: number }[];
 }
 
 export interface Kpis {
@@ -101,6 +110,7 @@ export interface Me {
     paid: boolean;
     plan_status: string;
     plan_until: number | null;
+    plan: string | null;
   } | null;
 }
 
@@ -111,8 +121,12 @@ export interface PlanInfo {
   spots: number;
   spotsLeft: number | null;
   nextPrice: string | null;
+  /** Earlier prices whose spots are all sold, oldest first. */
+  soldOut?: { price: string; spots: number }[];
   checkout: boolean;
   supportEmail: string | null;
+  /** Monthly subscription offered next to the main plan, when configured. */
+  monthly?: { price: string } | null;
 }
 
 export type CrawlerCategory = 'answers' | 'indexing' | 'training';

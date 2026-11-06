@@ -5,6 +5,32 @@ import { api, type PlanInfo } from '../lib/api';
 
 export const GITHUB_URL = 'https://github.com/surendrapandar/minilytics';
 
+const SPONSOR_CHECKOUT_URL = 'https://checkout.dodopayments.com/buy/pdt_0NqWPM98xzStsrTUMLyxE?quantity=1';
+
+// Open-source sponsors, same order as the README.
+const SPONSORS = [
+  {
+    name: 'SnitchFeed',
+    tagline: 'Agentic social listening for GTM: X, LinkedIn, Reddit & more',
+    url: 'https://snitchfeed.com/?utm_source=minilytics&utm_medium=sponsorship&utm_campaign=oss-sponsor&utm_content=website',
+    logo: '/sponsors/snitchfeed.png',
+  },
+  {
+    name: 'Open Source Alternatives',
+    tagline: 'Find Best Open Source Alternatives to Paid Software',
+    url: 'https://www.opensourcealternatives.to/?ref=minilytics-website',
+    logo: '/sponsors/opensourcealternatives.png',
+  },
+  {
+    name: 'Awesome Black Friday Deals',
+    tagline: 'Black Friday & Cyber Monday deals for devs & indie makers',
+    url: 'https://github.com/twf-nikhila/Awesome-Black-Friday-Cyber-Monday-deals',
+    logo: '/sponsors/black-friday-deals.png',
+  },
+  { name: 'DiskMate', tagline: 'Disk space analyzer & cleaner for Mac', url: 'https://diskmate.app/?ref=minilytics-website', logo: '/sponsors/diskmate.svg' },
+  { name: 'PasteBuddy', tagline: 'Clipboard history for Mac', url: 'https://pastebuddy.app/?ref=minilytics-website', logo: '/sponsors/pastebuddy.svg' },
+];
+
 export function usePlan() {
   const [plan, setPlan] = useState<PlanInfo | null>(null);
   useEffect(() => {
@@ -69,8 +95,18 @@ function Section({ id, eyebrow, title, sub, children, className = '' }: { id?: s
   );
 }
 
-function Shot({ src, alt, className = '' }: { src: string; alt: string; className?: string }) {
-  return <img src={src} alt={alt} loading="lazy" className={`w-full rounded-2xl border border-stone-200 bg-surface shadow-xl ${className}`} />;
+function Shot({ src, alt, size, eager = false, className = '' }: { src: string; alt: string; size: [number, number]; eager?: boolean; className?: string }) {
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={size[0]}
+      height={size[1]}
+      loading={eager ? 'eager' : 'lazy'}
+      fetchPriority={eager ? 'high' : 'auto'}
+      className={`w-full rounded-2xl border border-stone-200 bg-surface shadow-xl ${className}`}
+    />
+  );
 }
 
 const Check = () => <span className="text-emerald-600">✓</span>;
@@ -85,13 +121,26 @@ export function Landing() {
   const per = lifetime ? 'lifetime' : `/${plan?.interval}`;
   const priceText = lifetime ? `${price} once` : `${price}/${plan?.interval}`;
   const next = plan?.nextPrice;
+  // Earlier prices that already sold out, for "5 sold at $29" proof next to the current price.
+  const soldOut = plan?.soldOut ?? [];
+  const soldCount = soldOut.reduce((n, t) => n + t.spots, 0);
+  const lastSold = soldOut[soldOut.length - 1];
   const cta = plan ? `Get started for ${priceLabel(plan)}` : 'Get started';
+  const monthly = plan?.monthly?.price;
 
   return (
     <div className="min-h-screen overflow-x-hidden">
       {spots && spots.left > 0 && (
         <a href="#pricing" className="block bg-ink px-4 py-2 text-center text-sm text-paper" data-ml-goal="pricing_cta" data-ml-goal-location="top-bar">
-          🎉 {lifetime ? 'Lifetime deal' : 'Founding offer'}: <b>{priceText}</b>, unlimited everything · <b>{spots.left}</b> of {spots.total} spots left
+          {lastSold ? (
+            <>
+              🔥 First {soldCount} sold out at <s>{lastSold.price}</s>. Now <b>{priceText}</b> · <b>{spots.left}</b> of {spots.total} spots left
+            </>
+          ) : (
+            <>
+              🎉 {lifetime ? 'Lifetime deal' : 'Founding offer'}: <b>{priceText}</b>, unlimited everything · <b>{spots.left}</b> of {spots.total} spots left
+            </>
+          )}
           {next ? `, then ${next}` : ''} →
         </a>
       )}
@@ -102,6 +151,7 @@ export function Landing() {
           <a href="#how" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink md:inline">How it works</a>
           <a href="#compare" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink md:inline">Compare</a>
           <a href="#pricing" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline" data-ml-goal="pricing_cta" data-ml-goal-location="nav">Pricing</a>
+          <a href="#sponsors" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline">Sponsors</a>
           <a href={GITHUB_URL} className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline">GitHub</a>
           <ThemeToggle className="rounded-lg p-2 text-stone-600 hover:text-ink" />
           <a href="/api/auth/google" className="btn" data-ml-goal="signup_click" data-ml-goal-location="nav">Sign in</a>
@@ -120,7 +170,7 @@ export function Landing() {
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg text-stone-600 sm:text-xl">
           Minilytics follows every visitor from the first click to the payment, so you know exactly what to post more of. Unlimited
-          websites and events, {lifetime ? <>one payment of {price}. No subscription.</> : <>{priceText}.</>}
+          websites and events, {lifetime ? <>one payment of {price}{monthly ? <>, or {monthly}/month</> : '. No subscription'}.</> : <>{priceText}.</>}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <GoogleButton label={cta} location="hero" />
@@ -134,7 +184,7 @@ export function Landing() {
       </section>
 
       <section className="relative mx-auto max-w-6xl px-4">
-        <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" />
+        <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" size={[2160, 1500]} eager />
         <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-surface px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
           <div className="text-stone-500">Revenue from</div>
           <div className="font-semibold">𝕏 launch-tweet</div>
@@ -170,7 +220,7 @@ export function Landing() {
         <div className="grid gap-4 md:grid-cols-3">
           {[
             ['1', 'Add one script tag', 'Paste it in your site’s <head>, or copy the ready-made prompt and let Claude Code / Cursor install it for you.'],
-            ['2', 'Connect Dodo Payments', 'Add a webhook and every payment is linked to the visitor who made it, and the link that brought them.'],
+            ['2', 'Connect Stripe or Dodo', 'Add a webhook and every payment is linked to the visitor who made it, and the link that brought them.'],
             ['3', 'See what makes money', 'Revenue next to every source, campaign and page. Post more of what pays, drop what doesn’t.'],
           ].map(([n, title, text]) => (
             <div key={n} className="card p-6">
@@ -189,20 +239,20 @@ export function Landing() {
             title="Revenue next to every source"
             text="Blue is visitors, orange is money. See at a glance that X brings traffic and Indie Hackers brings customers, then click any source to filter the whole dashboard."
             points={['X, Google, ChatGPT, Reddit, YouTube… by name', 'Campaigns and keywords', 'Conversion rate and revenue per visitor']}
-            image={<Shot src="/landing/referrers.png" alt="Referrers with revenue" />}
+            image={<Shot src="/landing/referrers.png" alt="Referrers with revenue" size={[1029, 840]} />}
           />
           <Feature
             reverse
             title="Know exactly which post worked"
             text="Generate a tagged link for each tweet, article or newsletter. It shows up by name, with the visitors and revenue it brought."
             points={['Built-in link builder', 'Works with utm_campaign and ?ref=', 'Credit goes to the post, even if they buy 2 weeks later']}
-            image={<Shot src="/landing/campaigns.png" alt="Revenue by campaign" />}
+            image={<Shot src="/landing/campaigns.png" alt="Revenue by campaign" size={[1029, 441]} />}
           />
           <Feature
             title="Every customer’s full journey"
             text="Who paid, where they came from, and how long it took. Open anyone to see every page and click from first visit to payment."
             points={['First source and every visit', 'Button clicks and goals', 'Time from first visit to payment']}
-            image={<Shot src="/landing/journey.png" alt="Customer journeys" />}
+            image={<Shot src="/landing/journey.png" alt="Customer journeys" size={[1428, 785]} />}
           />
           <Feature
             reverse
@@ -211,7 +261,7 @@ export function Landing() {
             points={['3D globe or 2D map', 'Live feed of pages, goals and payments', 'Cha-ching sound on every payment']}
             image={
               <div className="flex justify-center rounded-2xl bg-[#0b1020] p-6 shadow-xl sm:p-10">
-                <img src="/landing/feed.png" alt="Live event feed" loading="lazy" className="w-full max-w-sm rounded-2xl" />
+                <img src="/landing/feed.png" alt="Live event feed" width={570} height={675} loading="lazy" className="w-full max-w-sm rounded-2xl" />
               </div>
             }
           />
@@ -237,7 +287,7 @@ export function Landing() {
             </thead>
             <tbody className="text-[15px]">
               {[
-                ['Price', priceText, '$9/month', '$9/month'],
+                ['Price', monthly ? <>{priceText}<div className="text-sm font-normal text-stone-500">or {monthly}/month</div></> : priceText, '$9/month', '$9/month'],
                 ...(lifetime ? [['First year', price, '$108', '$108'], ['Every year after', '$0', '$108', '$108']] : []),
                 ['Websites', 'Unlimited', '1', '1'],
                 ['Monthly events', 'Unlimited', '10k', '10k pageviews'],
@@ -277,23 +327,29 @@ export function Landing() {
       </section>
 
       {/* ---------- Pricing */}
-      <Section id="pricing" eyebrow="Pricing" title="One plan. Everything included.">
-        <div className="mx-auto max-w-md">
-          <div className="card relative p-8">
+      <Section id="pricing" eyebrow="Pricing" title={monthly ? 'Everything included. Pay once or monthly.' : 'One plan. Everything included.'}>
+        <div className={`mx-auto grid items-start gap-6 ${monthly ? 'max-w-4xl md:grid-cols-[1.15fr_1fr]' : 'max-w-md'}`}>
+          <div className={`card relative p-8 ${monthly ? 'ring-2 ring-revenue' : ''}`}>
             {spots && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-revenue px-3 py-1 text-xs font-semibold text-white">
-                {lifetime ? 'Lifetime deal' : 'Founding member price'}
+                {lifetime ? (monthly ? 'Lifetime deal · Best value' : 'Lifetime deal') : 'Founding member price'}
               </div>
             )}
             <div className="flex items-baseline gap-1">
+              {lastSold && <span className="mr-2 text-3xl font-medium text-stone-400 line-through">{lastSold.price}</span>}
               <span className="text-6xl font-semibold tracking-tight">{price}</span>
               <span className="text-lg text-stone-500">{per}</span>
             </div>
+            {soldOut.map((t) => (
+              <div key={t.price} className="mt-3 flex items-center gap-2 text-sm text-stone-600">
+                <Check /> <span><b className="text-ink">{t.spots} sold</b> at {t.price} · sold out</span>
+              </div>
+            ))}
             <ul className="mt-6 space-y-2.5">
               {[
                 'Unlimited websites',
                 'Unlimited events',
-                'Revenue attribution with Dodo Payments',
+                'Revenue attribution with Stripe & Dodo Payments',
                 'Customer journeys, goals & funnels',
                 'Live globe & real-time feed',
                 'AI setup prompt for your codebase',
@@ -316,9 +372,27 @@ export function Landing() {
               </div>
             )}
           </div>
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-stone-600">
-            <span className="text-lg">🛡️</span> 14-day money-back guarantee. No questions asked.
-          </div>
+          {monthly && (
+            <div className="card p-8">
+              <div className="text-sm font-semibold uppercase tracking-wider text-stone-500">Monthly</div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="text-5xl font-semibold tracking-tight">{monthly}</span>
+                <span className="text-lg text-stone-500">/month</span>
+              </div>
+              <p className="mt-4 text-stone-600">Want to try it first? Get the same unlimited plan month to month and cancel anytime.</p>
+              <ul className="mt-6 space-y-2.5">
+                {['Everything in lifetime', 'Cancel anytime', 'Upgrade to lifetime whenever you like'].map((f) => (
+                  <li key={f} className="flex gap-2">
+                    <Check /> {f}
+                  </li>
+                ))}
+              </ul>
+              <GoogleButton label="Start monthly" light className="mt-8 w-full border border-stone-200" location="pricing-monthly" />
+            </div>
+          )}
+        </div>
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-stone-600">
+          <span className="text-lg">🛡️</span> 14-day money-back guarantee. No questions asked.
         </div>
       </Section>
 
@@ -328,9 +402,12 @@ export function Landing() {
           {[
             ['Is it really unlimited?', 'Yes: unlimited websites and events, within fair use for normal websites.'],
             ['Will it slow down my site?', 'No. The script is about 3.5 KB gzipped and loads after your page.'],
-            ['Which payment providers work?', 'Dodo Payments works out of the box (one webhook). Any other provider can send payments with a simple API call.'],
+            ['Which payment providers work?', 'Stripe and Dodo Payments work out of the box (one webhook each). Any other provider can send payments with a simple API call.'],
             ['What about ad blockers?', 'You can serve the script from your own domain with a one-line rewrite, so blockers don’t see it. Payments are always recorded either way, because they come from the webhook.'],
             ['Do I need a cookie banner?', 'It uses two first-party cookies and no IP storage. Whether you need a consent banner depends on your visitors’ country; in the EU you may.'],
+            ...(monthly
+              ? [['Can I pay monthly instead?', `Yes, ${monthly}/month with everything unlimited, cancel anytime. Most people pick lifetime: at ${price} it pays for itself in about ${Math.ceil(Number(price.replace(/[^\d.]/g, '')) / Number(monthly.replace(/[^\d.]/g, '')))} months.`]]
+              : []),
             ...(lifetime
               ? [['Is lifetime really lifetime?', 'Yes. Pay once and keep unlimited access for as long as Minilytics runs. No renewals, no surprise bills.']]
               : []),
@@ -350,6 +427,45 @@ export function Landing() {
         </div>
       </Section>
 
+      {/* ---------- Sponsors. Links open in a new tab so visitors stay on this page. */}
+      <section id="sponsors" className="mx-auto mt-28 max-w-4xl scroll-mt-6 px-4">
+        <div className="text-center">
+          <div className="text-sm font-semibold uppercase tracking-wider text-revenue">Open source sponsors</div>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">The free, self-hosted version is backed by these makers</h2>
+          <p className="mx-auto mt-3 max-w-xl text-stone-600">
+            Their support keeps Minilytics MIT-licensed and free to self-host for everyone. Go check out what they’re building.
+          </p>
+        </div>
+        <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {SPONSORS.map((s) => (
+            <a
+              key={s.name}
+              href={s.url}
+              target="_blank"
+              rel="noopener sponsored"
+              data-ml-goal="sponsor_click"
+              data-ml-goal-sponsor={s.name}
+              className="card flex flex-col items-center p-5 text-center transition hover:-translate-y-0.5 hover:shadow-lg sm:p-6"
+            >
+              <img src={s.logo} alt="" width={56} height={56} loading="lazy" className="rounded-xl" />
+              <div className="mt-3 font-semibold">{s.name}</div>
+              <div className="mt-1 text-sm text-stone-600">{s.tagline}</div>
+            </a>
+          ))}
+          <a
+            href={SPONSOR_CHECKOUT_URL}
+            target="_blank"
+            rel="noopener"
+            data-ml-goal="sponsor_cta"
+            className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-stone-200 p-5 text-center text-sm text-stone-500 transition hover:border-stone-300 hover:text-ink sm:p-6"
+          >
+            <span className="font-semibold text-ink">Your logo here</span>
+            <span className="mt-1">Reach indie hackers who self-host their analytics</span>
+            <span className="mt-3 font-medium">Become a sponsor →</span>
+          </a>
+        </div>
+      </section>
+
       {/* ---------- Final CTA */}
       <section className="mx-auto mt-28 max-w-6xl px-4">
         <div className="rounded-3xl bg-ink px-6 py-14 text-center text-paper sm:py-20">
@@ -358,6 +474,7 @@ export function Landing() {
           <GoogleButton light label={cta} className="mt-8" location="final-cta" />
           {spots && spots.left > 0 && (
             <p className="mt-4 text-sm text-stone-400">
+              {lastSold ? `${soldCount} sold at ${lastSold.price} · ` : ''}
               {spots.left} of {spots.total} spots left at {price} · 14-day money-back
             </p>
           )}
@@ -376,6 +493,11 @@ export function Landing() {
               {plan.supportEmail}
             </a>
           )}
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-4">
+          <span className="font-medium text-stone-600">Other products</span>
+          <a href="https://diskmate.app" target="_blank" rel="noopener" className="hover:text-ink">DiskMate: Disk space analyzer for Mac</a>
+          <a href="https://pastebuddy.app" target="_blank" rel="noopener" className="hover:text-ink">PasteBuddy: Clipboard history for Mac</a>
         </div>
       </footer>
     </div>

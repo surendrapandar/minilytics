@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { usePref } from '../lib/prefs';
 import { qs, type BreakdownRow } from '../lib/api';
 import { useDash } from '../lib/context';
 import { countryName, fmtNumber, fmtPct } from '../lib/format';
@@ -139,8 +140,9 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
 
 export function Panel({ tabs }: { tabs: TabDef[] }) {
   const { site, q, reloadKey, addFilter, money } = useDash();
-  const [active, setActive] = useState(tabs[0].dim);
-  const [sort, setSort] = useState<'visitors' | 'revenue'>('visitors');
+  const [saved, setActive] = usePref(`ml_tab_${tabs[0].dim}`, tabs[0].dim);
+  const active = tabs.some((t) => t.dim === saved) ? saved : tabs[0].dim;
+  const [sort, setSort] = usePref<'visitors' | 'revenue'>(`ml_sort_${tabs[0].dim}`, 'visitors');
   const [details, setDetails] = useState(false);
   const [search, setSearch] = useState('');
   const tab = tabs.find((t) => t.dim === active)!;
