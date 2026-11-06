@@ -25,7 +25,7 @@ function keyFromEnv(raw?: string): ServiceKey {
   }
   return key;
 }
-async function googleToken(raw?: string): Promise<string> {
+export async function googleToken(raw?: string): Promise<string> {
   const key = keyFromEnv(raw);
   const fingerprint = key.client_email + ':' + (key.private_key_id ?? '');
   if (tokenCache && tokenCache.fingerprint === fingerprint && Date.now() + 60_000 < tokenCache.expires) return tokenCache.value;
@@ -260,4 +260,65 @@ export async function gscSearch(c: Context<AppEnv>) {
       ...(overview ?? {}), ...(breakdown ?? {}),
     });
   } catch (error) { return c.json({ error: (error as Error).message }, 502); }
+}
+
+const TREND_CACHE_SECONDS = 600;
+
+function pacificDay(time: number): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: GSC_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(time));
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return value('year') + '-' + value('month') + '-' + value('day');
+}
+
+/**
+ * Search Console reports whole Pacific days and excludes the current incomplete
+ * day, so trend windows are capped at yesterday.
+ */
+export function trendGscWindow(from: number, to: number, now = Date.now()) {
+  const requestedFrom = utcDay(from);
+  const requestedTo = utcDay(to - DAY_MS);
+  const yesterday = utcDay(Date.parse(pacificDay(now) + 'T00:00:00Z') - DAY_MS);
+  const oldest = utcDay(Date.parse(yesterday + 'T00:00:00Z') - 365 * DAY_MS);
+  const start = requestedFrom < oldest ? oldest : requestedFrom;
+  const end = requestedTo < yesterday ? requestedTo : yesterday;
+  return { from: start, to: end, available: start <= end, truncated: requestedFrom < oldest };
+}
+
+export interface GscDayImpressions {
+  date: string;
+  impressions: number;
+}
+
+/** The default cache namespace is not part of the installed CacheStorage typing. */
+function trendCache(): Cache | null {
+  return (caches as unknown as { default?: Cache }).default ?? null;
+}
+
+/** Daily impressions only; cached briefly so overview polling does not hammer the API. */
+export async function gscDailyImpressions(
+  token: string, property: string, from: string, to: string,
+): Promise<GscDayImpressions[]> {
+  const key = new Request('https://gsc-trend-cache.internal/' +
+    encodeURIComponent(property) + '/' + from + '/' + to);
+  const cache = trendCache();
+  if (cache) {
+    try {
+      const hit = await cache.match(key);
+      if (hit) return await hit.json<GscDayImpressions[]>();
+    } catch { /* Cache API is unavailable outside the Workers runtime. */ }
+  }
+  const rows = await searchAnalytics(token, property, from, to, ['date'], 1000);
+  const daily = rows.flatMap((row) => row.keys?.[0]
+    ? [{ date: row.keys[0], impressions: row.impressions }]
+    : []);
+  if (cache) {
+    try {
+      await cache.put(key, new Response(JSON.stringify(daily), {
+        headers: { 'content-type': 'application/json', 'Cache-Control': 'max-age=' + TREND_CACHE_SECONDS },
+      }));
+    } catch { /* A failed cache write should not fail the request. */ }
+  }
+  return daily;
 }

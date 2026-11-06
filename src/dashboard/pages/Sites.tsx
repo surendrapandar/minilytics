@@ -6,9 +6,10 @@ import { Modal } from '../components/Modal';
 import { SelectDropdown } from '../components/SelectDropdown';
 import { TrendSparkline } from '../components/TrendSparkline';
 import { api, type Site, type SiteTrends } from '../lib/api';
-import { fmtNumber } from '../lib/format';
+import { fmtMoney, fmtNumber } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { useApi } from '../lib/useApi';
+import { currencyDecimals } from '../../shared/currency';
 import { DEFAULT_TREND_METRICS, MAX_TREND_METRICS, TREND_METRICS, toggleTrendMetric, type TrendMetric } from '../lib/trendMetrics';
 
 const TREND_PERIODS = [
@@ -25,6 +26,14 @@ type TrendPeriod = (typeof TREND_PERIODS)[number]['value'];
 type CompareMode = 'previous' | 'custom';
 const DAY = 86_400_000;
 const utcDate = (offset = 0) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
+const GSC_REASON: Record<string, string> = {
+  not_connected: 'Search Console not connected',
+  hourly: 'Daily Search Console data only',
+  admin: 'Search Console is admin-only',
+  stale: 'Outside Search Console range',
+  unconfigured: 'Search Console not configured',
+  error: 'Search Console unavailable',
+};
 
 function isValidWindow(from: string, to: string, today: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return false;
@@ -36,12 +45,14 @@ function isValidWindow(from: string, to: string, today: string) {
     && from <= to && to <= today && (end - start) / DAY < 366;
 }
 
-function ComparisonDelta({ current, previous }: { current: number; previous: number }) {
+function ComparisonDelta({ current, previous, format = fmtNumber }: {
+  current: number; previous: number; format?: (value: number) => string;
+}) {
   if (current === 0 && previous === 0) return <span className="text-stone-400">No change</span>;
   if (previous === 0) return <span className="text-emerald-700">New</span>;
   const pct = Math.round(((current - previous) / previous) * 100);
   return <span className={pct > 0 ? 'text-emerald-700' : pct < 0 ? 'text-rose-600' : 'text-stone-500'}>
-    {pct > 0 ? '+' : ''}{pct}% <span className="text-stone-400">vs {fmtNumber(previous)}</span>
+    {pct > 0 ? '+' : ''}{pct}% <span className="text-stone-400">vs {format(previous)}</span>
   </span>;
 }
 
@@ -91,6 +102,11 @@ export function Sites() {
   const todayUtc = utcDate();
   const validPrimary = period !== 'custom' || isValidWindow(customFrom, customTo, todayUtc);
   const validComparison = !comparisonEnabled || comparisonMode !== 'custom' || isValidWindow(compareFrom, compareTo, todayUtc);
+  const customDays = period === 'custom' && validPrimary
+    ? Math.round((Date.parse(customTo) - Date.parse(customFrom)) / DAY) + 1
+    : 0;
+  // Search Console only has daily rows, so hourly windows cannot show impressions.
+  const hourlyWindow = period === 'today' || period === 'yesterday' || (period === 'custom' && customDays > 0 && customDays <= 2);
   const params = new URLSearchParams({ period });
   if (period === 'custom') {
     params.set('from', customFrom);
@@ -103,6 +119,7 @@ export function Sites() {
       params.set('compareTo', compareTo);
     }
   }
+  if (selectedMetrics.includes('impressions')) params.set('metrics', selectedMetrics.join(','));
   const trendsUrl = validPrimary && validComparison ? `/api/sites/trends?${params.toString()}` : null;
   const { data: trends, loading, error, loadedUrl } = useApi<SiteTrends>(trendsUrl, retryKey);
   // Polling the same URL keeps the previous chart visible; switching windows waits for matching data.
@@ -170,7 +187,7 @@ export function Sites() {
           <div className="relative min-w-0 sm:w-[220px] sm:flex-none" ref={metricsMenuRef}>
             <div className="mb-1 flex h-4 items-center justify-between gap-2">
               <span id="site-trend-metrics-label" className="text-xs font-medium leading-4 text-stone-500">Metrics</span>
-              <span id="site-trend-metrics-hint" className="text-[11px] leading-4 text-stone-400">Up to 2</span>
+              <span id="site-trend-metrics-hint" className="text-[11px] leading-4 text-stone-400">Up to {MAX_TREND_METRICS}</span>
             </div>
             <button
               type="button"
@@ -188,11 +205,12 @@ export function Sites() {
               <FilterChevron className="-mr-1" />
             </button>
             {metricsOpen && (
-              <div id="site-trend-metrics-menu" role="group" aria-label="Select up to two shared metrics" className="card dropdown-enter absolute right-0 top-full z-40 mt-2 w-full min-w-[218px] p-2">
+              <div id="site-trend-metrics-menu" role="group" aria-label={`Select up to ${MAX_TREND_METRICS} shared metrics`} className="card dropdown-enter absolute right-0 top-full z-40 mt-2 w-full min-w-[218px] p-2">
                 <div className="px-2 pb-2 text-xs text-stone-500">Applies to every website</div>
                 {TREND_METRICS.map((item) => {
                   const checked = selectedMetrics.includes(item.value);
-                  const disabled = !checked && selectedMetrics.length >= MAX_TREND_METRICS;
+                  const unavailable = item.value === 'impressions' && hourlyWindow && !checked;
+                  const disabled = !checked && (selectedMetrics.length >= MAX_TREND_METRICS || unavailable);
                   return (
                     <label key={item.value} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-stone-100 ${checked ? 'bg-stone-50 font-medium text-ink' : 'text-stone-600'} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}>
                       <input
@@ -207,7 +225,9 @@ export function Sites() {
                     </label>
                   );
                 })}
-                <p className="border-t border-stone-100 px-2 pt-2 text-xs text-stone-400">Choose 1 or 2. Uncheck one to change.</p>
+                <p className="border-t border-stone-100 px-2 pt-2 text-xs text-stone-400">
+                  Choose 1–{MAX_TREND_METRICS}. Search impressions use daily Search Console data (2–3 day lag).
+                </p>
               </div>
             )}
           </div>
@@ -281,7 +301,15 @@ export function Sites() {
         {sites?.map((s) => {
           const trend = ready ? trends?.sites[s.id] : undefined;
           const compared = ready ? trends?.comparison?.sites[s.id] : undefined;
+          const gsc = ready ? trends?.gsc?.[s.id] : undefined;
+          const comparedGsc = ready ? trends?.comparison?.gsc?.[s.id] : undefined;
           const isComparing = ready && !!trends?.comparison;
+          // A site without a governed Search Console property keeps every other
+          // metric; impressions fall back to an explicit empty state.
+          const chartMetrics = selectedMetrics.filter((metric) => metric !== 'impressions' || gsc?.available);
+          const formatMetric = (metric: TrendMetric, value: number) => metric === 'revenue'
+            ? fmtMoney(value, s.currency, currencyDecimals(s.currency), true)
+            : fmtNumber(value);
           const detailParams = new URLSearchParams({ period });
           if (period === 'custom') {
             detailParams.set('from', customFrom);
@@ -319,13 +347,20 @@ export function Sites() {
               <div className={`mt-5 grid gap-3 ${selectedMetrics.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 {selectedMetrics.map((metric) => {
                   const meta = TREND_METRICS.find((item) => item.value === metric)!;
+                  const blocked = metric === 'impressions' && !gsc?.available;
+                  const compareBlocked = metric === 'impressions' && !comparedGsc?.available;
+                  const current = trend?.[metric] ?? 0;
                   return (
                     <div key={metric} className="min-w-0">
-                      <div className="truncate text-2xl font-semibold">{ready ? fmtNumber(trend?.[metric] ?? 0) : '—'}</div>
+                      <div className="truncate text-2xl font-semibold">{ready ? (blocked ? '—' : formatMetric(metric, current)) : '—'}</div>
                       <div className="text-xs text-stone-500">{meta.label.toLowerCase()} in period</div>
-                      {isComparing && (
+                      {ready && blocked && (
+                        <div className="mt-0.5 text-[11px] leading-4 text-stone-400">{GSC_REASON[gsc?.reason ?? 'not_connected']}</div>
+                      )}
+                      {isComparing && !blocked && !compareBlocked && (
                         <div className="mt-1 text-xs">
-                          <ComparisonDelta current={trend?.[metric] ?? 0} previous={compared?.[metric] ?? 0} />
+                          <ComparisonDelta current={current} previous={compared?.[metric] ?? 0}
+                            format={(value) => formatMetric(metric, value)} />
                         </div>
                       )}
                     </div>
@@ -353,24 +388,26 @@ export function Sites() {
                   <TrendSparkline
                     name={s.name}
                     buckets={trends?.buckets ?? []}
-                    series={selectedMetrics.map((metric) => {
+                    series={chartMetrics.map((metric) => {
                       const meta = TREND_METRICS.find((item) => item.value === metric)!;
                       return {
                         key: metric,
                         label: meta.label,
                         color: meta.color,
-                        values: (trend?.series ?? []).map((point) => point[metric]),
+                        values: (trend?.series ?? []).map((point) => point[metric] ?? 0),
+                        format: metric === 'revenue' ? (value: number) => formatMetric(metric, value) : undefined,
                       };
                     })}
                     comparison={trends?.comparison ? {
                       buckets: trends.comparison.buckets,
-                      series: selectedMetrics.map((metric) => {
+                      series: chartMetrics.map((metric) => {
                         const meta = TREND_METRICS.find((item) => item.value === metric)!;
                         return {
                           key: metric,
                           label: meta.label,
                           color: meta.color,
                           values: (compared?.series ?? trends.comparison!.buckets.map(() => null)).map((point) => point?.[metric] ?? 0),
+                          format: metric === 'revenue' ? (value: number) => formatMetric(metric, value) : undefined,
                         };
                       }),
                     } : null}
@@ -391,7 +428,7 @@ export function Sites() {
           <div className="card col-span-full p-10 text-center text-stone-500">No websites yet. Add your first one to get a tracking snippet.</div>
         )}
       </div>
-      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. Today is partial. The same periods and metrics apply to every website card.</p> : null}
+      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. Today is partial. Search impressions come from Search Console (PT days, 2–3 day lag). The same periods and metrics apply to every website card.</p> : null}
       <AddSite open={adding} onClose={() => setAdding(false)} />
     </div>
   );

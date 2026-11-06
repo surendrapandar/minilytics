@@ -69,16 +69,32 @@ export interface Overview {
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
 }
 
+export interface SiteTrendPoint {
+  visitors: number;
+  pageviews: number;
+  sessions: number;
+  impressions: number | null;
+  revenue: number;
+}
+
+export interface SiteTrendGsc {
+  connected: boolean;
+  available: boolean;
+  reason: 'not_connected' | 'hourly' | 'admin' | 'stale' | 'unconfigured' | 'error' | null;
+}
+
 export interface SiteTrends {
   period: string;
   range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
   buckets: string[];
-  sites: Record<string, { visitors: number; pageviews: number; sessions: number; series: { visitors: number; pageviews: number; sessions: number }[] }>;
+  sites: Record<string, SiteTrendPoint & { series: SiteTrendPoint[] }>;
+  gsc?: Record<string, SiteTrendGsc>;
   comparison: {
     mode: 'previous' | 'custom';
     range: { from: number; to: number; granularity: 'hour' | 'day' | 'month' };
     buckets: string[];
     sites: SiteTrends['sites'];
+    gsc?: Record<string, SiteTrendGsc>;
   } | null;
 }
 
