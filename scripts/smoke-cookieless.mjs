@@ -52,6 +52,12 @@ assert(goal.body.sid === a1.body.sid, 'goal lands in the same session');
 const b = await event(site.id, '2.2.2.2', { t: 'pageview', ck: 1, u: `${u}/`, r: 'https://www.google.com/' });
 assert(b.body.vid !== a1.body.vid, 'another IP is another visitor');
 
+// The IP changes mid-visit (IPv4/IPv6 alternation, VPN): the visit stays together.
+const click = await event(site.id, '4.4.4.4', { t: 'pageview', ck: 1, u: `${u}/docs`, r: `${u}/about` });
+assert(click.body.vid === a1.body.vid && click.body.sid === a1.body.sid, 'a click from the last page keeps the visit');
+const ping = await event(site.id, '5.5.5.5', { t: 'goal', ck: 1, u: `${u}/docs`, n: 'read', vid: click.body.vid, sid: click.body.sid });
+assert(ping.body.sid === a1.body.sid, 'events of the current page keep its session');
+
 assert((await event(site.id, '3.3.3.3', { t: 'pageview', u: `${u}/`, r: '' })).status === 400, 'cookie mode still requires ids');
 
 const o = (await call(`/api/sites/${site.id}/overview?period=today`)).body;

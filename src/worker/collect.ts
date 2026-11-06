@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { classify } from '../shared/sources';
 import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
-import { cookielessIds } from './cookieless';
+import { cookielessIds, type VisitHints } from './cookieless';
 import { clientIp, isOwnerVisit } from './owner';
 import { isBot, parseUA } from './lib/ua';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
@@ -83,14 +83,30 @@ export async function handleEvent(c: Context<AppEnv>) {
   if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
   const now = Date.now();
+  const geo = geoOf(c);
   if (cookieless) {
-    // Never trust ids sent along in this mode: they always come from the daily hash.
-    Object.assign(body, await cookielessIds(c.env.DB, site.id, clientIp(c), ua, now));
+    // The visitor id always comes from the daily hash; ids sent along only count if they match an open session.
+    Object.assign(body, await cookielessIds(c.env.DB, site.id, clientIp(c), ua, now, visitHints(body, site, ua, geo)));
   }
-  await ingest(c.env.DB, site, body, url, ua, geoOf(c), now);
+  await ingest(c.env.DB, site, body, url, ua, geo, now);
   // The tracker keeps these in memory only, to tag checkouts (window.minilytics.attribution()).
   if (cookieless) return c.json({ vid: body.vid, sid: body.sid }, 202);
   return c.body(null, 202);
+}
+
+/** What cookieless mode can use to keep a visit together when the IP changes (see cookieless.ts). */
+function visitHints(body: Payload, site: Site, ua: string, geo: Geo): VisitHints {
+  const hints: VisitHints = { sid: isId(body.sid) ? body.sid : undefined };
+  if (body.t === 'pageview' && body.r) {
+    try {
+      const r = new URL(body.r);
+      if (/^https?:$/.test(r.protocol) && belongsTo(r.hostname, site.domain)) {
+        const { browser, os, device } = parseUA(ua, Number(body.sw) || undefined);
+        hints.from = { path: normalizePath(r.pathname), browser, os, device, country: geo.country, city: geo.city };
+      }
+    } catch {}
+  }
+  return hints;
 }
 
 export interface Geo {
