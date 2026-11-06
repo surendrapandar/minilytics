@@ -120,7 +120,7 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 };
 
 /** SQL that limits `sites s` to the ones this user may see. */
-export function siteAccessSql(env: Env, user: User): { sql: string; params: unknown[] } {
+export function siteAccessSql(env: Env, user: Pick<User, 'id' | 'admin'>): { sql: string; params: unknown[] } {
   if (!isHosted(env)) return { sql: '1 = 1', params: [] };
   if (user.admin) return { sql: '(s.owner_id = ? OR s.owner_id IS NULL)', params: [user.id] };
   return { sql: 's.owner_id = ?', params: [user.id] };

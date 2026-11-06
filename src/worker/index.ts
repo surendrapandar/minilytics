@@ -4,10 +4,18 @@ import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
+import {
+  AGENT_TOKEN_EXPIRY_DAYS,
+  agentTokenSuffix,
+  findAgentToken,
+  generateAgentToken,
+  hashAgentToken,
+  parseExpiryDays,
+} from './lib/agent-tokens';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
-import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, statsCtx, visitorProfile, visitors, type FunnelStep } from './stats';
 import { siteTrends } from './siteTrends';
 import { configureGsc, gscProperties, gscSearch } from './gsc';
 
@@ -300,6 +308,124 @@ app.delete('/api/sites/:id', async (c) => {
   );
   forgetSite(id);
   return c.json({ ok: true });
+});
+
+// ---------- agent tokens (owner-managed, read-only analytics)
+
+app.use('/api/agent-tokens', requireUser);
+app.use('/api/agent-tokens/*', requireUser);
+
+app.get('/api/agent-tokens', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT id, name, token_suffix, scopes, created_at, expires_at, last_used_at, revoked_at
+     FROM agent_tokens WHERE owner_id = ? ORDER BY created_at DESC`,
+  )
+    .bind(c.get('user').id)
+    .all();
+  return c.json({ tokens: rows.results ?? [] });
+});
+
+app.post('/api/agent-tokens', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ name?: string; expires_in_days?: number }>().catch(() => ({}) as { name?: string; expires_in_days?: number });
+  const name = (body.name ?? '').trim();
+  if (!name || name.length > 64) return c.json({ error: 'name must be 1-64 characters' }, 400);
+  const days = parseExpiryDays(body.expires_in_days);
+  if (days === null) return c.json({ error: `expires_in_days must be one of ${AGENT_TOKEN_EXPIRY_DAYS.join(', ')}` }, 400);
+
+  const token = generateAgentToken();
+  const now = Date.now();
+  const row = {
+    id: `tok_${randomId(8)}`,
+    name,
+    token_suffix: agentTokenSuffix(token),
+    scopes: 'analytics:read',
+    created_at: now,
+    expires_at: now + days * 86_400_000,
+  };
+  await c.env.DB.prepare(
+    `INSERT INTO agent_tokens (id, owner_id, owner_admin, name, token_hash, token_suffix, scopes, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(row.id, user.id, user.admin ? 1 : 0, name, await hashAgentToken(token), row.token_suffix, row.scopes, row.created_at, row.expires_at)
+    .run();
+  // The plaintext is returned once; only the hash is stored.
+  return c.json({ ok: true, token, agent_token: row }, 201);
+});
+
+app.delete('/api/agent-tokens/:id', async (c) => {
+  const result = await c.env.DB.prepare('UPDATE agent_tokens SET revoked_at = ? WHERE id = ? AND owner_id = ? AND revoked_at IS NULL')
+    .bind(Date.now(), c.req.param('id'), c.get('user').id)
+    .run();
+  if (!result.meta.changes) return c.json({ error: 'token not found' }, 404);
+  return c.json({ ok: true });
+});
+
+const agentTokenAuth = async (c: Context<AppEnv>, next: Next) => {
+  const token = c.req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? '';
+  const row = token ? await findAgentToken(c.env.DB, token) : null;
+  if (!row) return c.json({ error: 'invalid or expired token' }, 401);
+  c.set('agentToken', row);
+  // Reading stats should not write on every request; one update a minute is enough for last_used_at.
+  if (!row.last_used_at || Date.now() - row.last_used_at > 60_000) {
+    const update = c.env.DB.prepare('UPDATE agent_tokens SET last_used_at = ? WHERE id = ?')
+      .bind(Date.now(), row.id)
+      .run()
+      .catch(() => {});
+    try {
+      c.executionCtx.waitUntil(update);
+    } catch {
+      // No execution context (local tooling); the update is best-effort either way.
+    }
+  }
+  await next();
+};
+
+const tokenSite = async (c: Context<AppEnv>) => {
+  const token = c.get('agentToken');
+  const access = siteAccessSql(c.env, { id: token.owner_id, admin: token.owner_admin === 1 });
+  return c.env.DB.prepare(`SELECT s.* FROM sites s WHERE s.id = ? AND ${access.sql}`)
+    .bind(c.req.param('id'), ...access.params)
+    .first<Site>();
+};
+
+app.use('/api/v1/analytics/*', agentTokenAuth);
+
+app.get('/api/v1/analytics/sites', async (c) => {
+  const token = c.get('agentToken');
+  const access = siteAccessSql(c.env, { id: token.owner_id, admin: token.owner_admin === 1 });
+  const rows = await c.env.DB.prepare(
+    `SELECT s.id, s.name, s.domain, s.timezone, s.currency, s.created_at
+     FROM sites s WHERE ${access.sql} ORDER BY s.created_at`,
+  )
+    .bind(...access.params)
+    .all();
+  return c.json({ scope: token.scopes, sites: rows.results ?? [] });
+});
+
+app.get('/api/v1/analytics/sites/:id/overview', async (c) => {
+  const site = await tokenSite(c);
+  if (!site) return c.json({ error: 'site not found' }, 404);
+  return c.json({
+    site: { id: site.id, name: site.name, domain: site.domain },
+    overview: await overview(statsCtx(c.env.DB, site, c.req.query())),
+  });
+});
+
+app.get('/api/v1/analytics/sites/:id/breakdown', async (c) => {
+  const site = await tokenSite(c);
+  if (!site) return c.json({ error: 'site not found' }, 404);
+  const dimension = c.req.query('dimension') ?? 'source';
+  const limit = Number(c.req.query('limit')) || 50;
+  try {
+    return c.json({
+      site: { id: site.id, name: site.name, domain: site.domain },
+      dimension,
+      rows: await breakdown(statsCtx(c.env.DB, site, c.req.query()), dimension, limit),
+    });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
 });
 
 // ---------- stats

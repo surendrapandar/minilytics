@@ -67,7 +67,7 @@ function filterSql(f: Filters): { sql: string; params: unknown[] } {
 
 const hasFilters = (f: Filters) => Object.keys(f).length > 0;
 
-interface Ctx {
+export interface Ctx {
   db: D1Database;
   site: Site;
   range: Range;
@@ -75,11 +75,14 @@ interface Ctx {
   offset: number;
 }
 
-export function makeCtx(c: Context<AppEnv>): Ctx {
-  const site = c.get('site');
-  const q = c.req.query();
+/** Stats context for callers without a Hono request, e.g. the read-only agent API. */
+export function statsCtx(db: D1Database, site: Site, q: Record<string, string | undefined>): Ctx {
   const range = resolveRange(q, site.timezone, site.created_at);
-  return { db: c.env.DB, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+  return { db, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+}
+
+export function makeCtx(c: Context<AppEnv>): Ctx {
+  return statsCtx(c.env.DB, c.get('site'), c.req.query());
 }
 
 function sessionsWhere(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {

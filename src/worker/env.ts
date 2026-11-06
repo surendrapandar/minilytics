@@ -52,7 +52,7 @@ export interface Site {
 /** A site plus its owner's plan, used to stop recording when a hosted plan lapses. */
 export type SiteWithOwner = Site & { owner_email?: string | null; owner_plan_status?: string | null; owner_plan_until?: number | null };
 
-export type AppEnv = { Bindings: Env; Variables: { site: Site; user: import('./auth').User } };
+export type AppEnv = { Bindings: Env; Variables: { site: Site; user: import('./auth').User; agentToken: import('./lib/agent-tokens').AgentTokenRow } };
 
 const siteCache = new Map<string, { site: SiteWithOwner | null; at: number }>();
 

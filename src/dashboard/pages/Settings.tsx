@@ -101,6 +101,135 @@ function Step({ n, title, children }: { n: number; title: ReactNode; children?: 
   );
 }
 
+interface AgentToken {
+  id: string;
+  name: string;
+  token_suffix: string;
+  scopes: string;
+  created_at: number;
+  expires_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+}
+
+const EXPIRY_CHOICES = [7, 30, 90, 365];
+
+/** Owner-managed read-only analytics tokens. The secret is shown once at creation. */
+function AgentTokens() {
+  const [tokens, setTokens] = useState<AgentToken[]>([]);
+  const [name, setName] = useState('');
+  const [days, setDays] = useState(90);
+  const [secret, setSecret] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try {
+      const result = await api<{ tokens: AgentToken[] }>('/api/agent-tokens');
+      setTokens(result.tokens);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function create() {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api<{ token: string }>('/api/agent-tokens', { method: 'POST', json: { name, expires_in_days: days } });
+      setSecret(result.token);
+      setName('');
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string) {
+    if (!confirm('Revoke this token? Anything using it stops immediately.')) return;
+    try {
+      await api(`/api/agent-tokens/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const fmt = (ts: number) => new Date(ts).toLocaleDateString();
+
+  return (
+    <Section
+      title="Agent tokens"
+      desc="Read-only analytics API tokens for agents. The secret is shown once; revoke any token immediately. Each token covers every site you own."
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-48 flex-1">
+          <label className="label">Name</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Claude Code" maxLength={64} />
+        </div>
+        <div>
+          <label className="label">Expires</label>
+          <div className="flex gap-1">
+            {EXPIRY_CHOICES.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                className={`${SMALL_BUTTON} px-2 py-1 ${days === choice ? 'bg-ink text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                onClick={() => setDays(choice)}
+              >
+                {choice}d
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="btn-dark" onClick={() => void create()} disabled={busy || !name.trim()}>
+          {busy ? 'Creating…' : 'Create token'}
+        </button>
+      </div>
+      {secret && (
+        <div className="mt-4">
+          <p className="mb-1 text-sm font-medium text-amber-700">Copy it now — it is not shown again.</p>
+          <Code label="Authorization: Bearer">{secret}</Code>
+        </div>
+      )}
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      <div className="mt-4">
+        {tokens.length === 0 ? (
+          <p className="text-sm text-stone-500">No tokens yet.</p>
+        ) : (
+          tokens.map((token) => (
+            <div key={token.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 py-2 last:border-0">
+              <div>
+                <p className="text-sm font-medium">{token.name}</p>
+                <p className="text-xs text-stone-500">
+                  …{token.token_suffix} · {token.scopes} · expires {fmt(token.expires_at)}
+                  {token.last_used_at ? ` · last used ${fmt(token.last_used_at)}` : ''}
+                  {token.revoked_at ? ' · revoked' : ''}
+                </p>
+              </div>
+              {!token.revoked_at && (
+                <button className={`${SMALL_BUTTON} text-red-600 hover:bg-red-50`} onClick={() => void revoke(token.id)}>
+                  Revoke
+                </button>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+      <p className="mt-4 text-sm text-stone-500">
+        Endpoints: <code>GET /api/v1/analytics/sites</code>, <code>…/sites/:id/overview</code>, <code>…/sites/:id/breakdown?dimension=source</code>.
+      </p>
+    </Section>
+  );
+}
+
 export function Settings({ siteId }: { siteId: string }) {
   const [site, setSite] = useState<Site | null>(null);
   const [form, setForm] = useState<Partial<Site>>({});
@@ -213,6 +342,8 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
           {error || saved}
         </div>
       )}
+
+      <AgentTokens />
 
       <Section title="Danger zone">
         <button
