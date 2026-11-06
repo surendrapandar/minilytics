@@ -56,6 +56,53 @@ function itemCls(active: boolean) {
   return `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-stone-100 ${active ? 'font-medium text-ink' : 'text-stone-600'}`;
 }
 
+export function PeriodPicker({ q, update, align = 'left', className = 'btn h-11' }: {
+  q: Query;
+  update: (p: Partial<Query>) => void;
+  align?: 'left' | 'right';
+  className?: string;
+}) {
+  const [from, setFrom] = useState(q.from ?? '');
+  const [to, setTo] = useState(q.to ?? '');
+  useEffect(() => {
+    setFrom(q.from ?? '');
+    setTo(q.to ?? '');
+  }, [q.from, q.to]);
+
+  const label = q.period === 'custom'
+    ? q.from === q.to
+      ? new Date(q.from + 'T00:00:00Z').toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+      : `${q.from} → ${q.to}`
+    : PERIODS.find((p) => p.value === q.period)?.label ?? 'Last 30 days';
+
+  return (
+    <Dropdown align={align} button={<button className={className} aria-label={`Date range: ${label}`}>{label} <Chevron /></button>}>
+      {(close) => (
+        <>
+          {PERIODS.map((p) => (
+            <button key={p.value} className={itemCls(q.period === p.value)} onClick={() => {
+              close();
+              update({ period: p.value, granularity: undefined });
+            }}>{p.label}</button>
+          ))}
+          <div className="my-1 border-t border-stone-100" />
+          <form className="space-y-2 p-2" onSubmit={(e) => {
+            e.preventDefault();
+            if (!from || !to) return;
+            close();
+            update({ period: 'custom', from, to: to < from ? from : to, granularity: undefined });
+          }}>
+            <div className="text-xs font-medium text-stone-500">Custom range</div>
+            <input type="date" aria-label="Start date" className="input py-1.5" value={from} onChange={(e) => setFrom(e.target.value)} required />
+            <input type="date" aria-label="End date" className="input py-1.5" value={to} onChange={(e) => setTo(e.target.value)} required />
+            <button className="btn-dark w-full py-1.5">Apply</button>
+          </form>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
 export function Toolbar({
   site,
   sites,
@@ -75,15 +122,6 @@ export function Toolbar({
   onLive: () => void;
   loading: boolean;
 }) {
-  const [from, setFrom] = useState(q.from ?? '');
-  const [to, setTo] = useState(q.to ?? '');
-
-  const label =
-    q.period === 'custom'
-      ? q.from === q.to
-        ? new Date(q.from + 'T00:00:00Z').toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-        : `${q.from} → ${q.to}`
-      : PERIODS.find((p) => p.value === q.period)?.label ?? 'Last 30 days';
 
   function shift(dir: -1 | 1) {
     if (!overview) return;
@@ -136,45 +174,7 @@ export function Toolbar({
         <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
           ‹
         </button>
-        <Dropdown
-          button={
-            <button className="flex h-full items-center gap-2 border-x border-stone-200 px-4 text-base font-medium hover:bg-stone-50">
-              {label} <Chevron />
-            </button>
-          }
-        >
-          {(close) => (
-            <>
-              {PERIODS.map((p) => (
-                <button
-                  key={p.value}
-                  className={itemCls(q.period === p.value)}
-                  onClick={() => {
-                    close();
-                    update({ period: p.value, granularity: undefined });
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-              <div className="my-1 border-t border-stone-100" />
-              <form
-                className="space-y-2 p-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!from || !to) return;
-                  close();
-                  update({ period: 'custom', from, to: to < from ? from : to, granularity: undefined });
-                }}
-              >
-                <div className="text-xs font-medium text-stone-500">Custom range</div>
-                <input type="date" className="input py-1.5" value={from} onChange={(e) => setFrom(e.target.value)} />
-                <input type="date" className="input py-1.5" value={to} onChange={(e) => setTo(e.target.value)} />
-                <button className="btn-dark w-full py-1.5">Apply</button>
-              </form>
-            </>
-          )}
-        </Dropdown>
+        <PeriodPicker q={q} update={update} className="flex h-full items-center gap-2 border-x border-stone-200 px-4 text-base font-medium hover:bg-stone-50" />
         <button
           className="rounded-r-xl px-3 text-xl text-stone-500 hover:bg-stone-50 disabled:opacity-30"
           onClick={() => shift(1)}

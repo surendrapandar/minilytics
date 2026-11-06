@@ -3,20 +3,40 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
-import { api, type Site } from '../lib/api';
-import { fmtNumber } from '../lib/format';
+import { PeriodPicker, PERIODS } from '../components/Toolbar';
+import { api, qs, type Site, type SiteSummary } from '../lib/api';
+import { fmtMoney, fmtNumber } from '../lib/format';
+import { useApi } from '../lib/useApi';
+import { useQueryState } from '../lib/useQueryState';
 
 export function Sites() {
   const { me } = useMe();
-  const [sites, setSites] = useState<Site[] | null>(null);
+  const [q, update] = useQueryState('24h');
+  const query = qs({ period: q.period, from: q.from, to: q.to, filters: {} });
+  const url = `/api/sites?${query}`;
+  const periodLabel = PERIODS.find((p) => p.value === q.period)?.label ?? 'Custom range';
+  const [reloadKey, setReloadKey] = useState(0);
+  const { data, dataUrl, error } = useApi<SiteSummary[]>(url, reloadKey);
+  const sites = dataUrl === url ? data : null;
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    api<Site[]>('/api/sites').then((s) => {
-      setSites(s);
-      if (!s.length) setAdding(true);
-    });
+    const timer = window.setInterval(() => setReloadKey((key) => key + 1), 30_000);
+    return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (sites?.length === 0) setAdding(true);
+  }, [sites?.length]);
+
+  let activeUsers = 0;
+  const revenueByCurrency = new Map<string, { amount: number; decimals: number }>();
+  for (const site of sites ?? []) {
+    activeUsers += site.online;
+    const total = revenueByCurrency.get(site.currency);
+    if (total) total.amount += site.revenue;
+    else revenueByCurrency.set(site.currency, { amount: site.revenue, decimals: site.decimals });
+  }
 
   async function logout() {
     await api('/api/auth/logout', { method: 'POST' });
@@ -43,10 +63,46 @@ export function Sites() {
         </div>
       </div>
 
-      <h1 className="mt-10 text-2xl font-semibold">Your websites</h1>
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Your websites</h1>
+        <div className="ml-auto"><PeriodPicker q={q} update={update} align="right" /></div>
+      </div>
+      <p className="mt-2 text-xs text-stone-500">Dates follow each website’s timezone.</p>
+      <section className="card mt-5 overflow-hidden" aria-labelledby="all-websites-heading">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 px-5 py-4">
+          <h2 id="all-websites-heading" className="text-sm font-semibold">All websites</h2>
+          <span className="text-xs text-stone-500">Updates every 30 seconds</span>
+        </div>
+        <dl className="grid divide-y divide-stone-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <div className="p-5 sm:p-6">
+            <dt className="flex items-center gap-2 text-sm text-stone-600">
+              <span className={`h-2 w-2 rounded-full ${activeUsers ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} aria-hidden="true" />
+              Active users
+            </dt>
+            <dd className="mt-2 text-3xl font-semibold tabular-nums">{sites ? fmtNumber(activeUsers) : '—'}</dd>
+            <p className="mt-2 text-xs text-stone-500">Active in the last 5 minutes · summed across websites</p>
+          </div>
+          <div className="p-5 sm:p-6">
+            <dt className="text-sm text-stone-600">Revenue · {periodLabel}</dt>
+            <dd className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-3xl font-semibold tabular-nums text-revenue">
+              {sites?.length ? [...revenueByCurrency].map(([currency, total]) => (
+                <span key={currency} className="min-w-0 break-all">
+                  {fmtMoney(total.amount, currency, total.decimals)}
+                  <span className="ml-2 text-xs font-medium text-stone-500">{currency}</span>
+                </span>
+              )) : sites ? '0' : '—'}
+            </dd>
+            <p className="mt-2 text-xs text-stone-500">
+              Net of refunds{revenueByCurrency.size > 1 ? ' · currencies shown separately' : ' · across all websites'}
+            </p>
+          </div>
+        </dl>
+      </section>
+      {error && <p role="alert" className="mt-4 text-sm text-red-600">{sites ? 'Unable to refresh. Showing the last loaded data.' : 'Unable to load websites.'} {error}</p>}
+      {!sites && !error && <p role="status" className="mt-5 text-sm text-stone-500">Loading websites…</p>}
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sites?.map((s) => (
-          <button key={s.id} onClick={() => navigate(`/site/${s.id}`)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
+          <button key={s.id} onClick={() => navigate(`/site/${s.id}?${query}`)} className="card min-w-0 p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center gap-3">
               <Favicon domain={s.domain} size={28} />
               <div className="min-w-0">
@@ -54,15 +110,22 @@ export function Sites() {
                 <div className="truncate text-sm text-stone-500">{s.domain}</div>
               </div>
             </div>
-            <div className="mt-5 flex items-end justify-between">
-              <div>
-                <div className="text-2xl font-semibold">{fmtNumber(s.visitors24h ?? 0)}</div>
-                <div className="text-xs text-stone-500">visitors in the last 24h</div>
+            <div className="mt-5 grid grid-cols-2 gap-4">
+              <div className="min-w-0">
+                <div className="break-all text-2xl font-semibold tabular-nums">{fmtNumber(s.visitors)}</div>
+                <div className="mt-1 text-xs text-stone-500">Visitors</div>
               </div>
-              <div className="flex items-center gap-1.5 text-sm text-stone-600">
-                <span className={`h-2 w-2 rounded-full ${s.online ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} />
-                {s.online} online
+              <div className="min-w-0 text-right">
+                <div className="break-all text-2xl font-semibold tabular-nums text-revenue">{fmtMoney(s.revenue, s.currency, s.decimals)}</div>
+                <div className="mt-1 text-xs text-stone-500">Revenue</div>
               </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3 text-xs text-stone-500">
+              <span className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${s.online ? 'animate-pulse bg-green-500' : 'bg-stone-300'}`} aria-hidden="true" />
+                {fmtNumber(s.online)} online
+              </span>
+              <span>{periodLabel} · {s.currency}</span>
             </div>
           </button>
         ))}

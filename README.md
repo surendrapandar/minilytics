@@ -61,7 +61,8 @@ Cloudflare's free plan.
 - **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
-- Multiple websites, one login
+- Multiple websites, one login: the homepage previews each website's visitors and net revenue for the selected date range, alongside its current online count. Choose today, yesterday, last 24h/2/7/30/90 days, 12 months, all time or custom dates; the default is last 24h. Calendar dates use each website's timezone, and custom end dates include the whole day. The URL preserves the selection on refresh and when opening a website's dashboard.
+- **All-websites overview**: sums online users active in the last 5 minutes and net revenue for the selected range, refreshing every 30 seconds. Changing the date range does not change the live-user window. Active users are counted per website (a person visiting two sites can count twice). Revenue includes renewals and subtracts refunds; totals are grouped by each site's configured currency, with no cross-currency conversion.
 
 ## Deploy for free (about 10 minutes)
 

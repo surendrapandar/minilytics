@@ -5,7 +5,8 @@ import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
-import { handleDodoWebhook, handleGoalApi, handlePaymentApi, learnDodoProducts, rematchPayments } from './payments';
+import { resolveRange } from './lib/time';
+import { currencyDecimals, handleDodoWebhook, handleGoalApi, handlePaymentApi, learnDodoProducts, rematchPayments } from './payments';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, visitorProfile, visitors, type FunnelStep } from './stats';
 import { handleStripeWebhook } from './stripe';
 import { parseStripeMetadataFilter } from '../shared/stripe-scope';
@@ -116,22 +117,27 @@ const publicSite = (s: Site) => ({
 app.get('/api/sites', async (c) => {
   const now = Date.now();
   const access = siteAccessSql(c.env, c.get('user'));
-  const [sites, stats] = await c.env.DB.batch([
-    c.env.DB.prepare(`SELECT s.* FROM sites s WHERE ${access.sql} ORDER BY s.created_at`).bind(...access.params),
-    c.env.DB.prepare(
-      `SELECT site_id, COUNT(DISTINCT visitor_id) AS visitors,
-              COUNT(DISTINCT CASE WHEN last_seen_at > ? THEN visitor_id END) AS online
-       FROM sessions WHERE started_at > ? GROUP BY site_id`,
-    ).bind(now - 5 * 60_000, now - 86_400_000),
-  ]);
-  const by = new Map((stats.results as any[]).map((r) => [r.site_id, r]));
-  return c.json(
-    (sites.results as unknown as Site[]).map((s) => ({
-      ...publicSite(s),
-      visitors24h: by.get(s.id)?.visitors ?? 0,
-      online: by.get(s.id)?.online ?? 0,
-    })),
-  );
+  const query = { ...c.req.query(), period: c.req.query('period') || '24h' };
+  const { results: sites } = await c.env.DB.prepare(`SELECT s.* FROM sites s WHERE ${access.sql} ORDER BY s.created_at`)
+    .bind(...access.params).all<Site>();
+  if (!sites.length) return c.json([]);
+  const stats = await c.env.DB.batch<{ visitors: number; online: number; revenue: number }>(sites.map((site) => {
+    const range = resolveRange(query, site.timezone, site.created_at, now);
+    return c.env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(DISTINCT visitor_id) FROM sessions
+         WHERE site_id = ? AND started_at >= ? AND started_at < ?) AS visitors,
+        (SELECT COUNT(DISTINCT visitor_id) FROM sessions
+         WHERE site_id = ? AND started_at > ? AND last_seen_at > ?) AS online,
+        (SELECT COALESCE(SUM(amount), 0) FROM payments
+         WHERE site_id = ? AND ts >= ? AND ts < ?) AS revenue`,
+    ).bind(site.id, range.from, range.to, site.id, now - 86_400_000, now - 5 * 60_000, site.id, range.from, range.to);
+  }));
+  return c.json(sites.map((site, i) => ({
+    ...publicSite(site),
+    ...stats[i].results[0],
+    decimals: currencyDecimals(site.currency),
+  })));
 });
 
 app.post('/api/sites', async (c) => {

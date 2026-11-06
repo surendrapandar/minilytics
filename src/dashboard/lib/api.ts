@@ -35,8 +35,13 @@ export interface Site {
   stripe_metadata_key: string | null;
   stripe_metadata_value: string | null;
   created_at: number;
-  visitors24h?: number;
-  online?: number;
+}
+
+export interface SiteSummary extends Site {
+  visitors: number;
+  online: number;
+  revenue: number;
+  decimals: number;
 }
 
 export interface Kpis {

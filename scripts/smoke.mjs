@@ -91,6 +91,13 @@ assert(Math.abs(o.current.bounceRate - 0.5) < 1e-9, 'bounce rate 50%');
 assert(o.current.avgDuration === 21000, `avg session time 21s (got ${o.current.avgDuration})`);
 assert(o.online === 2, 'two online');
 
+const preview = (await call('/api/sites')).body.find((s) => s.id === site.id);
+assert(preview.visitors === 2 && preview.online === 2, 'homepage counts distinct visitors and online users');
+assert(preview.revenue === 4900, 'homepage revenue includes renewals and subtracts refunds without multiplying by visits');
+assert(preview.decimals === 2, 'homepage revenue uses USD minor units');
+const historicalPreview = (await call('/api/sites?period=custom&from=2000-01-01&to=2000-01-02')).body.find((s) => s.id === site.id);
+assert(historicalPreview.visitors === 0 && historicalPreview.revenue === 0 && historicalPreview.online === 2, 'historical homepage range excludes current traffic and revenue but keeps live users');
+
 const src = (await call(`/api/sites/${site.id}/breakdown?period=today&dim=source`)).body;
 const x = src.find((s) => s.label === 'X');
 assert(x && x.revenue === 4900 && x.customers === 1, 'revenue credited to X');
@@ -176,7 +183,8 @@ assert(rm.checked === 1 && rm.matched === 0 && /too close to call/.test(rm.detai
 
 for (const p of ['today', 'yesterday', '24h', '48h', '7d', '30d', '90d', '12m', 'all']) {
   const res = await call(`/api/sites/${site.id}/overview?period=${p}`);
-  assert(res.status === 200 && res.body.series.length > 0, `period ${p} (${res.body.series.length} buckets, ${res.body.range.granularity})`);
+  const summary = (await call(`/api/sites?period=${p}`)).body.find((s) => s.id === site.id);
+  assert(res.status === 200 && summary.visitors === res.body.current.visitors && summary.revenue === res.body.current.revenue, `homepage and dashboard agree for ${p} in the site's timezone`);
 }
 for (const g of ['hour', 'day', 'week', 'month']) {
   const res = await call(`/api/sites/${site.id}/overview?period=30d&granularity=${g}`);

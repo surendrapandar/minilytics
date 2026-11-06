@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Filters, Query } from './api';
 
 /** Period, granularity and filters live in the URL so a refresh or shared link keeps them. */
-function read(): Query {
+function read(defaultPeriod: string): Query {
   const p = new URLSearchParams(window.location.search);
   let filters: Filters = {};
   try {
     filters = JSON.parse(p.get('filters') || '{}');
   } catch {}
   return {
-    period: p.get('period') || '30d',
+    period: p.get('period') || defaultPeriod,
     from: p.get('from') || undefined,
     to: p.get('to') || undefined,
     granularity: p.get('granularity') || undefined,
@@ -17,14 +17,14 @@ function read(): Query {
   };
 }
 
-export function useQueryState() {
-  const [q, setQ] = useState<Query>(read);
+export function useQueryState(defaultPeriod = '30d') {
+  const [q, setQ] = useState<Query>(() => read(defaultPeriod));
 
   useEffect(() => {
-    const on = () => setQ(read());
+    const on = () => setQ(read(defaultPeriod));
     window.addEventListener('popstate', on);
     return () => window.removeEventListener('popstate', on);
-  }, []);
+  }, [defaultPeriod]);
 
   const update = useCallback((patch: Partial<Query>) => {
     setQ((prev) => {
