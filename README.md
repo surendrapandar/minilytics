@@ -259,6 +259,18 @@ curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..."
   -d '{"transaction_id":"txn_1","amount":29.99,"currency":"USD","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
 ```
 
+### Agent tokens (read-only analytics API)
+
+Create tokens in **Site settings → Agent tokens**. The secret is shown once; only a SHA-256 hash is stored, and tokens can be revoked at any time. Expiry choices are 7, 30, 90 or 365 days. A token covers every site its owner can see and grants only `analytics:read`.
+
+```bash
+curl https://YOUR-HOST/api/v1/analytics/sites -H "Authorization: Bearer mla_..."
+curl "https://YOUR-HOST/api/v1/analytics/sites/SITE_ID/overview?period=7d" -H "Authorization: Bearer mla_..."
+curl "https://YOUR-HOST/api/v1/analytics/sites/SITE_ID/breakdown?dimension=source&period=7d" -H "Authorization: Bearer mla_..."
+```
+
+The overview and breakdown endpoints accept the same `period`, `from`, `to` and `filters` query parameters as the dashboard.
+
 ## Accuracy notes
 
 No analytics tool is 100% accurate. These are the main gaps and how this project handles them:
