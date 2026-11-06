@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gscDailySeries, previousGscWindow, resolveGscWindow, validGscDates, validGscProperty } from '../src/worker/gsc';
+import { gscDailySeries, previousGscWindow, resolveGscWindow, trendGscWindow, validGscDates, validGscProperty } from '../src/worker/gsc';
 
 describe('Google Search Console service account input validation', () => {
   it('accepts exact domain and URL-prefix property formats', () => {
@@ -100,5 +100,37 @@ describe('GSC periods follow the shared dashboard selector', () => {
     expect(range.from).toBe('2025-10-31');
     expect(range.to).toBe('2026-10-31');
     expect(range.truncated).toBe(true);
+  });
+});
+
+describe('shared trend impressions window', () => {
+  // 12:00 UTC is 05:00 Pacific on the same date.
+  const now = Date.parse('2026-11-06T12:00:00Z');
+
+  it('requests whole days through yesterday in Pacific Time', () => {
+    expect(trendGscWindow(Date.UTC(2026, 10, 1), Date.UTC(2026, 10, 6), now))
+      .toEqual({ from: '2026-11-01', to: '2026-11-05', available: true, truncated: false });
+  });
+
+  it('reports no data for windows that only cover the current Pacific day', () => {
+    const today = trendGscWindow(Date.UTC(2026, 10, 6), Date.UTC(2026, 10, 6, 8), now);
+    expect(today.available).toBe(false);
+    expect(today.to).toBe('2026-11-05');
+  });
+
+  it('uses the Pacific calendar around UTC midnight', () => {
+    // 06:00 UTC on Nov 6 is still Nov 5 in Pacific Time.
+    const window = trendGscWindow(
+      Date.UTC(2026, 9, 30), Date.UTC(2026, 10, 6),
+      Date.parse('2026-11-06T06:00:00Z'),
+    );
+    expect(window.to).toBe('2026-11-04');
+  });
+
+  it('caps requests at the 365-day Search Console history', () => {
+    const window = trendGscWindow(Date.UTC(2024, 0, 1), Date.UTC(2026, 10, 6), now);
+    expect(window.from).toBe('2025-11-05');
+    expect(window.truncated).toBe(true);
+    expect(window.available).toBe(true);
   });
 });

@@ -6,6 +6,12 @@ export interface SparklineSeries {
   label: string;
   color: string;
   values: number[];
+  /** Overrides the default numeric tooltip label, e.g. for minor-unit revenue. */
+  format?: (value: number) => string;
+}
+
+function formatValue(item: SparklineSeries, value: number): string {
+  return item.format ? item.format(value) : value.toLocaleString();
 }
 
 const WIDTH = 320;
@@ -73,7 +79,11 @@ export function TrendSparkline({
   const count = buckets.length;
   const comparisonCount = comparison?.buckets.length ?? 0;
   const comparisonSeries = comparison?.series ?? [];
-  const max = Math.max(1, ...series.flatMap((item) => item.values), ...comparisonSeries.flatMap((item) => item.values));
+  // Search impressions dwarf visits, so every series is scaled to its own peak
+  // (including its comparison window); the tooltip and cards keep real counts.
+  const peakFor = (key: string) => Math.max(1,
+    ...series.filter((item) => item.key === key).flatMap((item) => item.values),
+    ...comparisonSeries.filter((item) => item.key === key).flatMap((item) => item.values));
   const empty = !count || [...series, ...comparisonSeries].every((item) => item.values.every((value) => value === 0));
   const safeActive = active !== null && active >= 0 && active < count ? active : null;
   const focusX = safeActive === null ? 0 : (safeActive / Math.max(1, count - 1)) * WIDTH;
@@ -129,8 +139,8 @@ export function TrendSparkline({
     >
       <span className="sr-only" aria-live="polite">
         {safeActive !== null
-          ? `${buckets[safeActive]}: ${series.map((item) => `${item.label} ${(item.values[safeActive] ?? 0).toLocaleString()}`).join(', ')}${comparisonIndex !== null
-            ? `; comparison ${comparison?.buckets[comparisonIndex]}: ${comparisonSeries.map((item) => `${item.label} ${(item.values[comparisonIndex] ?? 0).toLocaleString()}`).join(', ')}`
+          ? `${buckets[safeActive]}: ${series.map((item) => `${item.label} ${formatValue(item, item.values[safeActive] ?? 0)}`).join(', ')}${comparisonIndex !== null
+            ? `; comparison ${comparison?.buckets[comparisonIndex]}: ${comparisonSeries.map((item) => `${item.label} ${formatValue(item, item.values[comparisonIndex] ?? 0)}`).join(', ')}`
             : ''}`
           : ''}
       </span>
@@ -146,11 +156,11 @@ export function TrendSparkline({
         <g clipPath={`url(#${clipId})`}>
           {comparisonSeries.map((item) => (
             <ChartLine key={`compare-${item.key}`}
-              normalized={resample(item.values, count).map((value) => value / max)}
+              normalized={resample(item.values, count).map((value) => value / peakFor(item.key))}
               color={item.color} gradientId={gradientId} fill={false} dashed />
           ))}
           {series.map((item, index) => (
-            <ChartLine key={item.key} normalized={item.values.map((value) => value / max)}
+            <ChartLine key={item.key} normalized={item.values.map((value) => value / peakFor(item.key))}
               color={item.color} gradientId={gradientId} fill={index === 0} />
           ))}
         </g>
@@ -159,7 +169,7 @@ export function TrendSparkline({
             <line x1={focusX} x2={focusX} y1={TOP} y2={BOTTOM} stroke="#a8a29e" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
             {series.map((item) => (
               <circle key={item.key} cx={focusX}
-                cy={BOTTOM - ((item.values[safeActive] ?? 0) / max) * (BOTTOM - TOP)}
+                cy={BOTTOM - ((item.values[safeActive] ?? 0) / peakFor(item.key)) * (BOTTOM - TOP)}
                 r="3.7" fill={item.color} stroke="white" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             ))}
           </>
@@ -176,7 +186,7 @@ export function TrendSparkline({
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
                 {item.label}
               </span>
-              <span className="font-medium text-stone-800">{(item.values[safeActive] ?? 0).toLocaleString()}</span>
+              <span className="font-medium text-stone-800">{formatValue(item, item.values[safeActive] ?? 0)}</span>
             </div>
           ))}
           {comparisonIndex !== null && (
@@ -185,7 +195,7 @@ export function TrendSparkline({
               {comparisonSeries.map((item) => (
                 <div key={item.key} className="flex items-center justify-between gap-4 whitespace-nowrap text-stone-600">
                   <span>{item.label}</span>
-                  <span className="font-medium text-stone-800">{(item.values[comparisonIndex] ?? 0).toLocaleString()}</span>
+                  <span className="font-medium text-stone-800">{formatValue(item, item.values[comparisonIndex] ?? 0)}</span>
                 </div>
               ))}
             </>

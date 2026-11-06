@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bucketLabels } from '../src/worker/lib/time';
-import { customTrendRange, isSiteTrendPeriod, previousTrendRange, siteTrendRange } from '../src/worker/siteTrends';
+import { customTrendRange, impressionsByBucket, isSiteTrendPeriod, previousTrendRange, siteTrendRange } from '../src/worker/siteTrends';
 
 describe('site overview trends', () => {
   const now = Date.UTC(2026, 9, 29, 12);
@@ -101,5 +101,37 @@ describe('site overview trends', () => {
     expect(isSiteTrendPeriod('custom')).toBe(true);
     expect(isSiteTrendPeriod('nonsense')).toBe(false);
     expect(isSiteTrendPeriod("7d'; DROP TABLE sessions; --")).toBe(false);
+  });
+});
+
+describe('Search Console impressions in shared trends', () => {
+  it('maps daily impressions onto matching UTC day buckets', () => {
+    expect(impressionsByBucket(
+      ['2026-11-03', '2026-11-04', '2026-11-05'],
+      'day',
+      [
+        { date: '2026-11-03', impressions: 12 },
+        { date: '2026-11-05', impressions: 30 },
+      ],
+    )).toEqual([12, 0, 30]);
+  });
+
+  it('sums daily impressions into calendar months', () => {
+    expect(impressionsByBucket(
+      ['2026-09', '2026-10', '2026-11'],
+      'month',
+      [
+        { date: '2026-09-30', impressions: 4 },
+        { date: '2026-10-01', impressions: 6 },
+        { date: '2026-10-31', impressions: 8 },
+        { date: '2026-11-01', impressions: 9 },
+      ],
+    )).toEqual([4, 14, 9]);
+  });
+
+  it('leaves hourly buckets empty because Search Console reports whole days', () => {
+    expect(impressionsByBucket(['2026-11-05T10:00'], 'hour', [
+      { date: '2026-11-05', impressions: 30 },
+    ])).toEqual([0]);
   });
 });
