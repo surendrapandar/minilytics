@@ -2,17 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #f8f6f3; color: #1c1917; }
+/* Theme tokens as "r g b" so Tailwind can apply opacity modifiers. `.theme-light` pins a subtree
+   (e.g. the live map, which has its own light/dark switch) to the light values. */
+:root, .theme-light {
+  color-scheme: light;
+  --paper: 248 246 243;
+  --surface: 255 255 255;
+  --ink: 28 25 23;
+  --revenue-soft: 250 219 209;
+  --visitors-soft: 228 240 252;
+  --chart-grid: 239 237 234;
+  --stone-50: 250 250 249;
+  --stone-100: 245 245 244;
+  --stone-200: 231 229 228;
+  --stone-300: 214 211 209;
+  --stone-400: 168 162 158;
+  --stone-500: 120 113 108;
+  --stone-600: 87 83 78;
+  --stone-700: 68 64 60;
+  --stone-800: 41 37 36;
+  --stone-900: 28 25 23;
+  --stone-950: 12 10 9;
+}
+
+.dark {
+  color-scheme: dark;
+  --paper: 17 16 15;
+  --surface: 28 26 24;
+  --ink: 236 233 229;
+  --revenue-soft: 92 48 36;
+  --visitors-soft: 30 52 78;
+  --chart-grid: 48 45 42;
+  --stone-50: 37 34 32;
+  --stone-100: 45 42 39;
+  --stone-200: 58 54 51;
+  --stone-300: 78 73 69;
+  --stone-400: 130 123 118;
+  --stone-500: 168 162 158;
+  --stone-600: 192 187 183;
+  --stone-700: 214 211 209;
+  --stone-800: 231 229 228;
+  --stone-900: 245 245 244;
+  --stone-950: 250 250 249;
+}
+
+html, body { background: rgb(var(--paper)); color: rgb(var(--ink)); }
 body { font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
 
 @layer components {
-  .card { @apply rounded-2xl border border-stone-200/80 bg-white shadow-card; }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-sm font-medium shadow-card transition hover:bg-stone-50 disabled:opacity-50; }
-  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:opacity-50; }
-  .input { @apply w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
+  .card { @apply rounded-2xl border border-stone-200/80 bg-surface shadow-card; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-surface px-3.5 py-2 text-sm font-medium shadow-card transition hover:bg-stone-50 disabled:opacity-50; }
+  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:bg-stone-700 disabled:opacity-50; }
+  .input { @apply w-full rounded-xl border border-stone-200 bg-surface px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
   .label { @apply mb-1 block text-sm font-medium text-stone-600; }
   .tabs { @apply inline-flex rounded-xl bg-stone-100/80 p-1; }
   .tab { @apply rounded-lg px-3 py-1 text-sm text-stone-500 transition hover:text-stone-800; }
-  .tab-active { @apply bg-white text-ink shadow-card; }
-  .code { @apply block overflow-x-auto whitespace-pre rounded-xl bg-stone-900 p-4 font-mono text-[13px] leading-relaxed text-stone-100; }
+  .tab-active { @apply bg-surface text-ink shadow-card dark:bg-stone-300; }
+  /* Code stays dark in both themes. */
+  .code { @apply block overflow-x-auto whitespace-pre rounded-xl bg-[#1c1917] p-4 font-mono text-[13px] leading-relaxed text-[#f5f5f4] dark:bg-black/40 dark:ring-1 dark:ring-white/10; }
 }

@@ -114,7 +114,7 @@ export function Avatar({ id, size = 40 }: { id: string; size?: number }) {
       title={p.name}
       width={size}
       height={size}
-      className="inline-block shrink-0 rounded-full ring-2 ring-white"
+      className="inline-block shrink-0 rounded-full ring-2 ring-surface"
       style={{ width: size, height: size, background: p.color }}
     />
   );

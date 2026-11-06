@@ -3,6 +3,7 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { Area, Bar, ComposedChart, ResponsiveContainer, YAxis } from 'recharts';
 import { currencyDecimals } from '../../shared/currency';
@@ -56,6 +57,7 @@ export function Sites() {
               {me.user.email}
             </button>
           )}
+          <ThemeToggle className="btn h-[38px] w-[38px] px-0" />
           <button className="btn" onClick={logout}>
             Log out
           </button>
@@ -127,7 +129,7 @@ function AllSitesCard({ sites, sparks }: { sites: Site[]; sparks: SiteSpark[] | 
       <div className="flex items-center gap-3">
         <div className="flex -space-x-2">
           {sites.slice(0, 3).map((s) => (
-            <span key={s.id} className="rounded-md ring-2 ring-white">
+            <span key={s.id} className="rounded-md ring-2 ring-surface">
               <Favicon domain={s.domain} size={20} />
             </span>
           ))}

@@ -26,7 +26,7 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-stone-900/30 p-4 backdrop-blur-[2px] sm:p-10" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-stone-900/30 p-4 dark:bg-black/60 backdrop-blur-[2px] sm:p-10" onMouseDown={onClose}>
       <div className={`card w-full ${width} p-0`} onMouseDown={(e) => e.stopPropagation()}>
         {title && (
           <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">

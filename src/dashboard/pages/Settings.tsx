@@ -5,6 +5,7 @@ import { Favicon } from '../components/Icons';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
+import { CRAWLER_PREFILTER } from '../../shared/crawlers';
 import { fmtMoney } from '../lib/format';
 
 const DOCS = 'https://github.com/surendrapandar/minilytics#';
@@ -66,7 +67,7 @@ function CopyField({ value }: { value: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 py-1.5 pl-3 pr-1.5">
       <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{value}</code>
-      <CopyButton text={value} className={`${SMALL_BUTTON} border border-stone-200 bg-white hover:bg-stone-100`} />
+      <CopyButton text={value} className={`${SMALL_BUTTON} border border-stone-200 bg-surface hover:bg-stone-100`} />
     </div>
   );
 }
@@ -182,6 +183,65 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
 
       <Revenue site={site} origin={origin} form={form} set={set} save={save} onKeyRotated={(api_key) => setSite({ ...site, api_key })} />
 
+      <Section
+        title="AI crawlers"
+        desc="See which AI assistants, search crawlers and training bots read your pages. Crawlers don't run JavaScript, so your server reports them with this site's API key."
+      >
+        <p className="mb-2 text-sm text-stone-600">
+          Vercel (any framework): add <code>middleware.ts</code> at the project root, run <code>npm i @vercel/functions</code>, and set{' '}
+          <code>MINILYTICS_API_KEY</code> in the project's environment variables.
+        </p>
+        <Code>{`import { next, waitUntil } from '@vercel/functions';
+
+// Likely crawlers only; Minilytics ignores user agents it doesn't know.
+const CRAWLER = ${CRAWLER_PREFILTER.toString()};
+
+export default function middleware(request: Request) {
+  const ua = request.headers.get('user-agent') ?? '';
+  const key = process.env.MINILYTICS_API_KEY;
+  if (key && CRAWLER.test(ua)) {
+    const url = new URL(request.url);
+    waitUntil(
+      fetch('${origin}/api/v1/crawlers', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ua, path: url.pathname + url.search }),
+      }).catch(() => {}),
+    );
+  }
+  return next();
+}
+
+export const config = {
+  // Pages plus robots.txt / sitemap.xml / llms.txt; skip scripts, styles, images and fonts.
+  matcher: ['/((?!assets/|.*\\\\.(?:js|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|mp4|webm)$).*)'],
+};`}</Code>
+        <p className="mb-2 mt-4 text-sm text-stone-600">Any other server:</p>
+        <Code>{`curl -X POST ${origin}/api/v1/crawlers \\
+  -H "Authorization: Bearer ${site.api_key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"ua":"<User-Agent header>","path":"/pricing?via=app"}'`}</Code>
+      </Section>
+
+      <Section
+        title="AI assistants (MCP)"
+        desc="Ask Claude, Cursor or any MCP client about this site's traffic, revenue, funnels and AI crawlers. Read-only; it uses this site's API key."
+      >
+        <p className="mb-2 text-sm text-stone-600">Claude Code:</p>
+        <Code>{`claude mcp add --transport http minilytics ${origin}/api/mcp --header "Authorization: Bearer ${site.api_key}"`}</Code>
+        <p className="mb-2 mt-4 text-sm text-stone-600">
+          Claude (claude.ai or desktop) → Settings → Connectors → <b>Add custom connector</b>, with this URL. It contains the key, so treat it
+          like a password:
+        </p>
+        <Code>{`${origin}/api/mcp/${site.api_key}`}</Code>
+        <p className="mb-2 mt-4 text-sm text-stone-600">Cursor and other clients (mcp.json):</p>
+        <Code>{JSON.stringify({ mcpServers: { minilytics: { url: `${origin}/api/mcp`, headers: { Authorization: `Bearer ${site.api_key}` } } } }, null, 2)}</Code>
+        <p className="mt-3 text-sm text-stone-500">
+          Tools: site details, overview, breakdown by any dimension, realtime, customers and attribution, funnels, AI crawlers. Rotating the
+          API key disconnects every assistant using it.
+        </p>
+      </Section>
+
       <LinkBuilder domain={site.domain} />
 
       <Section title="General">
@@ -209,14 +269,14 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       </Section>
 
       {(saved || error) && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg ${error ? 'bg-red-600' : 'bg-ink'}`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm shadow-lg ${error ? 'bg-red-600 text-white' : 'bg-ink text-paper'}`}>
           {error || saved}
         </div>
       )}
 
       <Section title="Danger zone">
         <button
-          className="btn border-red-200 text-red-600"
+          className="btn border-red-200 text-red-600 dark:border-red-900 dark:text-red-400"
           onClick={async () => {
             if (prompt(`Type ${site.domain} to delete this site and all of its data`) !== site.domain) return;
             await api(`/api/sites/${siteId}`, { method: 'DELETE' });
@@ -473,7 +533,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
   const [open, setOpen] = useState(false);
   const prompt = buildAiPrompt(site, origin);
   return (
-    <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6">
+    <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-surface dark:border-violet-900 dark:from-violet-950/50 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
@@ -481,7 +541,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
         </div>
         <CopyButton text={prompt} label="Copy AI prompt" className="btn-dark shrink-0" />
       </div>
-      <button className="mt-3 text-sm font-medium text-violet-700 hover:underline" onClick={() => setOpen((o) => !o)}>
+      <button className="mt-3 text-sm font-medium text-violet-700 hover:underline dark:text-violet-300" onClick={() => setOpen((o) => !o)}>
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}

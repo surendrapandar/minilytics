@@ -4,6 +4,8 @@ import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
+import { crawlerStats, handleCrawlerApi, parseCrawlerQuery } from './crawlers';
+import { handleMcp } from './mcp';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
@@ -37,6 +39,19 @@ app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
+app.post('/api/v1/crawlers', handleCrawlerApi);
+
+// MCP server for AI assistants (read-only, authenticated with the site API key).
+const mcpCors = cors({
+  origin: '*',
+  allowMethods: ['POST', 'GET', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Authorization', 'Content-Type', 'Accept', 'Mcp-Protocol-Version', 'Mcp-Session-Id'],
+  maxAge: 86400,
+});
+app.use('/api/mcp', mcpCors);
+app.use('/api/mcp/*', mcpCors);
+app.all('/api/mcp', handleMcp);
+app.all('/api/mcp/:key', handleMcp);
 
 // ---------- login
 
@@ -236,7 +251,7 @@ app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
     // Everything stored for the site, so deleting it really removes its visitors' data.
-    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products'].map((t) =>
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products', 'crawler_hits'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );
@@ -255,6 +270,8 @@ app.get('/api/sites/:id/breakdown', async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 });
+
+app.get('/api/sites/:id/crawlers', async (c) => c.json(await crawlerStats(makeCtx(c), parseCrawlerQuery(c.req.query()))));
 
 // Dodo payments that couldn't be placed on a site yet, grouped by product.
 app.get('/api/sites/:id/pending-payments', async (c) => {

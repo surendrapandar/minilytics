@@ -65,6 +65,13 @@
         document.head.appendChild(ml);
       }
     </script>
+    <script>
+      // Apply the saved (or OS) theme before first paint; lib/theme.ts keeps it in sync afterwards.
+      try {
+        var t = localStorage.getItem('ml_theme');
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <!-- Shown to crawlers and before JS runs; React replaces it on first render. -->
