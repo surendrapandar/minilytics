@@ -482,7 +482,10 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
       return c.json({ ok: true, ignored: 'not a subscription payment' });
     }
     const meta = { ...(o.parent?.subscription_details?.metadata as object), ...(o.subscription_details?.metadata as object), ...(o.metadata as object) };
-    if (await stripePaymentIsElsewhere(c.env.DB, site, { taggedSite: pickMeta(meta, ['ml_site_id']), customerId: str(o.customer) })) {
+    // The visitor can ride on the subscription's metadata (subscription_data.metadata at checkout): after a free
+    // trial, the checkout itself had nothing to pay and was skipped, so this first invoice is where it's credited.
+    const visitorId = pickMeta(meta, ['ml_visitor_id', 'visitor_id']);
+    if (await stripePaymentIsElsewhere(c.env.DB, site, { taggedSite: pickMeta(meta, ['ml_site_id']), visitorId, customerId: str(o.customer) })) {
       return c.json({ ok: true, ignored: 'not this site\'s payment' });
     }
     await recordPayment(c.env.DB, site, {
@@ -492,6 +495,8 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
       amount: Number(o.amount_paid),
       kind: 'payment',
       currency: String(o.currency ?? site.currency),
+      visitorId,
+      sessionId: pickMeta(meta, ['ml_session_id', 'session_id']),
       customerId: str(o.customer),
       email: str(o.customer_email)?.toLowerCase() ?? null,
       name: str(o.customer_name),

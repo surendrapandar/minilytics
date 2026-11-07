@@ -9,6 +9,8 @@
   var endpoint = script.getAttribute('data-api') || new URL(script.src).origin + '/api/event';
   var allowLocal = script.hasAttribute('data-allow-localhost');
   var cookieDomain = script.getAttribute('data-domain');
+  // data-cookieless: nothing is stored in the browser; the server derives a daily visitor id instead.
+  var cookieless = script.hasAttribute('data-cookieless');
   var VID = 'ml_vid', SID = 'ml_sid', YEAR = 31536000, SESSION = 1800;
 
   var queued = (w.minilytics && w.minilytics.q) || [];
@@ -48,7 +50,7 @@
     }
     return null;
   }
-  var domain = rootDomain();
+  var domain = cookieless ? cookieDomain : rootDomain();
   function writeCookie(name, value, maxAge) {
     d.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + maxAge + '; SameSite=Lax' +
       (domain ? '; domain=' + domain : '') + (loc.protocol === 'https:' ? '; Secure' : '');
@@ -60,7 +62,9 @@
       return (c === 'x' ? r : (r & 3) | 8).toString(16);
     });
   }
+  var mem = {}; // cookieless: the ids the server sent back, in memory only
   function ids() {
+    if (cookieless) return mem;
     var vid = readCookie(VID) || uuid();
     var sid = readCookie(SID) || uuid();
     writeCookie(VID, vid, YEAR);
@@ -82,7 +86,7 @@
   }
   function send(type, extra, beacon) {
     var id = ids();
-    var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
+    var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, ck: cookieless ? 1 : undefined, sw: w.screen ? screen.width : 0 };
     for (var k in extra) if (extra[k] !== undefined) body[k] = extra[k];
     var json = JSON.stringify(body);
     // text/plain keeps this a "simple" request: no CORS preflight, works with sendBeacon.
@@ -90,8 +94,16 @@
       try { if (nav.sendBeacon(endpoint, new Blob([json], { type: 'text/plain' }))) return; } catch (e) {}
     }
     try {
-      fetch(endpoint, { method: 'POST', body: json, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'text/plain' } }).catch(noop);
+      fetch(endpoint, { method: 'POST', body: json, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'text/plain' } })
+        .then(remember).catch(noop);
     } catch (e) {}
+  }
+
+  function remember(res) {
+    if (!cookieless || res.status !== 202) return;
+    return res.json().then(function (j) {
+      if (j && j.vid && (j.vid !== mem.vid || j.sid !== mem.sid)) { mem = { vid: j.vid, sid: j.sid }; tagCheckoutLinks(); }
+    });
   }
 
   // ---- engaged time (only while the tab is visible)
@@ -137,6 +149,7 @@
   }
   function attribution() {
     var id = ids();
+    if (!id.vid) return {}; // cookieless, before the first pageview is recorded
     return { ml_visitor_id: id.vid, ml_session_id: id.sid };
   }
   // Checkout links carry the visitor: Dodo links as metadata, Stripe payment links (buy.stripe.com) in
@@ -147,6 +160,7 @@
     try {
       var u = new URL(a.href);
       var att = attribution();
+      if (!att.ml_visitor_id) return;
       var q = u.searchParams;
       if (/(^|\.)dodopayments\.com$/.test(u.hostname)) {
         q.set('metadata_ml_visitor_id', att.ml_visitor_id);
