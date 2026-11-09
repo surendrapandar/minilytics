@@ -67,10 +67,12 @@ describe('time ranges', () => {
     expect(tzOffset('Asia/Kolkata', now)).toBe(330 * 60_000);
     expect(tzOffset('UTC', now)).toBe(0);
   });
-  it('starts "today" at local midnight', () => {
-    const r = resolveRange({ period: 'today' }, 'Asia/Kolkata', 0, now);
-    expect(r.from).toBe(Date.UTC(2026, 9, 22, 18, 30));
-    expect(r.granularity).toBe('hour');
+  it('maps the removed today/yesterday periods to the rolling 24 hours', () => {
+    const rolling = resolveRange({ period: '24h' }, 'UTC', 0, now);
+    expect(rolling.from).toBe(now - 86_400_000);
+    expect(rolling.granularity).toBe('hour');
+    expect(resolveRange({ period: 'today' }, 'Asia/Kolkata', 0, now)).toEqual(rolling);
+    expect(resolveRange({ period: 'yesterday' }, 'Asia/Kolkata', 0, now)).toEqual(rolling);
   });
   it('last 30 days covers 30 local days', () => {
     const r = resolveRange({ period: '30d' }, 'UTC', 0, now);

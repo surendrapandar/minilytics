@@ -13,8 +13,7 @@ import { currencyDecimals } from '../../shared/currency';
 import { DEFAULT_TREND_METRICS, MAX_TREND_METRICS, TREND_METRICS, toggleTrendMetric, type TrendMetric } from '../lib/trendMetrics';
 
 const TREND_PERIODS = [
-  { value: 'today', label: 'Today (UTC)' },
-  { value: 'yesterday', label: 'Yesterday (UTC)' },
+  { value: '24h', label: 'Last 24 hours' },
   { value: '7d', label: 'Last 7 days' },
   { value: '30d', label: 'Last 30 days' },
   { value: '90d', label: 'Last 90 days' },
@@ -69,6 +68,10 @@ export function Sites() {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = usePref<TrendPeriod>('ml_sites_period', '7d');
+  // Saved preferences may still hold the removed calendar-day periods.
+  useEffect(() => {
+    if ((['today', 'yesterday'] as string[]).includes(period)) setPeriod('24h');
+  }, [period, setPeriod]);
   const [customFrom, setCustomFrom] = usePref('ml_sites_from', utcDate(-6));
   const [customTo, setCustomTo] = usePref('ml_sites_to', utcDate());
   const [comparisonEnabled, setComparisonEnabled] = usePref('ml_sites_compare_enabled', false);
@@ -106,7 +109,7 @@ export function Sites() {
     ? Math.round((Date.parse(customTo) - Date.parse(customFrom)) / DAY) + 1
     : 0;
   // Search Console only has daily rows, so hourly windows cannot show impressions.
-  const hourlyWindow = period === 'today' || period === 'yesterday' || (period === 'custom' && customDays > 0 && customDays <= 2);
+  const hourlyWindow = period === '24h' || (period === 'custom' && customDays > 0 && customDays <= 2);
   const params = new URLSearchParams({ period });
   if (period === 'custom') {
     params.set('from', customFrom);

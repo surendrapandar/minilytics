@@ -72,11 +72,8 @@ describe('GSC periods follow the shared dashboard selector', () => {
     });
   });
 
-  it('does not silently substitute earlier results for Today', () => {
-    const range = resolveGscWindow({ period: 'today' }, created, now);
-    expect(range.available).toBe(false);
-    expect(range.requestedFrom).toBe('2026-11-01');
-    expect(range.to).toBe('2026-10-31');
+  it('treats the removed Today option as the rolling 24 hours', () => {
+    expect(resolveGscWindow({ period: 'today' }, created, now)).toEqual(resolveGscWindow({ period: '24h' }, created, now));
   });
 
   it('maps hourly periods to overlapping daily Pacific dates', () => {
