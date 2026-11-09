@@ -44,7 +44,7 @@ export interface Range {
   granularity: Granularity;
 }
 
-export const PERIODS = ['today', 'yesterday', '24h', '48h', '7d', '30d', '90d', '12m', 'all', 'custom'] as const;
+export const PERIODS = ['24h', '48h', '7d', '30d', '90d', '12m', 'all', 'custom'] as const;
 export type Period = (typeof PERIODS)[number];
 
 export function resolveRange(
@@ -54,16 +54,11 @@ export function resolveRange(
   now = Date.now(),
 ): Range {
   const today = startOfDay(now, tz);
+  // Old links and saved preferences may still say today/yesterday; both now mean the rolling 24 hours.
+  const requested = q.period === 'today' || q.period === 'yesterday' ? '24h' : q.period;
   let from: number;
   let to = now;
-  switch (q.period as Period) {
-    case 'today':
-      from = today;
-      break;
-    case 'yesterday':
-      from = startOfDay(today - 1, tz);
-      to = today;
-      break;
+  switch (requested as Period) {
     case '24h':
       from = now - 24 * HOUR;
       break;

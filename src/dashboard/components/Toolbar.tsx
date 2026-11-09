@@ -6,8 +6,6 @@ import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
 
 export const PERIODS: { value: string; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
   { value: '24h', label: 'Last 24 hours' },
   { value: '48h', label: 'Last 2 days' },
   { value: '7d', label: 'Last 7 days' },

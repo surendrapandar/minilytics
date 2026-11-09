@@ -7,7 +7,7 @@ import { bucketLabels, bucketSql, resolveRange, type Granularity, type Range } f
 export const TREND_METRICS = ['visitors', 'pageviews', 'sessions', 'impressions'] as const;
 export type SiteTrendMetric = (typeof TREND_METRICS)[number];
 
-export const SITE_TREND_PERIODS = ['today', 'yesterday', '7d', '30d', '90d', '12m', 'custom'] as const;
+export const SITE_TREND_PERIODS = ['24h', '7d', '30d', '90d', '12m', 'custom'] as const;
 export type SiteTrendPeriod = (typeof SITE_TREND_PERIODS)[number];
 type ActivePeriod = Exclude<SiteTrendPeriod, 'custom'>;
 const DAY = 86_400_000;
@@ -20,7 +20,7 @@ export function isSiteTrendPeriod(value: string): value is SiteTrendPeriod {
 /** All overview cards use UTC buckets to keep different sites comparable. */
 export function siteTrendRange(period: ActivePeriod, now = Date.now()): Range {
   const range = resolveRange(
-    { period, granularity: period === '12m' ? 'month' : period === 'today' || period === 'yesterday' ? 'hour' : 'day' },
+    { period, granularity: period === '12m' ? 'month' : period === '24h' ? 'hour' : 'day' },
     'UTC',
     now - 365 * DAY,
     now,
@@ -50,7 +50,7 @@ export function customTrendRange(from: string, to: string, now = Date.now()): Ra
   return { from: start, to: finish, granularity: days <= 2 ? 'hour' : days <= 120 ? 'day' : 'month' };
 }
 
-/** Same-length preceding interval, keeping today's elapsed hours aligned with yesterday. */
+/** Same-length preceding interval. */
 export function previousTrendRange(range: Range, period: SiteTrendPeriod): Range {
   if (period === '12m') {
     const start = new Date(range.from);
@@ -277,7 +277,8 @@ async function attachImpressions(
 
 /** Fetch selected and optional comparison periods in one D1 batch. */
 export async function siteTrends(c: Context<AppEnv>) {
-  const period = c.req.query('period') ?? '7d';
+  const requested = c.req.query('period') ?? '7d';
+  const period = requested === 'today' || requested === 'yesterday' ? '24h' : requested;
   if (!isSiteTrendPeriod(period)) return c.json({ error: 'Invalid trend period' }, 400);
 
   const now = Date.now();
