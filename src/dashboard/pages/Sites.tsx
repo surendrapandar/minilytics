@@ -3,6 +3,7 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
+import { PrivacyToggle } from '../components/PrivacyToggle';
 import { SelectDropdown } from '../components/SelectDropdown';
 import { TrendSparkline } from '../components/TrendSparkline';
 import { api, type Site, type SiteTrends } from '../lib/api';
@@ -160,6 +161,7 @@ export function Sites() {
               {me.user.email}
             </button>
           )}
+          <PrivacyToggle className="btn h-9 w-9 justify-center px-0 sm:h-10 sm:w-10" />
           <button className="btn px-2.5 sm:px-3.5" onClick={logout}>Log out</button>
           <button className="btn-dark px-2.5 sm:px-4" onClick={() => setAdding(true)}>
             <span className="sm:hidden">+ Add</span><span className="hidden sm:inline">+ Add website</span>
@@ -328,7 +330,7 @@ export function Sites() {
           }
           return (
             <div key={s.id} className="card cursor-pointer p-5 text-left transition hover:border-stone-300" onClick={openDashboard}>
-              <div className="flex items-center gap-3">
+              <div className="privacy-blur flex items-center gap-3">
                 <Favicon domain={s.domain} size={28} />
                 <div className="min-w-0">
                   <a

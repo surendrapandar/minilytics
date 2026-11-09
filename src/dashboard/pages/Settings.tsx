@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { BackButton } from '../components/BackButton';
 import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
+import { PrivacyToggle } from '../components/PrivacyToggle';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
 import { fmtMoney } from '../lib/format';
@@ -307,14 +308,17 @@ export function Settings({ siteId }: { siteId: string }) {
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:py-12">
       <div className="flex items-center justify-between">
         <BackButton fallback={`/site/${site.id}`} />
-        <div className="flex items-center gap-2 font-semibold">
-          <Favicon domain={site.domain} size={22} /> {site.name}
+        <div className="flex items-center gap-2">
+          <div className="privacy-blur flex items-center gap-2 font-semibold">
+            <Favicon domain={site.domain} size={22} /> {site.name}
+          </div>
+          <PrivacyToggle className="btn h-9 w-9 justify-center px-0" />
         </div>
       </div>
 
       <AiSetup site={site} origin={origin} />
 
-      <Section title="1. Install the script" desc={<>Add it to the <code>&lt;head&gt;</code> of every page on {site.domain}.</>} docs="install-on-a-website">
+      <Section title="1. Install the script" desc={<>Add it to the <code>&lt;head&gt;</code> of every page on <span className="privacy-blur inline-block">{site.domain}</span>.</>} docs="install-on-a-website">
         <Code label="HTML">{`<script defer data-website-id="${site.id}" src="${origin}/js/script.js"></script>`}</Code>
         <details className="mt-4 text-sm">
           <summary className="cursor-pointer font-medium text-stone-600">Next.js, and beating ad blockers</summary>
@@ -357,7 +361,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
           </div>
           <div>
             <label className="label">Domain</label>
-            <input className="input" value={form.domain ?? ''} onChange={(e) => set({ domain: e.target.value })} />
+            <input className="input privacy-blur" value={form.domain ?? ''} onChange={(e) => set({ domain: e.target.value })} />
           </div>
           <div>
             <label className="label">Timezone</label>
@@ -650,7 +654,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
       <button className="mt-3 text-sm font-medium text-violet-700 hover:underline" onClick={() => setOpen((o) => !o)}>
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
-      {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
+      {open && <pre className="code privacy-blur mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
     </section>
   );
 }
@@ -683,7 +687,7 @@ function LinkBuilder({ domain }: { domain: string }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="sm:col-span-3">
           <label className="label">Page</label>
-          <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} />
+          <input className="input privacy-blur" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
         <div>
           <label className="label">Where you post it</label>

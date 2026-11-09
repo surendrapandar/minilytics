@@ -8,6 +8,10 @@ body { font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
 @layer components {
   .card { @apply rounded-2xl border border-stone-200/80 bg-white shadow-card; }
   .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-sm font-medium shadow-card transition hover:bg-stone-50 disabled:opacity-50; }
+  .btn-privacy-on { @apply border-transparent bg-ink text-white hover:bg-stone-700; }
+  /* Privacy mode: unreadable in a screenshot, still laid out so the page does not shift. */
+  .privacy-blur { transition: filter 160ms ease; }
+  html.privacy-mode .privacy-blur { filter: blur(7px); user-select: none; }
   .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:opacity-50; }
   .input { @apply w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
   .filter-control { @apply h-11 w-full cursor-pointer appearance-none rounded-xl border border-stone-200 bg-white px-3 text-left text-base outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200 sm:text-sm; }

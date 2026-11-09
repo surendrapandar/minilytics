@@ -4,6 +4,7 @@ import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
 import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
+import { PrivacyToggle } from './PrivacyToggle';
 
 export const PERIODS: { value: string; label: string }[] = [
   { value: '24h', label: 'Last 24 hours' },
@@ -118,8 +119,10 @@ export function Toolbar({
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">
-            <Favicon domain={site.domain} size={22} />
-            <span className="max-w-[180px] truncate font-semibold">{site.name}</span>
+            <span className="privacy-blur flex min-w-0 items-center gap-2">
+              <Favicon domain={site.domain} size={22} />
+              <span className="max-w-[180px] truncate font-semibold">{site.name}</span>
+            </span>
             <Chevron />
           </button>
         }
@@ -129,7 +132,7 @@ export function Toolbar({
             {sites.map((s) => (
               <button
                 key={s.id}
-                className={itemCls(s.id === site.id)}
+                className={`${itemCls(s.id === site.id)} privacy-blur`}
                 onClick={() => {
                   close();
                   navigate(`/site/${s.id}${window.location.search}`);
@@ -228,6 +231,8 @@ export function Toolbar({
       <button className="btn h-11 px-4 text-base" onClick={onLive} title="Live map (M)">
         <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" /> Live
       </button>
+
+      <PrivacyToggle />
 
       <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>

@@ -288,7 +288,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
       {/* Summary card */}
       <div className={`absolute left-3 top-3 w-[min(360px,calc(100%-24px))] rounded-2xl border p-4 shadow-xl backdrop-blur ${panel}`}>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 font-semibold">
+          <div className="privacy-blur flex min-w-0 items-center gap-2 font-semibold">
             <Favicon domain={site.domain} size={18} />
             <span className="truncate" title={site.name}>{site.name}</span>
             <span className={`hidden whitespace-nowrap text-xs font-medium uppercase tracking-wider sm:inline ${muted}`}>· Real-time</span>
@@ -324,7 +324,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
         </div>
         <div className="mt-2 flex items-center gap-2 text-sm">
           <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-          <b>{visitors.length}</b> visitor{visitors.length === 1 ? '' : 's'} on <span className="font-medium">{site.domain}</span>
+          <b>{visitors.length}</b> visitor{visitors.length === 1 ? '' : 's'} on <span className="privacy-blur font-medium">{site.domain}</span>
         </div>
         {visitors.length > 0 && (
           <div className="mt-3 space-y-1.5 text-xs">
