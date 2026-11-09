@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   AGENT_TOKEN_DEFAULT_EXPIRY_DAYS,
+  AGENT_TOKEN_DEFAULT_SCOPES,
   AGENT_TOKEN_PREFIX,
+  agentTokenScopeList,
   agentTokenState,
   agentTokenSuffix,
   generateAgentToken,
+  hasAgentScope,
   hashAgentToken,
   isAgentTokenShape,
+  parseAgentScopes,
   parseExpiryDays,
   type AgentTokenRow,
 } from '../src/worker/lib/agent-tokens';
@@ -67,6 +71,37 @@ describe('agent token expiry', () => {
     expect(parseExpiryDays(1)).toBeNull();
     expect(parseExpiryDays(1000)).toBeNull();
     expect(parseExpiryDays('soon')).toBeNull();
+  });
+});
+
+describe('agent token scopes', () => {
+  it('defaults to analytics:read when no scopes are sent', () => {
+    expect(parseAgentScopes(undefined)).toEqual([...AGENT_TOKEN_DEFAULT_SCOPES]);
+    expect(parseAgentScopes(null)).toEqual(['analytics:read']);
+  });
+
+  it('accepts arrays and comma-separated strings, deduplicated', () => {
+    expect(parseAgentScopes(['gsc:read', 'analytics:read'])).toEqual(['gsc:read', 'analytics:read']);
+    expect(parseAgentScopes('analytics:read,gsc:read')).toEqual(['analytics:read', 'gsc:read']);
+    expect(parseAgentScopes(['gsc:read', 'gsc:read'])).toEqual(['gsc:read']);
+    expect(parseAgentScopes([' gsc:read '])).toEqual(['gsc:read']);
+  });
+
+  it('rejects unknown, empty and non-string scopes', () => {
+    expect(parseAgentScopes('analytics:write')).toBeNull();
+    expect(parseAgentScopes(['analytics:read', 'admin'])).toBeNull();
+    expect(parseAgentScopes([])).toBeNull();
+    expect(parseAgentScopes('')).toBeNull();
+    expect(parseAgentScopes(42)).toBeNull();
+    expect(parseAgentScopes([42])).toBeNull();
+  });
+
+  it('reads legacy rows and gates each scope independently', () => {
+    expect(agentTokenScopeList(row({ scopes: 'analytics:read' }))).toEqual(['analytics:read']);
+    expect(agentTokenScopeList(row({ scopes: 'analytics:read,gsc:read' }))).toEqual(['analytics:read', 'gsc:read']);
+    expect(hasAgentScope(row(), 'gsc:read')).toBe(false);
+    expect(hasAgentScope(row({ scopes: 'gsc:read' }), 'gsc:read')).toBe(true);
+    expect(hasAgentScope(row({ scopes: 'gsc:read' }), 'analytics:read')).toBe(false);
   });
 });
 
