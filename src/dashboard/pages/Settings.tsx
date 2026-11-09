@@ -195,8 +195,19 @@ function AgentTokens() {
       </div>
       {secret && (
         <div className="mt-4">
-          <p className="mb-1 text-sm font-medium text-amber-700">Copy it now — it is not shown again.</p>
-          <Code label="Authorization: Bearer">{secret}</Code>
+          <p className="mb-1 text-sm font-medium text-amber-700">Copy this prompt to your agent — the token is not shown again.</p>
+          <Code label="Agent prompt">{`You have read-only access to Minilytics analytics.
+
+Token: ${secret}
+Base URL: ${window.location.origin}
+
+Use it as a Bearer token:
+
+curl -H "Authorization: Bearer ${secret}" ${window.location.origin}/api/v1/analytics/sites
+curl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/overview?period=7d"
+curl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/breakdown?dimension=source&period=7d"
+
+Scope: analytics:read. The token is read-only: do not create, edit or delete sites, keys, tokens or billing. Do not print the token in logs, commit it, or share it.`}</Code>
         </div>
       )}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
