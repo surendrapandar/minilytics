@@ -113,12 +113,17 @@ interface AgentToken {
 }
 
 const EXPIRY_CHOICES = [7, 30, 90, 365];
+const SCOPE_CHOICES = [
+  { id: 'analytics:read', label: 'Analytics' },
+  { id: 'gsc:read', label: 'Search Console' },
+] as const;
 
 /** Owner-managed read-only analytics tokens. The secret is shown once at creation. */
 function AgentTokens() {
   const [tokens, setTokens] = useState<AgentToken[]>([]);
   const [name, setName] = useState('');
   const [days, setDays] = useState(90);
+  const [scopes, setScopes] = useState<string[]>(['analytics:read']);
   const [secret, setSecret] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -141,7 +146,7 @@ function AgentTokens() {
     setBusy(true);
     setError('');
     try {
-      const result = await api<{ token: string }>('/api/agent-tokens', { method: 'POST', json: { name, expires_in_days: days } });
+      const result = await api<{ token: string }>('/api/agent-tokens', { method: 'POST', json: { name, expires_in_days: days, scopes } });
       setSecret(result.token);
       setName('');
       await load();
@@ -163,6 +168,9 @@ function AgentTokens() {
   }
 
   const fmt = (ts: number) => new Date(ts).toLocaleDateString();
+  const gscPrompt = scopes.includes('gsc:read')
+    ? `\ncurl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/gsc?dimension=query&period=28d"`
+    : '';
 
   return (
     <Section
@@ -189,7 +197,24 @@ function AgentTokens() {
             ))}
           </div>
         </div>
-        <button className="btn-dark" onClick={() => void create()} disabled={busy || !name.trim()}>
+        <div>
+          <label className="label">Scopes</label>
+          <div className="flex gap-1">
+            {SCOPE_CHOICES.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                className={`${SMALL_BUTTON} px-2 py-1 ${scopes.includes(choice.id) ? 'bg-ink text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                onClick={() => setScopes((current) =>
+                  current.includes(choice.id) ? current.filter((scope) => scope !== choice.id) : [...current, choice.id]
+                )}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="btn-dark" onClick={() => void create()} disabled={busy || !name.trim() || scopes.length === 0}>
           {busy ? 'Creating…' : 'Create token'}
         </button>
       </div>
@@ -205,9 +230,9 @@ Use it as a Bearer token:
 
 curl -H "Authorization: Bearer ${secret}" ${window.location.origin}/api/v1/analytics/sites
 curl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/overview?period=7d"
-curl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/breakdown?dimension=source&period=7d"
+curl -H "Authorization: Bearer ${secret}" "${window.location.origin}/api/v1/analytics/sites/SITE_ID/breakdown?dimension=source&period=7d"${gscPrompt}
 
-Scope: analytics:read. The token is read-only: do not create, edit or delete sites, keys, tokens or billing. Do not print the token in logs, commit it, or share it.`}</Code>
+Scopes: ${scopes.join(', ')}. The token is read-only: do not create, edit or delete sites, keys, tokens or billing. Do not print the token in logs, commit it, or share it.`}</Code>
         </div>
       )}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
@@ -235,7 +260,7 @@ Scope: analytics:read. The token is read-only: do not create, edit or delete sit
         )}
       </div>
       <p className="mt-4 text-sm text-stone-500">
-        Endpoints: <code>GET /api/v1/analytics/sites</code>, <code>…/sites/:id/overview</code>, <code>…/sites/:id/breakdown?dimension=source</code>.
+        Endpoints: <code>GET /api/v1/analytics/sites</code>, <code>…/sites/:id/overview</code>, <code>…/sites/:id/breakdown?dimension=source</code>, <code>…/sites/:id/gsc?dimension=query</code> (needs <code>gsc:read</code>).
       </p>
     </Section>
   );

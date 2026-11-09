@@ -187,8 +187,11 @@ function totalsFrom(rows: GscApiRow[]): GscTotals {
 }
 
 export async function gscSearch(c: Context<AppEnv>) {
+  // Agent tokens have no session user; the token row carries the owner's admin flag.
   const user = c.get('user');
-  if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user.admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
+  const token = c.get('agentToken');
+  const admin = user ? user.admin : token?.owner_admin === 1;
+  if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
   const property = c.get('site').gsc_property;
   if (!property) return c.json({ connected: false, rows: [], property: null });
   const dimension = c.req.query('dimension') ?? 'query';

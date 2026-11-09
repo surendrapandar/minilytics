@@ -6,10 +6,13 @@ import { clearSession, currentUser, googleCallback, googleStart, isHosted, requi
 import { billingWebhook, checkout, planInfo } from './billing';
 import {
   AGENT_TOKEN_EXPIRY_DAYS,
+  AGENT_TOKEN_SCOPES,
   agentTokenSuffix,
   findAgentToken,
   generateAgentToken,
+  hasAgentScope,
   hashAgentToken,
+  parseAgentScopes,
   parseExpiryDays,
 } from './lib/agent-tokens';
 import { passwordsMatch, randomId } from './lib/crypto';
@@ -327,11 +330,14 @@ app.get('/api/agent-tokens', async (c) => {
 
 app.post('/api/agent-tokens', async (c) => {
   const user = c.get('user');
-  const body = await c.req.json<{ name?: string; expires_in_days?: number }>().catch(() => ({}) as { name?: string; expires_in_days?: number });
+  const body = await c.req.json<{ name?: string; expires_in_days?: number; scopes?: unknown }>()
+    .catch(() => ({}) as { name?: string; expires_in_days?: number; scopes?: unknown });
   const name = (body.name ?? '').trim();
   if (!name || name.length > 64) return c.json({ error: 'name must be 1-64 characters' }, 400);
   const days = parseExpiryDays(body.expires_in_days);
   if (days === null) return c.json({ error: `expires_in_days must be one of ${AGENT_TOKEN_EXPIRY_DAYS.join(', ')}` }, 400);
+  const scopes = parseAgentScopes(body.scopes);
+  if (scopes === null) return c.json({ error: `scopes must be a non-empty subset of ${AGENT_TOKEN_SCOPES.join(', ')}` }, 400);
 
   const token = generateAgentToken();
   const now = Date.now();
@@ -339,7 +345,7 @@ app.post('/api/agent-tokens', async (c) => {
     id: `tok_${randomId(8)}`,
     name,
     token_suffix: agentTokenSuffix(token),
-    scopes: 'analytics:read',
+    scopes: scopes.join(','),
     created_at: now,
     expires_at: now + days * 86_400_000,
   };
@@ -391,7 +397,15 @@ const tokenSite = async (c: Context<AppEnv>) => {
 
 app.use('/api/v1/analytics/*', agentTokenAuth);
 
-app.get('/api/v1/analytics/sites', async (c) => {
+const requireAgentScope = (scope: (typeof AGENT_TOKEN_SCOPES)[number]) =>
+  async (c: Context<AppEnv>, next: Next) => {
+    if (!hasAgentScope(c.get('agentToken'), scope)) {
+      return c.json({ error: `missing scope ${scope}` }, 403);
+    }
+    await next();
+  };
+
+app.get('/api/v1/analytics/sites', requireAgentScope('analytics:read'), async (c) => {
   const token = c.get('agentToken');
   const access = siteAccessSql(c.env, { id: token.owner_id, admin: token.owner_admin === 1 });
   const rows = await c.env.DB.prepare(
@@ -403,7 +417,7 @@ app.get('/api/v1/analytics/sites', async (c) => {
   return c.json({ scope: token.scopes, sites: rows.results ?? [] });
 });
 
-app.get('/api/v1/analytics/sites/:id/overview', async (c) => {
+app.get('/api/v1/analytics/sites/:id/overview', requireAgentScope('analytics:read'), async (c) => {
   const site = await tokenSite(c);
   if (!site) return c.json({ error: 'site not found' }, 404);
   return c.json({
@@ -412,7 +426,7 @@ app.get('/api/v1/analytics/sites/:id/overview', async (c) => {
   });
 });
 
-app.get('/api/v1/analytics/sites/:id/breakdown', async (c) => {
+app.get('/api/v1/analytics/sites/:id/breakdown', requireAgentScope('analytics:read'), async (c) => {
   const site = await tokenSite(c);
   if (!site) return c.json({ error: 'site not found' }, 404);
   const dimension = c.req.query('dimension') ?? 'source';
@@ -426,6 +440,15 @@ app.get('/api/v1/analytics/sites/:id/breakdown', async (c) => {
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
   }
+});
+
+// Search Console is fetched on demand through the service account; the agent
+// route reuses the dashboard handler so both answer with the same shape.
+app.get('/api/v1/analytics/sites/:id/gsc', requireAgentScope('gsc:read'), async (c) => {
+  const site = await tokenSite(c);
+  if (!site) return c.json({ error: 'site not found' }, 404);
+  c.set('site', site);
+  return gscSearch(c);
 });
 
 // ---------- stats
