@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { navigate } from '../App';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
@@ -39,6 +39,9 @@ export function Dashboard({ siteId }: { siteId: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
   const [live, setLive] = useState(() => new URLSearchParams(window.location.search).get('live') === '1');
+  // The toolbar sticks to the top; a 1px sentinel above it tells us when the page has scrolled under it.
+  const sentinel = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
 
   // "M" opens the live map, like DataFast.
   useEffect(() => {
@@ -51,6 +54,21 @@ export function Dashboard({ siteId }: { siteId: string }) {
   }, []);
   const { data: sites } = useApi<Site[]>('/api/sites');
   const site = sites?.find((s) => s.id === siteId);
+  const hasSite = !!site;
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting));
+    io.observe(el);
+    // The bar shrinks once stuck. Scroll anchoring would compensate for that by scrolling back up,
+    // un-sticking the bar and snapping short scrolls back to the top, so it's off on this page.
+    const root = document.documentElement;
+    root.style.overflowAnchor = 'none';
+    return () => {
+      io.disconnect();
+      root.style.overflowAnchor = '';
+    };
+  }, [hasSite]);
   const { data: overview, loading } = useApi<Overview>(site ? `/api/sites/${siteId}/overview?${qs(q)}` : null, reloadKey);
 
   const addFilter = useCallback((key: string, value: string) => update({ filters: { ...q.filters, [key]: value } }), [q.filters, update]);
@@ -87,34 +105,42 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
   return (
     <DashContext.Provider value={dash}>
-      <div className="mx-auto max-w-[1480px] px-3 py-6 sm:px-6 lg:py-10">
-        <Toolbar
-          site={site}
-          sites={sites!}
-          q={q}
-          update={update}
-          overview={overview}
-          onRefresh={() => setReloadKey((k) => k + 1)}
-          onLive={() => setLive(true)}
-          loading={loading}
-        />
+      <div className="mx-auto max-w-[1480px] px-3 pb-6 sm:px-6 lg:pb-10">
+        <div ref={sentinel} className="h-px" aria-hidden />
+        <div
+          className={`sticky top-0 z-30 -mx-3 border-b bg-paper/90 px-3 backdrop-blur transition-[padding,border-color] duration-200 motion-reduce:transition-none sm:-mx-6 sm:px-6 ${
+            stuck ? 'border-stone-200 py-2' : 'border-transparent pb-0 pt-6 lg:pt-10'
+          }`}
+        >
+          <Toolbar
+            compact={stuck}
+            site={site}
+            sites={sites!}
+            q={q}
+            update={update}
+            overview={overview}
+            onRefresh={() => setReloadKey((k) => k + 1)}
+            onLive={() => setLive(true)}
+            loading={loading}
+          />
 
-        {Object.keys(q.filters).length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            {Object.entries(q.filters).map(([k, v]) => (
-              <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
-                <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
-                <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
-                <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label="Remove filter">
-                  ✕
-                </button>
-              </span>
-            ))}
-            <button className="text-sm text-stone-500 underline-offset-2 hover:underline" onClick={() => update({ filters: {} })}>
-              Clear all
-            </button>
-          </div>
-        )}
+          {Object.keys(q.filters).length > 0 && (
+            <div className={`${stuck ? 'mt-2' : 'mt-4'} flex flex-wrap items-center gap-2`}>
+              {Object.entries(q.filters).map(([k, v]) => (
+                <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
+                  <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
+                  <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
+                  <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label="Remove filter">
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button className="text-sm text-stone-500 underline-offset-2 hover:underline" onClick={() => update({ filters: {} })}>
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="mt-5">
           <OverviewCard data={overview} onLive={() => setLive(true)} />

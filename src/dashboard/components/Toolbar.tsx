@@ -79,6 +79,7 @@ export function Toolbar({
   onRefresh,
   onLive,
   loading,
+  compact = false,
 }: {
   site: Site;
   sites: Site[];
@@ -88,6 +89,8 @@ export function Toolbar({
   onRefresh: () => void;
   onLive: () => void;
   loading: boolean;
+  /** Tighter buttons for the stuck header. On phones it also hides the prev/next arrows, granularity, Live and refresh so the bar stays one row. */
+  compact?: boolean;
 }) {
   const [from, setFrom] = useState(q.from ?? '');
   const [to, setTo] = useState(q.to ?? '');
@@ -113,14 +116,19 @@ export function Toolbar({
   const requestedGranularity = q.granularity as Granularity | undefined;
   const currentGranularity = requestedGranularity && allowedGranularities.includes(requestedGranularity) ? requestedGranularity : overview?.range.granularity;
 
+  const h = compact ? 'h-9 text-sm' : 'h-11 text-base';
+  const sq = compact ? 'h-9 w-9' : 'h-11 w-11';
+  const secondary = compact ? 'max-sm:hidden' : '';
+  const anim = 'sm:transition-[height,width,font-size] sm:duration-200 motion-reduce:transition-none';
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <BackButton to="/" label="" className="btn h-11 w-11 justify-center px-0" />
+    <div className={`flex flex-wrap items-center gap-2 ${compact ? 'max-sm:gap-1.5' : ''}`}>
+      <BackButton to="/" label="" className={`btn ${sq} ${anim} justify-center px-0`} />
       <Dropdown
         button={
-          <button className="btn h-11 px-4 text-base">
-            <Favicon domain={site.domain} size={22} />
-            <span className="max-w-[180px] truncate font-semibold">{site.name}</span>
+          <button className={`btn ${h} ${anim} ${compact ? 'px-4 max-sm:gap-1.5 max-sm:px-2.5' : 'px-4'}`}>
+            <Favicon domain={site.domain} size={compact ? 18 : 22} />
+            <span className={`truncate font-semibold ${compact ? 'max-w-[180px] max-sm:max-w-[96px]' : 'max-w-[180px]'}`}>{site.name}</span>
             <Chevron />
           </button>
         }
@@ -152,13 +160,14 @@ export function Toolbar({
         )}
       </Dropdown>
 
-      <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
-        <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
+      <div className={`flex ${h} ${anim} items-stretch rounded-xl border border-stone-200 bg-white shadow-card`}>
+        <button className={`rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50 ${secondary}`} onClick={() => shift(-1)} aria-label="Previous period">
           ‹
         </button>
         <Dropdown
+          align={compact ? 'right' : 'left'}
           button={
-            <button className="flex h-full items-center gap-2 border-x border-stone-200 px-4 text-base font-medium hover:bg-stone-50">
+            <button className={`flex h-full items-center gap-2 border-x border-stone-200 px-4 font-medium hover:bg-stone-50 ${compact ? 'max-sm:rounded-xl max-sm:border-x-0' : ''}`}>
               {label} <Chevron />
             </button>
           }
@@ -196,7 +205,7 @@ export function Toolbar({
           )}
         </Dropdown>
         <button
-          className="rounded-r-xl px-3 text-xl text-stone-500 hover:bg-stone-50 disabled:opacity-30"
+          className={`rounded-r-xl px-3 text-xl text-stone-500 hover:bg-stone-50 disabled:opacity-30 ${secondary}`}
           onClick={() => shift(1)}
           disabled={!canForward}
           aria-label="Next period"
@@ -205,34 +214,36 @@ export function Toolbar({
         </button>
       </div>
 
-      <Dropdown
-        button={
-          <button className="btn h-11 px-4 text-base">
-            {GRANULARITIES.find((g) => g.value === currentGranularity)?.label ?? 'Daily'} <Chevron />
-          </button>
-        }
-      >
-        {(close) =>
-          GRANULARITIES.filter((g) => allowedGranularities.includes(g.value)).map((g) => (
-            <button
-              key={g.value}
-              className={itemCls(currentGranularity === g.value)}
-              onClick={() => {
-                close();
-                update({ granularity: g.value });
-              }}
-            >
-              {g.label}
+      <div className={`flex ${secondary}`}>
+        <Dropdown
+          button={
+            <button className={`btn ${h} ${anim} px-4`}>
+              {GRANULARITIES.find((g) => g.value === currentGranularity)?.label ?? 'Daily'} <Chevron />
             </button>
-          ))
-        }
-      </Dropdown>
+          }
+        >
+          {(close) =>
+            GRANULARITIES.filter((g) => allowedGranularities.includes(g.value)).map((g) => (
+              <button
+                key={g.value}
+                className={itemCls(currentGranularity === g.value)}
+                onClick={() => {
+                  close();
+                  update({ granularity: g.value });
+                }}
+              >
+                {g.label}
+              </button>
+            ))
+          }
+        </Dropdown>
+      </div>
 
-      <button className="btn h-11 px-4 text-base" onClick={onLive} title="Live map (M)">
+      <button className={`btn ${h} ${anim} px-4 ${secondary}`} onClick={onLive} title="Live map (M)">
         <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" /> Live
       </button>
 
-      <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label="Refresh">
+      <button className={`btn ${sq} ${anim} px-0 ${secondary}`} onClick={onRefresh} aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>
           <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
           <path d="M21 3v5h-5" />
