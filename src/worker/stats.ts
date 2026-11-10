@@ -76,10 +76,17 @@ interface Ctx {
 }
 
 export function makeCtx(c: Context<AppEnv>): Ctx {
-  const site = c.get('site');
-  const q = c.req.query();
+  return ctxFor(c.env.DB, c.get('site'), c.req.query());
+}
+
+/** Same as makeCtx, for callers that aren't a dashboard request (the MCP server). */
+export function ctxFor(
+  db: D1Database,
+  site: Site,
+  q: { period?: string; from?: string; to?: string; granularity?: string; filters?: string },
+): Ctx {
   const range = resolveRange(q, site.timezone, site.created_at);
-  return { db: c.env.DB, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+  return { db, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
 }
 
 function sessionsWhere(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {

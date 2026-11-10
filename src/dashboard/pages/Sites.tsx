@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { navigate, useMe } from '../App';
+import { ConnectAI } from '../components/ConnectAI';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
@@ -22,6 +23,7 @@ const AUTO_REFRESH_MS = 60_000;
 export function Sites() {
   const { me } = useMe();
   const [adding, setAdding] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [period, setPeriod] = usePref('ml_sites_period', '30d');
   const [reloadKey, setReloadKey] = useState(0);
   const { data: sites, loading: loadingSites } = useApi<Site[]>('/api/sites', reloadKey);
@@ -58,6 +60,9 @@ export function Sites() {
           )}
           <button className="btn" onClick={logout}>
             Log out
+          </button>
+          <button className="btn" onClick={() => setConnecting(true)} title="Ask Claude, ChatGPT or Cursor about your analytics">
+            ✦ Connect AI
           </button>
           <button className="btn-dark" onClick={() => setAdding(true)}>
             + Add website
@@ -105,6 +110,7 @@ export function Sites() {
         )}
       </div>
       <AddSite open={adding} onClose={() => setAdding(false)} />
+      <ConnectAI open={connecting} onClose={() => setConnecting(false)} />
     </div>
   );
 }

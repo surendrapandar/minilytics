@@ -62,6 +62,7 @@ Cloudflare's free plan.
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
 - Multiple websites, one login
+- **Ask your AI**: connect Claude, ChatGPT or Cursor over MCP and ask "which tweets made me money this month?" ([how](#use-it-from-ai-assistants-mcp))
 
 ## Deploy for free (about 10 minutes)
 
@@ -256,6 +257,28 @@ Any other provider can use the generic API (the key is in site settings):
 curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..." -H "Content-Type: application/json" \
   -d '{"transaction_id":"txn_1","amount":29.99,"currency":"USD","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
 ```
+
+## Use it from AI assistants (MCP)
+
+Minilytics is also an [MCP](https://modelcontextprotocol.io) server, so Claude, ChatGPT, Cursor and other AI tools can read your analytics and answer questions like *"Which sources made the most money this month?"*, *"Why did revenue drop this week?"* or *"Where do visitors drop off between /pricing and checkout?"*.
+
+In the dashboard click **✦ Connect AI** for copy-paste setup for each app. The server URL is:
+
+```
+https://YOUR-HOST/mcp
+```
+
+- **Claude (web/desktop)**: Settings → Connectors → *Add custom connector* → paste the URL → *Connect* → *Allow access*.
+- **ChatGPT**: Settings → Apps & Connectors → Advanced → turn on *Developer mode* → *Create* → paste the URL, OAuth.
+- **Claude Code**: `claude mcp add --transport http minilytics https://YOUR-HOST/mcp`, then `/mcp` → *Authenticate*.
+- **Cursor**: `{"mcpServers": {"minilytics": {"url": "https://YOUR-HOST/mcp"}}}` in `~/.cursor/mcp.json`.
+- **Anything else**: create a *personal token* under Connect AI and send `Authorization: Bearer mlp_...`.
+
+Apps connect with OAuth (dynamic client registration and PKCE). You sign in to Minilytics and approve access, nothing to copy. Access is **read-only**: nothing can be changed or deleted. Every connected app and token is listed under Connect AI and can be disconnected at any time.
+
+**Tools:** `list_sites`, `get_overview` (KPIs vs previous period + chart), `get_breakdown` (by source, channel, campaign, page, country, device, goal… sortable by revenue), `get_realtime`, `list_customers` (who paid and where they came from), `list_visitors`, `get_visitor` (one person's full journey), `list_funnels`, `get_funnel` (saved or ad-hoc steps). All take the same periods and filters as the dashboard.
+
+**Cost:** it runs inside the same Worker and D1 database, with no extra services. Results are capped (100 rows max) and each token is limited to 150 calls per 5 minutes, so a chat costs a handful of requests and stays well inside the free plan.
 
 ## Accuracy notes
 

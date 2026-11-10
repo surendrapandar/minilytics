@@ -7,6 +7,9 @@ import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
+import { mcpOther, mcpPost } from './mcp';
+import { authorizePage, authorizeSubmit, authServerMetadata, protectedResourceMetadata, registerClient, revoke, token } from './oauth';
+import { createPersonalToken, listTokens, revokeGrant } from './tokens';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
@@ -19,7 +22,7 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-  if (c.req.path.startsWith('/api/')) {
+  if (c.req.path.startsWith('/api/') || c.req.path === '/mcp' || c.req.path.startsWith('/oauth/')) {
     // Stats, settings and secrets must never sit in a shared or browser cache.
     if (c.req.path !== '/api/event' && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
   } else {
@@ -37,6 +40,41 @@ app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
+
+// ---------- AI assistants: MCP server + the OAuth flow that hands out its tokens
+// Bearer tokens only (no cookies), so any origin may call these: browser-based MCP clients need CORS.
+
+const aiCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Authorization', 'Content-Type', 'Mcp-Protocol-Version', 'Mcp-Session-Id', 'Last-Event-ID'],
+  exposeHeaders: ['WWW-Authenticate', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
+  maxAge: 86400,
+});
+app.use('/mcp', aiCors);
+app.use('/.well-known/*', aiCors);
+for (const p of ['/oauth/token', '/oauth/register', '/oauth/revoke']) app.use(p, aiCors);
+
+app.post('/mcp', mcpPost);
+app.on(['GET', 'DELETE', 'PUT', 'PATCH'], '/mcp', mcpOther);
+// Some clients append the resource path to the well-known URLs (RFC 9728 / RFC 8414 path forms).
+app.get('/.well-known/oauth-protected-resource', protectedResourceMetadata);
+app.get('/.well-known/oauth-protected-resource/mcp', protectedResourceMetadata);
+app.get('/.well-known/oauth-authorization-server', authServerMetadata);
+app.get('/.well-known/oauth-authorization-server/mcp', authServerMetadata);
+app.get('/.well-known/openid-configuration', authServerMetadata);
+app.post('/oauth/register', registerClient);
+app.get('/oauth/authorize', authorizePage);
+app.post('/oauth/authorize', authorizeSubmit);
+app.post('/oauth/token', token);
+app.post('/oauth/revoke', revoke);
+
+// Personal tokens and connected apps, managed from the dashboard.
+app.use('/api/tokens', requireUser);
+app.use('/api/tokens/*', requireUser);
+app.get('/api/tokens', listTokens);
+app.post('/api/tokens', createPersonalToken);
+app.delete('/api/tokens/:id', revokeGrant);
 
 // ---------- login
 
