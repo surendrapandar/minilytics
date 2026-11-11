@@ -12,8 +12,10 @@ type OverviewResult = {
   connected: boolean; property: string | null; from?: string; to?: string;
   totals: GscTotals; previous: GscTotals; series: GscDaily[];
   available: boolean; truncated: boolean; requestedFrom: string; requestedTo: string;
+  granularity: 'day' | 'hour'; asOf: number;
+  incompleteFrom?: string | null; lastReportedHour?: string | null;
 };
-type BreakdownResult = { rows: Row[] };
+type BreakdownResult = { rows: Row[]; truncatedRows?: boolean };
 type Metric = keyof GscTotals;
 const DIMENSIONS: { value: Dimension; label: string }[] = [
   { value: 'query', label: 'Queries' },
@@ -113,7 +115,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
   const [overviewResult, setOverviewResult] = useState<{ key: string; data: OverviewResult } | null>(null);
   const [overviewFailure, setOverviewFailure] = useState<{ key: string; message: string } | null>(null);
   const [rowCache, setRowCache] = useState<{
-    key: string; items: Partial<Record<Dimension, Row[]>>;
+    key: string; items: Partial<Record<Dimension, BreakdownResult>>;
   }>({ key: '', items: {} });
   const [rowsPending, setRowsPending] = useState<string | null>(null);
   const [rowsFailure, setRowsFailure] = useState<{ key: string; message: string } | null>(null);
@@ -122,7 +124,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
 
   const data = overviewResult?.key === rangeKey ? overviewResult.data : null;
   const cachedRows = rowCache.key === rangeKey ? rowCache.items[dimension] : undefined;
-  const rows = cachedRows ?? [];
+  const rows = cachedRows?.rows ?? [];
   const summaryError = overviewFailure?.key === rangeKey ? overviewFailure.message : '';
   const breakdownError = rowsFailure?.key === rowsKey ? rowsFailure.message : '';
   const breakdownLoading = rowsPending === rowsKey;
@@ -158,14 +160,16 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
     setRowsFailure(null);
     // Use the overview's effective PT dates so both areas always show the
     // same window, even around midnight or when the range was truncated.
-    const params = new URLSearchParams({
-      view: 'breakdown', period: 'custom', dimension, from: data.from, to: data.to,
-    });
+    const params = data.granularity === 'hour'
+      ? new URLSearchParams({ view: 'breakdown', period, dimension, asOf: String(data.asOf) })
+      : new URLSearchParams({
+        view: 'breakdown', period: 'custom', dimension, from: data.from, to: data.to,
+      });
     api<BreakdownResult>('/api/sites/' + site.id + '/gsc?' + params)
       .then((result) => {
         if (!cancelled) setRowCache((current) => ({
           key: rangeKey,
-          items: { ...(current.key === rangeKey ? current.items : {}), [dimension]: result.rows },
+          items: { ...(current.key === rangeKey ? current.items : {}), [dimension]: result },
         }));
       })
       .catch((error: Error) => {
@@ -243,7 +247,7 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
               ))}
             </div>
             <span className="text-xs text-stone-500">
-              Follows dashboard date range · Daily in Pacific Time
+              Follows dashboard period · Pacific Time
             </span>
           </div>
 
@@ -257,15 +261,16 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
             </div>
           ) : data && !data.available ? (
             <div className="mt-4 rounded-xl bg-stone-50 px-4 py-6 text-center text-sm text-stone-600">
-              No completed Pacific Time search dates fall within this dashboard period.
-              GSC does not provide hourly or live results. Choose an earlier period above.
+              No Search Console dates are available for this range. Select a different period.
             </div>
           ) : data ? (
             <>
               <p className="mt-4 text-xs text-stone-500">
-                Showing {data.from} – {data.to} (Pacific Time)
+                {data.granularity === 'hour'
+                  ? `Showing the last ${period === '48h' ? '48' : '24'} hourly buckets (Pacific Time)`
+                  : `Showing ${data.from} – ${data.to} (Pacific Time)`}
                 {data.truncated ? ' · Limited to the most recent 366 calendar days' : ''}
-                {data.to !== undefined && data.requestedTo > data.to ? ' · Current incomplete day excluded' : ''}
+                {data.incompleteFrom ? ' · Preliminary data included' : ''}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stone-200 bg-stone-200 sm:grid-cols-4">
                 {METRICS.map(({ key, label }) => (
@@ -273,14 +278,20 @@ export function SearchPerformance({ site, period, from, to, reloadKey }: {
                     current={data.totals} previous={data.previous} series={data.series} />
                 ))}
               </div>
-              <GscTrendChart series={data.series} />
+              <GscTrendChart series={data.series} granularity={data.granularity} />
               <p className="mt-3 text-xs leading-relaxed text-stone-500">
-                Search Console reports daily in Pacific Time, while other dashboard charts use the site's timezone.
-                Data may lag several days; anonymized queries can make the table totals differ from site totals.
+                {data.granularity === 'hour'
+                  ? data.lastReportedHour
+                    ? `Latest reported hour: ${new Date(data.lastReportedHour).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric' })} PT. `
+                    : 'Google has not reported hourly activity for this range yet. '
+                  : 'Daily GSC data uses Pacific Time. '}
+                Recent Search Console figures are provisional and may arrive several hours late or change as Google processes them.
+                Query privacy filtering may make breakdown totals differ from site totals.
               </p>
               <div className="mt-4 min-w-0 overflow-hidden rounded-xl border border-stone-200/80">
                 {breakdownLoading && <div role="status" className="border-b border-stone-100 px-3 py-2 text-xs text-stone-500 sm:px-4">Loading {DIMENSIONS.find((item) => item.value === dimension)?.label.toLowerCase()}…</div>}
                 {breakdownError && <p role="alert" className="border-b border-stone-100 px-3 py-2 text-sm text-red-600 sm:px-4">{breakdownError}</p>}
+                {cachedRows?.truncatedRows && <p className="border-b border-stone-100 px-3 py-2 text-xs text-amber-700 sm:px-4">Too many hourly rows returned by Google; this breakdown is limited to its first 25,000 rows.</p>}
                 <div className="max-h-[420px] overflow-auto" aria-busy={breakdownLoading}>
                   <table className="w-full min-w-[560px] text-left text-sm">
                     <thead className="sticky top-0 z-10 bg-stone-50 text-xs text-stone-500">

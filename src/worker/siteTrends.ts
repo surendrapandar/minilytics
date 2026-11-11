@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { siteAccessSql } from './auth';
 import type { AppEnv } from './env';
-import { gscDailyImpressions, googleToken, trendGscWindow } from './gsc';
+import { gscDailyImpressions, gscHourlyImpressions, googleToken, trendGscHourlyWindow, trendGscWindow } from './gsc';
 import { bucketLabels, bucketSql, resolveRange, type Granularity, type Range } from './lib/time';
 
 export const TREND_METRICS = ['visitors', 'pageviews', 'sessions', 'impressions'] as const;
@@ -210,6 +210,15 @@ export function impressionsByBucket(
   return buckets.map((bucket) => totals.get(bucket) ?? 0);
 }
 
+/** Hourly GSC labels carry offsets; normalize to the matching UTC dashboard bucket. */
+export function hourlyImpressionsByBucket(
+  buckets: string[], hours: { hour: string; impressions: number }[],
+): number[] {
+  const totals = new Map<string, number>();
+  for (const hour of hours) totals.set(hour.hour, (totals.get(hour.hour) ?? 0) + hour.impressions);
+  return buckets.map((bucket) => totals.get(bucket) ?? 0);
+}
+
 function requestedMetrics(raw: string | undefined): Set<SiteTrendMetric> {
   if (!raw) return new Set();
   const values = raw.split(',').map((value) => value.trim());
@@ -244,9 +253,11 @@ async function attachImpressions(
 
   const user = c.get('user');
   if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !user?.admin) return blocked('admin');
-  if (range.granularity === 'hour') return blocked('hourly');
-  const window = trendGscWindow(range.from, range.to, now);
-  if (!window.available) return blocked('stale');
+  const hourly = range.granularity === 'hour';
+  const window = hourly
+    ? trendGscHourlyWindow(range.from, range.to, now)
+    : trendGscWindow(range.from, range.to, now);
+  if (!window.available) return blocked(hourly ? 'hourly' : 'stale');
 
   const bound = [...properties].filter(([, property]) => property);
   if (!bound.length) return states;
@@ -260,8 +271,10 @@ async function attachImpressions(
 
   await Promise.all(bound.map(async ([id, property]) => {
     try {
-      const daily = await gscDailyImpressions(token, property!, window.from, window.to);
-      const values = impressionsByBucket(summary.buckets, range.granularity, daily);
+      const values = hourly
+        ? hourlyImpressionsByBucket(summary.buckets, await gscHourlyImpressions(token, property!, range.from, range.to))
+        : impressionsByBucket(summary.buckets, range.granularity,
+          await gscDailyImpressions(token, property!, window.from, window.to));
       const site = summary.sites[id];
       if (site) {
         site.impressions = values.reduce((total, value) => total + value, 0);

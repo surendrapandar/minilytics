@@ -83,51 +83,43 @@ export async function configureGsc(c: Context<AppEnv>) {
   await c.env.DB.prepare('UPDATE sites SET gsc_property = ? WHERE id = ?').bind(property, c.get('site').id).run();
   return c.json({ property });
 }
-function dayOffset(offset: number): string {
-  const date = new Date();
-  date.setUTCHours(0, 0, 0, 0);
-  date.setUTCDate(date.getUTCDate() + offset);
-  return date.toISOString().slice(0, 10);
-}
-export function validGscDates(from: string, to: string, today = dayOffset(0)): boolean {
+const GSC_TZ = 'America/Los_Angeles';
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+
+export function validGscDates(from: string, to: string, today = pacificDay(Date.now())): boolean {
   const valid = (value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const timestamp = Date.parse(value + 'T00:00:00Z');
     return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
   };
-  return valid(from) && valid(to) && from <= to && to < today &&
-    (Date.parse(to) - Date.parse(from)) / 86_400_000 <= 365;
+  return valid(from) && valid(to) && from <= to && to <= today &&
+    (Date.parse(to) - Date.parse(from)) / DAY_MS <= 365;
 }
-const GSC_TZ = 'America/Los_Angeles';
 
-/**
- * The same period selection drives every dashboard section. Search Console
- * reports calendar days in Pacific Time, so hourly periods are represented by
- * overlapping PT dates and the current incomplete PT day is excluded.
- */
+/** Search Console uses Pacific calendar days and offset-bearing hourly buckets. */
 export function resolveGscWindow(
   selection: { period?: string; from?: string; to?: string },
   siteCreatedAt: number,
   now = Date.now(),
 ) {
-  const { from, to } = resolveRange(selection, GSC_TZ, siteCreatedAt, now);
-  const ptDate = (time: number) => {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: GSC_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).formatToParts(new Date(time));
-    const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
-    return value('year') + '-' + value('month') + '-' + value('day');
-  };
-  const requestedFrom = ptDate(from);
-  const requestedTo = ptDate(to - 1);
-  const yesterday = new Date(Date.parse(ptDate(now) + 'T00:00:00Z') - 86_400_000).toISOString().slice(0, 10);
-  const effectiveTo = requestedTo < yesterday ? requestedTo : yesterday;
-  const oldest = new Date(Date.parse(effectiveTo + 'T00:00:00Z') - 365 * 86_400_000).toISOString().slice(0, 10);
+  const hourly = ['24h', '48h', 'today', 'yesterday'].includes(selection.period ?? '');
+  const hours = selection.period === '48h' ? 48 : 24;
+  const endMs = hourly ? Math.floor(now / HOUR_MS) * HOUR_MS : undefined;
+  const startMs = hourly ? endMs! - hours * HOUR_MS : undefined;
+  const range = hourly
+    ? { from: startMs!, to: endMs! }
+    : resolveRange(selection, GSC_TZ, siteCreatedAt, now);
+  const requestedFrom = pacificDay(range.from);
+  const requestedTo = pacificDay(range.to - 1);
+  const oldest = utcDay(Date.parse(requestedTo + 'T00:00:00Z') - 365 * DAY_MS);
   const effectiveFrom = requestedFrom < oldest ? oldest : requestedFrom;
   return {
-    from: effectiveFrom, to: effectiveTo, requestedFrom, requestedTo,
-    available: effectiveFrom <= effectiveTo,
+    from: effectiveFrom, to: requestedTo, requestedFrom, requestedTo,
+    available: effectiveFrom <= requestedTo,
     truncated: requestedFrom < oldest,
+    granularity: hourly ? 'hour' as const : 'day' as const,
+    startMs, endMs, asOf: now,
   };
 }
 
@@ -138,12 +130,10 @@ interface GscApiRow {
   ctr: number;
   position: number;
 }
-interface GscApiResult { rows?: GscApiRow[] }
+interface GscApiResult { rows?: GscApiRow[]; metadata?: { first_incomplete_date?: string; first_incomplete_hour?: string } }
 interface GscTotals { clicks: number; impressions: number; ctr: number; position: number }
 
 const EMPTY_TOTALS: GscTotals = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
-const DAY_MS = 86_400_000;
-
 function utcDay(timestamp: number): string { return new Date(timestamp).toISOString().slice(0, 10); }
 
 /** Equal-length comparison immediately before the selected (inclusive) GSC date window. */
@@ -168,17 +158,55 @@ export function gscDailySeries(from: string, to: string, rows: GscApiRow[]) {
   return series;
 }
 
+type GscDataState = 'all' | 'hourly_all';
 async function searchAnalytics(
   token: string, property: string, from: string, to: string,
-  dimensions: string[], rowLimit: number,
-): Promise<GscApiRow[]> {
+  dimensions: string[], rowLimit: number, dataState: GscDataState = 'all',
+): Promise<GscApiResult> {
   const response = await fetch('https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', {
     method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
-    body: JSON.stringify({ startDate: from, endDate: to, dimensions, type: 'web', rowLimit }),
+    body: JSON.stringify({ startDate: from, endDate: to, dimensions, type: 'web', rowLimit, dataState }),
   });
   if (!response.ok) throw new Error('GSC query failed (' + response.status + '). Check property permissions.');
-  const body = await response.json<GscApiResult>();
-  return body.rows ?? [];
+  return response.json<GscApiResult>();
+}
+
+/** Positions and CTR must be impression-weighted, not naively averaged. */
+export function aggregateGscRows(rows: GscApiRow[]): GscTotals {
+  const clicks = rows.reduce((sum, row) => sum + row.clicks, 0);
+  const impressions = rows.reduce((sum, row) => sum + row.impressions, 0);
+  return {
+    clicks, impressions,
+    ctr: impressions ? clicks / impressions : 0,
+    position: impressions ? rows.reduce((sum, row) => sum + row.position * row.impressions, 0) / impressions : 0,
+  };
+}
+function hourTimestamp(row: GscApiRow): number {
+  const parsed = Date.parse(row.keys?.[0] ?? '');
+  return Number.isFinite(parsed) ? parsed : -1;
+}
+export function gscHourlySeries(start: number, end: number, rows: GscApiRow[]) {
+  const filtered = rows.filter((row) => hourTimestamp(row) >= start && hourTimestamp(row) < end);
+  const byHour = new Map(filtered.map((row) => [hourTimestamp(row), row]));
+  const series: Array<{ date: string } & GscTotals> = [];
+  for (let hour = start; hour < end; hour += HOUR_MS) {
+    const row = byHour.get(hour);
+    series.push({ date: new Date(hour).toISOString(), ...(row ? aggregateGscRows([row]) : { ...EMPTY_TOTALS }) });
+  }
+  return series;
+}
+export function gscHourlyBreakdown(start: number, end: number, rows: GscApiRow[]) {
+  const grouped = new Map<string, GscApiRow[]>();
+  for (const row of rows) {
+    if (hourTimestamp(row) < start || hourTimestamp(row) >= end) continue;
+    const label = row.keys?.[1];
+    if (!label) continue;
+    const group = grouped.get(label) ?? [];
+    group.push(row);
+    grouped.set(label, group);
+  }
+  return [...grouped].map(([label, items]) => ({ label, ...aggregateGscRows(items) }))
+    .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions).slice(0, 250);
 }
 
 function totalsFrom(rows: GscApiRow[]): GscTotals {
@@ -187,18 +215,14 @@ function totalsFrom(rows: GscApiRow[]): GscTotals {
 }
 
 export async function gscSearch(c: Context<AppEnv>) {
-  // Agent tokens have no session user; the token row carries the owner's admin flag.
   const user = c.get('user');
-  const token = c.get('agentToken');
-  const admin = user ? user.admin : token?.owner_admin === 1;
+  const agentToken = c.get('agentToken');
+  const admin = user ? user.admin : agentToken?.owner_admin === 1;
   if (c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET && !admin) return c.json({ error: 'GSC service account is admin-only' }, 403);
   const property = c.get('site').gsc_property;
   if (!property) return c.json({ connected: false, rows: [], property: null });
   const dimension = c.req.query('dimension') ?? 'query';
   if (!DIMS.includes(dimension as Dimension)) return c.json({ error: 'Invalid dimension' }, 400);
-  // Keep the original combined response for compatibility with older clients.
-  // The dashboard requests overview and breakdown independently so tab changes
-  // cannot refetch site-wide KPIs or daily chart data.
   const view = c.req.query('view') ?? 'all';
   if (!['all', 'overview', 'breakdown'].includes(view)) return c.json({ error: 'Invalid GSC view' }, 400);
   const selectedPeriod = c.req.query('period') ?? (c.req.query('from') && c.req.query('to') ? 'custom' : '30d');
@@ -206,8 +230,6 @@ export async function gscSearch(c: Context<AppEnv>) {
     return c.json({ error: 'Invalid period' }, 400);
   }
   const selection = { period: selectedPeriod, from: c.req.query('from'), to: c.req.query('to') };
-  // Preserve the dashboard's custom window even if it exceeds the GSC 366-day
-  // query limit; resolveGscWindow caps the fetch and labels it as truncated.
   const calendarDate = (value: string | undefined) => {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const time = Date.parse(value + 'T00:00:00Z');
@@ -217,7 +239,14 @@ export async function gscSearch(c: Context<AppEnv>) {
     !calendarDate(selection.from) || !calendarDate(selection.to) ||
     (selection.from ?? '') > (selection.to ?? '')
   )) return c.json({ error: 'Invalid custom date range' }, 400);
-  const window = resolveGscWindow(selection, c.get('site').created_at);
+
+  // Reuse an hourly snapshot on tab switches; reject old/future user-supplied clocks.
+  const rawAsOf = c.req.query('asOf');
+  const asOf = rawAsOf ? Number(rawAsOf) : Date.now();
+  if (rawAsOf && (!Number.isSafeInteger(asOf) || asOf > Date.now() + 60_000 || asOf < Date.now() - 7 * DAY_MS)) {
+    return c.json({ error: 'Invalid GSC snapshot timestamp' }, 400);
+  }
+  const window = resolveGscWindow(selection, c.get('site').created_at, asOf);
   const { from, to } = window;
   if (!window.available) {
     return c.json({ connected: true, property, dimension, ...window,
@@ -233,25 +262,50 @@ export async function gscSearch(c: Context<AppEnv>) {
   try {
     const token = await googleToken(c.env.GSC_SERVICE_ACCOUNT_JSON);
     const getOverview = async () => {
+      if (window.granularity === 'hour') {
+        const start = window.startMs!, end = window.endMs!;
+        const previousStart = start - (end - start);
+        const response = await searchAnalytics(token, property, pacificDay(previousStart), to, ['hour'], 500, 'hourly_all');
+        const rows = response.rows ?? [];
+        const current = rows.filter((row) => hourTimestamp(row) >= start && hourTimestamp(row) < end);
+        const previous = rows.filter((row) => hourTimestamp(row) >= previousStart && hourTimestamp(row) < start);
+        const lastReportedHour = current.length
+          ? new Date(Math.max(...current.map(hourTimestamp))).toISOString() : null;
+        return {
+          totals: aggregateGscRows(current), previous: aggregateGscRows(previous),
+          series: gscHourlySeries(start, end, current),
+          incompleteFrom: response.metadata?.first_incomplete_hour ?? null,
+          lastReportedHour,
+        };
+      }
       const previousRange = previousGscWindow(from, to);
-      // Site-wide totals must not be computed by summing privacy-filtered top rows.
       const [daily, totals, previous] = await Promise.all([
         searchAnalytics(token, property, from, to, ['date'], 1000),
         searchAnalytics(token, property, from, to, [], 1),
         searchAnalytics(token, property, previousRange.from, previousRange.to, [], 1),
       ]);
       return {
-        totals: totalsFrom(totals), previous: totalsFrom(previous),
-        series: gscDailySeries(from, to, daily),
+        totals: totalsFrom(totals.rows ?? []), previous: totalsFrom(previous.rows ?? []),
+        series: gscDailySeries(from, to, daily.rows ?? []),
+        incompleteFrom: daily.metadata?.first_incomplete_date ?? null,
+        lastReportedHour: null,
       };
     };
     const getBreakdown = async () => {
-      const rows = await searchAnalytics(token, property, from, to, [dimension], 250);
+      if (window.granularity === 'hour') {
+        const response = await searchAnalytics(token, property, from, to, ['hour', dimension], 25_000, 'hourly_all');
+        return {
+          rows: gscHourlyBreakdown(window.startMs!, window.endMs!, response.rows ?? []),
+          truncatedRows: (response.rows?.length ?? 0) === 25_000,
+        };
+      }
+      const response = await searchAnalytics(token, property, from, to, [dimension], 250);
       return {
-        rows: rows.map((row) => ({
+        rows: (response.rows ?? []).map((row) => ({
           label: row.keys?.[0] ?? '', clicks: row.clicks, impressions: row.impressions,
           ctr: row.ctr, position: row.position,
         })),
+        truncatedRows: false,
       };
     };
     const [overview, breakdown] = await Promise.all([
@@ -265,8 +319,6 @@ export async function gscSearch(c: Context<AppEnv>) {
   } catch (error) { return c.json({ error: (error as Error).message }, 502); }
 }
 
-const TREND_CACHE_SECONDS = 600;
-
 function pacificDay(time: number): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: GSC_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
@@ -275,22 +327,32 @@ function pacificDay(time: number): string {
   return value('year') + '-' + value('month') + '-' + value('day');
 }
 
-/**
- * Search Console reports whole Pacific days and excludes the current incomplete
- * day, so trend windows are capped at yesterday.
- */
+/** Include provisional days up to today instead of hiding them. */
 export function trendGscWindow(from: number, to: number, now = Date.now()) {
+  // Multi-site charts use UTC calendar buckets. Keep the same date labels,
+  // while Google reports each matching date in Pacific Time.
   const requestedFrom = utcDay(from);
-  const requestedTo = utcDay(to - DAY_MS);
-  const yesterday = utcDay(Date.parse(pacificDay(now) + 'T00:00:00Z') - DAY_MS);
-  const oldest = utcDay(Date.parse(yesterday + 'T00:00:00Z') - 365 * DAY_MS);
+  const requestedTo = utcDay(to - 1);
+  const today = pacificDay(now);
+  const oldest = utcDay(Date.parse(today + 'T00:00:00Z') - 365 * DAY_MS);
   const start = requestedFrom < oldest ? oldest : requestedFrom;
-  const end = requestedTo < yesterday ? requestedTo : yesterday;
+  const end = requestedTo < today ? requestedTo : today;
   return { from: start, to: end, available: start <= end, truncated: requestedFrom < oldest };
 }
 
+/** The GSC hourly API supports up to the most recent ten days. */
+export function trendGscHourlyWindow(from: number, to: number, now = Date.now()) {
+  return {
+    from: pacificDay(from), to: pacificDay(to - 1),
+    available: from < to && from >= now - 10 * DAY_MS && to <= now + HOUR_MS,
+  };
+}
 export interface GscDayImpressions {
   date: string;
+  impressions: number;
+}
+export interface GscHourImpressions {
+  hour: string; // UTC YYYY-MM-DDTHH:mm, matching overview buckets
   impressions: number;
 }
 
@@ -299,29 +361,64 @@ function trendCache(): Cache | null {
   return (caches as unknown as { default?: Cache }).default ?? null;
 }
 
-/** Daily impressions only; cached briefly so overview polling does not hammer the API. */
+/** Fresh GSC data stays provisional; use a short cache and a new namespace. */
 export async function gscDailyImpressions(
   token: string, property: string, from: string, to: string,
 ): Promise<GscDayImpressions[]> {
-  const key = new Request('https://gsc-trend-cache.internal/' +
+  const key = new Request('https://gsc-trend-cache.internal/v2/daily/' +
     encodeURIComponent(property) + '/' + from + '/' + to);
   const cache = trendCache();
   if (cache) {
     try {
       const hit = await cache.match(key);
       if (hit) return await hit.json<GscDayImpressions[]>();
-    } catch { /* Cache API is unavailable outside the Workers runtime. */ }
+    } catch { /* Not available outside Workers. */ }
   }
-  const rows = await searchAnalytics(token, property, from, to, ['date'], 1000);
-  const daily = rows.flatMap((row) => row.keys?.[0]
+  const response = await searchAnalytics(token, property, from, to, ['date'], 1000);
+  const daily = (response.rows ?? []).flatMap((row) => row.keys?.[0]
     ? [{ date: row.keys[0], impressions: row.impressions }]
     : []);
   if (cache) {
     try {
       await cache.put(key, new Response(JSON.stringify(daily), {
-        headers: { 'content-type': 'application/json', 'Cache-Control': 'max-age=' + TREND_CACHE_SECONDS },
+        headers: { 'content-type': 'application/json', 'Cache-Control': 'max-age=180' },
       }));
-    } catch { /* A failed cache write should not fail the request. */ }
+    } catch { /* Cache failures are nonfatal. */ }
   }
   return daily;
+}
+
+/** Cache the GSC hourly response by PT date, then filter to the precise UTC window. */
+export async function gscHourlyImpressions(
+  token: string, property: string, fromMs: number, toMs: number,
+): Promise<GscHourImpressions[]> {
+  const from = pacificDay(fromMs), to = pacificDay(toMs - 1);
+  const key = new Request('https://gsc-trend-cache.internal/v2/hourly/' +
+    encodeURIComponent(property) + '/' + from + '/' + to);
+  const cache = trendCache();
+  let hourly: GscHourImpressions[] | null = null;
+  if (cache) {
+    try {
+      const hit = await cache.match(key);
+      if (hit) hourly = await hit.json<GscHourImpressions[]>();
+    } catch { /* Not available outside Workers. */ }
+  }
+  if (!hourly) {
+    const response = await searchAnalytics(token, property, from, to, ['hour'], 500, 'hourly_all');
+    hourly = (response.rows ?? []).flatMap((row) => {
+      const timestamp = hourTimestamp(row);
+      return timestamp >= 0 ? [{ hour: new Date(timestamp).toISOString().slice(0, 16), impressions: row.impressions }] : [];
+    });
+    if (cache) {
+      try {
+        await cache.put(key, new Response(JSON.stringify(hourly), {
+          headers: { 'content-type': 'application/json', 'Cache-Control': 'max-age=180' },
+        }));
+      } catch { /* Nonfatal. */ }
+    }
+  }
+  return hourly.filter((row) => {
+    const hour = Date.parse(row.hour + ':00Z');
+    return hour >= Math.floor(fromMs / HOUR_MS) * HOUR_MS && hour < toMs;
+  });
 }

@@ -4,13 +4,19 @@ import type { GscDaily } from './SearchPerformance';
 
 type SeriesKey = 'clicks' | 'impressions';
 const COLORS: Record<SeriesKey, string> = { clicks: '#477dc8', impressions: '#8dbdf0' };
-const dateLabel = (value: string) => new Date(value + 'T12:00:00Z').toLocaleDateString(
-  'en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' },
-);
+const dateLabel = (value: string, granularity: 'day' | 'hour') => granularity === 'hour'
+  ? new Date(value).toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric',
+  })
+  : new Date(value + 'T12:00:00Z').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
 const fmt = new Intl.NumberFormat('en-US');
 
 /** Recharts renders a responsive SVG with shape-preserving monotone curves. */
-export function GscTrendChart({ series }: { series: GscDaily[] }) {
+export function GscTrendChart({ series, granularity = 'day' }: {
+  series: GscDaily[]; granularity?: 'day' | 'hour';
+}) {
   const id = useId().replace(/:/g, '-');
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({ clicks: true, impressions: true });
   const hasActivity = series.some((day) => day.impressions > 0 || day.clicks > 0);
@@ -42,7 +48,7 @@ export function GscTrendChart({ series }: { series: GscDaily[] }) {
       </div>
       {hasActivity ? (
         <div className="mt-4 h-[230px] min-w-0 sm:h-[285px]" role="group"
-          aria-label="Daily Google Search clicks and impressions trend for the selected date range">
+          aria-label={`${granularity === 'hour' ? 'Hourly' : 'Daily'} Google Search clicks and impressions trend for the selected date range`}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart accessibilityLayer data={series} margin={{ top: 8, right: 2, left: -8, bottom: 0 }}>
               <defs>
@@ -52,7 +58,7 @@ export function GscTrendChart({ series }: { series: GscDaily[] }) {
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="#eeece9" strokeDasharray="3 4" />
-              <XAxis dataKey="date" tickFormatter={dateLabel} minTickGap={28}
+              <XAxis dataKey="date" tickFormatter={(value: string) => dateLabel(value, granularity)} minTickGap={28}
                 axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 11 }} />
               <YAxis yAxisId="clicks" hide={!visible.clicks} width={40} allowDecimals={false}
                 tick={{ fill: '#a8a29e', fontSize: 11 }} axisLine={false} tickLine={false}
@@ -67,7 +73,7 @@ export function GscTrendChart({ series }: { series: GscDaily[] }) {
                   const point = payload[0].payload as GscDaily;
                   return (
                     <div className="card min-w-[170px] px-3 py-2 text-xs shadow-card">
-                      <div className="mb-2 font-medium">{dateLabel(point.date)}</div>
+                      <div className="mb-2 font-medium">{dateLabel(point.date, granularity)}</div>
                       {visible.clicks && (
                         <div className="flex items-center justify-between gap-6 py-0.5">
                           <span className="text-stone-500">Clicks</span><span className="font-medium">{fmt.format(point.clicks)}</span>

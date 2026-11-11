@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bucketLabels } from '../src/worker/lib/time';
-import { customTrendRange, impressionsByBucket, isSiteTrendPeriod, previousTrendRange, siteTrendRange } from '../src/worker/siteTrends';
+import { customTrendRange, hourlyImpressionsByBucket, impressionsByBucket, isSiteTrendPeriod, previousTrendRange, siteTrendRange } from '../src/worker/siteTrends';
 
 describe('site overview trends', () => {
   const now = Date.UTC(2026, 9, 29, 12);
@@ -103,9 +103,13 @@ describe('Search Console impressions in shared trends', () => {
     )).toEqual([4, 14, 9]);
   });
 
-  it('leaves hourly buckets empty because Search Console reports whole days', () => {
-    expect(impressionsByBucket(['2026-11-05T10:00'], 'hour', [
-      { date: '2026-11-05', impressions: 30 },
-    ])).toEqual([0]);
+  it('uses UTC hourly Search Console buckets for the rolling 24 hours', () => {
+    expect(hourlyImpressionsByBucket(
+      ['2026-11-05T09:00', '2026-11-05T10:00', '2026-11-05T11:00'],
+      [
+        { hour: '2026-11-05T09:00', impressions: 30 },
+        { hour: '2026-11-05T11:00', impressions: 20 },
+      ],
+    )).toEqual([30, 0, 20]);
   });
 });

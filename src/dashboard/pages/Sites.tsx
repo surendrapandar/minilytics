@@ -28,7 +28,7 @@ const DAY = 86_400_000;
 const utcDate = (offset = 0) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
 const GSC_REASON: Record<string, string> = {
   not_connected: 'Search Console not connected',
-  hourly: 'Daily Search Console data only',
+  hourly: 'Hourly GSC data is available for the last 10 days',
   admin: 'Search Console is admin-only',
   stale: 'Outside Search Console range',
   unconfigured: 'Search Console not configured',
@@ -106,11 +106,6 @@ export function Sites() {
   const todayUtc = utcDate();
   const validPrimary = period !== 'custom' || isValidWindow(customFrom, customTo, todayUtc);
   const validComparison = !comparisonEnabled || comparisonMode !== 'custom' || isValidWindow(compareFrom, compareTo, todayUtc);
-  const customDays = period === 'custom' && validPrimary
-    ? Math.round((Date.parse(customTo) - Date.parse(customFrom)) / DAY) + 1
-    : 0;
-  // Search Console only has daily rows, so hourly windows cannot show impressions.
-  const hourlyWindow = period === '24h' || (period === 'custom' && customDays > 0 && customDays <= 2);
   const params = new URLSearchParams({ period });
   if (period === 'custom') {
     params.set('from', customFrom);
@@ -214,8 +209,7 @@ export function Sites() {
                 <div className="px-2 pb-2 text-xs text-stone-500">Applies to every website</div>
                 {TREND_METRICS.map((item) => {
                   const checked = selectedMetrics.includes(item.value);
-                  const unavailable = item.value === 'impressions' && hourlyWindow && !checked;
-                  const disabled = !checked && (selectedMetrics.length >= MAX_TREND_METRICS || unavailable);
+                  const disabled = !checked && selectedMetrics.length >= MAX_TREND_METRICS;
                   return (
                     <label key={item.value} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-stone-100 ${checked ? 'bg-stone-50 font-medium text-ink' : 'text-stone-600'} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}>
                       <input
@@ -231,7 +225,7 @@ export function Sites() {
                   );
                 })}
                 <p className="border-t border-stone-100 px-2 pt-2 text-xs text-stone-400">
-                  Choose 1–{MAX_TREND_METRICS}. Search impressions use daily Search Console data (2–3 day lag).
+                  Choose 1–{MAX_TREND_METRICS}. Search impressions include provisional hourly and daily GSC data.
                 </p>
               </div>
             )}
@@ -433,7 +427,7 @@ export function Sites() {
           <div className="card col-span-full p-10 text-center text-stone-500">No websites yet. Add your first one to get a tracking snippet.</div>
         )}
       </div>
-      {sites?.length ? <p className="mt-4 text-xs text-stone-400">UTC date buckets. Today is partial. Search impressions come from Search Console (PT days, 2–3 day lag). The same periods and metrics apply to every website card.</p> : null}
+      {sites?.length ? <p className="mt-4 text-xs text-stone-400">Chart buckets use UTC; Search Console groups dates in Pacific Time. Recent impressions are provisional and may arrive hours late. The same periods and metrics apply to every website card.</p> : null}
       <AddSite open={adding} onClose={() => setAdding(false)} />
     </div>
   );
