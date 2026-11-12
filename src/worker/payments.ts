@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { getSite, type AppEnv, type Site } from './env';
 import { verifyStandardWebhook, verifyStripeWebhook } from './lib/crypto';
+import { UserError } from './lib/errors';
 import { currencyDecimals } from '../shared/currency';
 
 export { currencyDecimals };
@@ -190,6 +191,18 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
   }
   await db.batch(stmts);
   return { visitorId, sessionId };
+}
+
+/** Dodo payments that couldn't be placed on a site yet, grouped by product. */
+export async function pendingPayments(db: D1Database, site: Site) {
+  const r = await db
+    .prepare(
+      `SELECT product_id, COUNT(*) AS count, SUM(json_extract(payload, '$.amount')) AS amount, MAX(json_extract(payload, '$.currency')) AS currency
+       FROM pending_payments WHERE site_id = ? GROUP BY product_id ORDER BY MAX(ts) DESC`,
+    )
+    .bind(site.id)
+    .all<{ product_id: string | null; count: number; amount: number; currency: string | null }>();
+  return r.results;
 }
 
 /** Try again to link payments that have no visitor yet (e.g. ones recorded before a fallback existed). */
@@ -506,13 +519,23 @@ export async function handlePaymentApi(c: Context<AppEnv>) {
   const site = await siteFromApiKey(c);
   if (!site) return c.json({ error: 'invalid api key' }, 401);
   const b = await c.req.json<Record<string, unknown>>().catch(() => null);
-  if (!b || !str(b.transaction_id) || typeof b.amount !== 'number') {
-    return c.json({ error: 'transaction_id (string) and amount (number, e.g. 29.99) are required' }, 400);
+  try {
+    return c.json(await recordApiPayment(c.env.DB, site, b ?? {}));
+  } catch (e) {
+    if (e instanceof UserError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
+}
+
+/** A payment from the API (or an MCP agent). `amount` is in major units, e.g. 29.99. */
+export async function recordApiPayment(db: D1Database, site: Site, b: Record<string, unknown>) {
+  if (!str(b.transaction_id) || typeof b.amount !== 'number' || !Number.isFinite(b.amount)) {
+    throw new UserError(400, 'transaction_id (string) and amount (number, e.g. 29.99) are required');
   }
   const currency = (str(b.currency) ?? site.currency).toUpperCase();
   const minor = Math.round((b.amount as number) * 10 ** currencyDecimals(currency));
   const refunded = b.refunded === true;
-  const res = await recordPayment(c.env.DB, site, {
+  const res = await recordPayment(db, site, {
     id: `${site.id}:${b.transaction_id}${refunded ? ':refund' : ''}`,
     provider: 'api',
     ts: typeof b.timestamp === 'string' ? Date.parse(b.timestamp) || Date.now() : Date.now(),
@@ -526,7 +549,7 @@ export async function handlePaymentApi(c: Context<AppEnv>) {
     name: str(b.name),
     renewal: b.renewal === true,
   });
-  return c.json({ ok: true, attributed: !!res.sessionId, visitor_id: res.visitorId });
+  return { ok: true, attributed: !!res.sessionId, visitor_id: res.visitorId };
 }
 
 /**
@@ -537,21 +560,30 @@ export async function handleGoalApi(c: Context<AppEnv>) {
   const site = await siteFromApiKey(c);
   if (!site) return c.json({ error: 'invalid api key' }, 401);
   const b = await c.req.json<Record<string, unknown>>().catch(() => null);
-  const vid = str(b?.visitor_id);
-  const name = str(b?.name)?.slice(0, 64);
-  if (!vid || !name) return c.json({ error: 'visitor_id and name are required' }, 400);
-  const s = await c.env.DB.prepare(
-    'SELECT id, exit_page FROM sessions WHERE site_id = ? AND visitor_id = ? ORDER BY started_at DESC LIMIT 1',
-  )
+  try {
+    return c.json(await recordGoal(c.env.DB, site, b ?? {}));
+  } catch (e) {
+    if (e instanceof UserError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
+}
+
+/** Record a goal completion on the visitor's latest visit. */
+export async function recordGoal(db: D1Database, site: Site, b: Record<string, unknown>) {
+  const vid = str(b.visitor_id);
+  const name = str(b.name)?.slice(0, 64);
+  if (!vid || !name) throw new UserError(400, 'visitor_id and name are required');
+  const s = await db
+    .prepare('SELECT id, exit_page FROM sessions WHERE site_id = ? AND visitor_id = ? ORDER BY started_at DESC LIMIT 1')
     .bind(site.id, vid)
     .first<{ id: string; exit_page: string }>();
-  if (!s) return c.json({ error: 'visitor not found' }, 404);
+  if (!s) throw new UserError(404, 'visitor not found');
   const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE sessions SET goals = goals + 1 WHERE site_id = ? AND id = ?').bind(site.id, s.id),
-    c.env.DB.prepare(
-      "INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path, props) VALUES (?, ?, ?, ?, 'goal', ?, ?, ?)",
-    ).bind(site.id, s.id, vid, now, name, s.exit_page, b?.props ? JSON.stringify(b.props).slice(0, 1000) : null),
+  await db.batch([
+    db.prepare('UPDATE sessions SET goals = goals + 1 WHERE site_id = ? AND id = ?').bind(site.id, s.id),
+    db
+      .prepare("INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path, props) VALUES (?, ?, ?, ?, 'goal', ?, ?, ?)")
+      .bind(site.id, s.id, vid, now, name, s.exit_page, b.props ? JSON.stringify(b.props).slice(0, 1000) : null),
   ]);
-  return c.json({ ok: true });
+  return { ok: true };
 }

@@ -253,6 +253,34 @@ curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..."
   -d '{"transaction_id":"txn_1","amount":29.99,"currency":"USD","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
 ```
 
+## AI agents (MCP)
+
+Claude, ChatGPT, Cursor and any other [MCP](https://modelcontextprotocol.io) client can read your analytics and manage your
+sites through the built-in MCP server at `https://YOUR-HOST/mcp`. Agents connect with OAuth: you approve each one on a
+Minilytics page (signing in with your password or Google as usual) and choose whether it may only read or also make changes.
+The dashboard's **AI agents** button (on the websites page) shows the URL and lists connected agents, so you can disconnect any of them.
+
+```bash
+claude mcp add --transport http minilytics https://YOUR-HOST/mcp     # Claude Code
+```
+
+In Claude (web and desktop) add it under Settings → Connectors → Add custom connector. In Cursor, VS Code and similar
+clients, add `{ "mcpServers": { "minilytics": { "url": "https://YOUR-HOST/mcp" } } }` to their MCP config.
+
+Tools mirror the dashboard:
+
+- **Read**: `get_account`, `list_sites`, `get_site` (settings, script tag, webhook URLs), `get_overview` (KPIs vs. the previous period,
+  chart series), `get_breakdown` (any panel: sources, channels, campaigns, pages, countries, devices, goals…), `get_visitor_map`,
+  `get_realtime`, `list_customers` (journeys), `list_visitors`, `get_visitor`, `list_goals`, `list_funnels`, `get_funnel_stats`,
+  `list_pending_payments`. All reports take a period or dates and the same filters as the dashboard.
+- **Change** (only if you allowed it): `create_site`, `update_site` (including connecting Dodo/Stripe), `rotate_api_key`, `delete_site`,
+  `create_funnel`, `update_funnel`, `delete_funnel`, `record_goal`, `rename_goal`, `delete_goal`, `record_payment`,
+  `assign_dodo_product`, `rematch_payments`.
+
+Goals still come from your site (`data-ml-goal`, `window.minilytics('goal', …)`, or `record_goal`); agents can rename or delete
+recorded ones. Access tokens last an hour and refresh for up to 60 days of disuse. They're stored as hashes keyed by `SESSION_SECRET`,
+so changing that secret signs every agent out too.
+
 ## Accuracy notes
 
 No analytics tool is 100% accurate. These are the main gaps and how this project handles them:
@@ -275,13 +303,14 @@ npm run dev:web                       # optional: hot-reloading dashboard on htt
 npm run seed                          # optional: 30 days of demo data ("ShipKit" site)
 npm test                              # unit tests
 npm run smoke                         # end-to-end test against the running dev server
+npm run smoke:mcp                     # end-to-end test of the MCP server and its OAuth
 node scripts/smoke-hosted.mjs         # hosted-mode test (see the comment at the top for how to start it)
 ```
 
 ## How it's built
 
 - `public/js/script.js`: the tracker, 9 KB (about 3.5 KB gzipped). It handles cookies, pageviews, engaged time, goals, outbound links and Dodo link tagging
-- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, the Dodo webhook, the payments and goals API, and stats queries on D1 (SQLite)
+- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, the Dodo webhook, the payments and goals API, stats queries on D1 (SQLite), and the MCP server (`src/worker/mcp`) with its OAuth (`oauth.ts`)
 - `src/dashboard`: the React dashboard (Vite, Tailwind, Recharts), served as static files by the same Worker
 - `migrations/`: the database schema
 

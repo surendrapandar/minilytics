@@ -114,7 +114,15 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // Signing in to approve an AI agent: go back to its approval page.
+  const next = new URLSearchParams(window.location.search).get('next');
+  const resume = next && /^\/oauth\/authorize\?/.test(next) ? next : null;
+  useEffect(() => {
+    if (me?.loggedIn && resume) window.location.replace(resume);
+  }, [me?.loggedIn, resume]);
+
   if (!me) return null;
+  if (me.loggedIn && resume) return null;
 
   const legal = LEGAL.exec(path);
   if (legal) return <Legal page={legal[1] as 'terms' | 'privacy' | 'refund'} />;
@@ -123,7 +131,7 @@ export function App() {
 
   let page;
   if (!me.loggedIn) {
-    page = me.hosted ? <Landing /> : <Login onLogin={refresh} />;
+    page = me.hosted ? <Landing /> : <Login onLogin={refresh} forAgent={!!resume} />;
   } else if (me.hosted && !me.user?.paid) {
     // Signed in but hasn't paid yet: the only thing to do is pick the plan.
     page = <Billing />;

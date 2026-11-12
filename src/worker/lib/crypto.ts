@@ -89,3 +89,17 @@ export async function verifyToken(secret: string, token: string | undefined): Pr
 export function passwordsMatch(a: string, b: string): boolean {
   return safeEqual(a, b);
 }
+
+/** Hex HMAC-SHA256, used to store OAuth tokens as keyed hashes (changing SESSION_SECRET voids them all). */
+export async function hmacHex(secret: string, data: string): Promise<string> {
+  const mac = new Uint8Array(await hmac(enc.encode(secret), data));
+  return Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** base64url(SHA-256(data)), the PKCE S256 code challenge of a verifier. */
+export async function sha256Base64Url(data: string): Promise<string> {
+  return bytesToB64(await crypto.subtle.digest('SHA-256', enc.encode(data)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}

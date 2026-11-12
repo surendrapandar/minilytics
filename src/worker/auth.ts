@@ -49,6 +49,7 @@ const SELF_HOSTED_OWNER: User = {
 export const AUTH_COOKIE = 'ml_auth';
 const AUTH_DAYS = 30;
 const OAUTH_COOKIE = 'ml_oauth';
+const NEXT_COOKIE = 'ml_next';
 
 export function isAdminEmail(env: Env, email: string | null | undefined) {
   if (!email) return false;
@@ -92,13 +93,20 @@ export async function currentUser(c: Context<AppEnv>): Promise<User | null> {
   if (!value) return null;
   const parts = value.split('.');
   if (Number(parts[parts.length - 1]) <= Date.now()) return null;
-  // Self-hosted password session: "admin.<expires>"
-  if (parts[0] === 'admin') return isHosted(c.env) ? null : SELF_HOSTED_OWNER;
-  // Hosted Google session: "u:<userId>.<expires>"
-  if (!parts[0].startsWith('u:') || !isHosted(c.env)) return null;
-  const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(parts[0].slice(2)).first<UserRow>();
+  return userForSubject(c.env, parts[0]);
+}
+
+/** Who a session (or an agent's OAuth grant) belongs to: "admin" self-hosted, "u:<userId>" hosted. */
+export const subjectOf = (env: Env, user: User) => (isHosted(env) ? `u:${user.id}` : 'admin');
+
+export async function userForSubject(env: Env, subject: string): Promise<User | null> {
+  // Self-hosted password session
+  if (subject === 'admin') return isHosted(env) ? null : SELF_HOSTED_OWNER;
+  // Hosted Google session
+  if (!subject.startsWith('u:') || !isHosted(env)) return null;
+  const row = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(subject.slice(2)).first<UserRow>();
   if (!row) return null;
-  const admin = isAdminEmail(c.env, row.email);
+  const admin = isAdminEmail(env, row.email);
   return {
     id: row.id,
     email: row.email,
@@ -132,16 +140,26 @@ function redirectUri(c: Context<AppEnv>) {
   return `${new URL(c.req.url).origin}/api/auth/google/callback`;
 }
 
+/** Where to go after signing in: only pages on this site (e.g. an agent's consent page), never elsewhere. */
+export function safeNext(next: string | null | undefined): string | null {
+  // Plain URL characters only: browsers drop tabs and newlines, which would turn "/\t/evil.com" into "//evil.com".
+  return next && /^\/(?!\/)[\w\-./?=&%~+:*]*$/.test(next) ? next : null;
+}
+
 export async function googleStart(c: Context<AppEnv>) {
   if (!isHosted(c.env)) return c.text('Google sign-in is not configured', 404);
   const state = randomId(16);
-  setCookie(c, OAUTH_COOKIE, state, {
+  const cookie = {
     httpOnly: true,
     secure: new URL(c.req.url).protocol === 'https:',
     sameSite: 'Lax',
     path: '/api/auth/google',
     maxAge: 600,
-  });
+  } as const;
+  setCookie(c, OAUTH_COOKIE, state, cookie);
+  const next = safeNext(c.req.query('next'));
+  if (next) setCookie(c, NEXT_COOKIE, next, cookie);
+  else deleteCookie(c, NEXT_COOKIE, { path: '/api/auth/google' });
   const q = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID!,
     redirect_uri: redirectUri(c),
@@ -217,6 +235,9 @@ export async function googleCallback(c: Context<AppEnv>) {
   if (isAdminEmail(c.env, email)) stmts.push(c.env.DB.prepare('UPDATE sites SET owner_id = ? WHERE owner_id IS NULL').bind(id));
   await c.env.DB.batch(stmts);
   await setSession(c, `u:${id}`);
+  const next = safeNext(getCookie(c, NEXT_COOKIE));
+  deleteCookie(c, NEXT_COOKIE, { path: '/api/auth/google' });
+  if (next) return c.redirect(next);
   // ?signup=1 lets the app record a "signup_completed" goal for brand-new accounts.
   return c.redirect(existing ? '/' : '/?signup=1');
 }

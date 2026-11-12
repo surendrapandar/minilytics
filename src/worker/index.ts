@@ -1,12 +1,45 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { handleEvent } from './collect';
-import { forgetSite, type AppEnv, type Site } from './env';
+import type { AppEnv, Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
-import { passwordsMatch, randomId } from './lib/crypto';
-import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
+import { passwordsMatch } from './lib/crypto';
+import { UserError } from './lib/errors';
+import {
+  handleDodoWebhook,
+  handleGoalApi,
+  handlePaymentApi,
+  handleStripeWebhook,
+  learnDodoProducts,
+  pendingPayments,
+  rematchPayments,
+} from './payments';
+import { mcpHandler } from './mcp';
+import {
+  authorizationServerMetadata,
+  authorizeDecision,
+  authorizePage,
+  deleteGrant,
+  listGrants,
+  protectedResourceMetadata,
+  register,
+  revoke,
+  token,
+} from './oauth';
 import { rememberOwnerDevice } from './owner';
+import {
+  createFunnel,
+  createSite,
+  deleteFunnel,
+  deleteSite,
+  getFunnel,
+  listFunnels,
+  listSites,
+  publicSite,
+  rotateApiKey,
+  updateSite,
+} from './sites';
 import { breakdown, customers, funnel, geo, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
@@ -21,6 +54,27 @@ app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
+
+// ---------- AI agents: MCP server + the OAuth that lets agents connect to it
+
+const agentCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Authorization', 'Content-Type', 'Mcp-Protocol-Version', 'Mcp-Session-Id', 'Last-Event-ID'],
+  exposeHeaders: ['WWW-Authenticate', 'Mcp-Session-Id'],
+  maxAge: 86400,
+});
+for (const path of ['/mcp', '/oauth/token', '/oauth/register', '/oauth/revoke', '/.well-known/*']) app.use(path, agentCors);
+
+app.get('/.well-known/oauth-protected-resource', protectedResourceMetadata);
+app.get('/.well-known/oauth-protected-resource/mcp', protectedResourceMetadata);
+app.get('/.well-known/oauth-authorization-server', authorizationServerMetadata);
+app.post('/oauth/register', register);
+app.get('/oauth/authorize', authorizePage);
+app.post('/oauth/authorize', authorizeDecision);
+app.post('/oauth/token', token);
+app.post('/oauth/revoke', revoke);
+app.all('/mcp', mcpHandler);
 
 // ---------- login
 
@@ -74,6 +128,10 @@ app.get('/api/billing/checkout', requireUser, checkout);
 
 // ---------- dashboard API (login required)
 
+app.use('/api/oauth/*', requireUser);
+app.get('/api/oauth/grants', listGrants);
+app.delete('/api/oauth/grants/:gid', deleteGrant);
+
 app.use('/api/sites', requireUser);
 app.use('/api/sites/*', requireUser);
 
@@ -89,47 +147,17 @@ const loadSite = async (c: Context<AppEnv>, next: Next) => {
 app.use('/api/sites/:id', loadSite);
 app.use('/api/sites/:id/*', loadSite);
 
-function cleanDomain(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .replace(/[/?#].*$/, '');
-}
-
-function validTimezone(tz: string) {
+/** Turn a UserError from the shared site/funnel code into the JSON error the dashboard expects. */
+async function handled(c: Context<AppEnv>, run: () => Promise<unknown>) {
   try {
-    new Intl.DateTimeFormat('en', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
+    return c.json(await run());
+  } catch (e) {
+    if (e instanceof UserError) return c.json({ error: e.message }, e.status);
+    throw e;
   }
 }
 
-const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
-const publicSite = (s: Site) => ({ ...s, dodo_webhook_secret: mask(s.dodo_webhook_secret), stripe_webhook_secret: mask(s.stripe_webhook_secret) });
-
-app.get('/api/sites', async (c) => {
-  const now = Date.now();
-  const access = siteAccessSql(c.env, c.get('user'));
-  const [sites, stats] = await c.env.DB.batch([
-    c.env.DB.prepare(`SELECT s.* FROM sites s WHERE ${access.sql} ORDER BY s.created_at`).bind(...access.params),
-    c.env.DB.prepare(
-      `SELECT site_id, COUNT(DISTINCT visitor_id) AS visitors,
-              COUNT(DISTINCT CASE WHEN last_seen_at > ? THEN visitor_id END) AS online
-       FROM sessions WHERE started_at > ? GROUP BY site_id`,
-    ).bind(now - 5 * 60_000, now - 86_400_000),
-  ]);
-  const by = new Map((stats.results as any[]).map((r) => [r.site_id, r]));
-  return c.json(
-    (sites.results as unknown as Site[]).map((s) => ({
-      ...publicSite(s),
-      visitors24h: by.get(s.id)?.visitors ?? 0,
-      online: by.get(s.id)?.online ?? 0,
-    })),
-  );
-});
+app.get('/api/sites', async (c) => c.json(await listSites(c.env, c.get('user'))));
 
 // Every site's totals and sparkline for the all-websites view.
 app.use('/api/sites-overview', requireUser);
@@ -140,91 +168,20 @@ app.get('/api/sites-overview', async (c) => {
 });
 
 app.post('/api/sites', async (c) => {
-  const user = c.get('user');
-  if (isHosted(c.env) && !user.paid) return c.json({ error: 'Choose a plan to add websites.' }, 402);
   const b = await c.req.json<Partial<Site>>().catch(() => ({}) as Partial<Site>);
-  const domain = cleanDomain(b.domain ?? '');
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return c.json({ error: 'Enter a domain like example.com' }, 400);
-  const tz = b.timezone && validTimezone(b.timezone) ? b.timezone : 'UTC';
-  const site: Site = {
-    id: randomId(8),
-    name: (b.name || domain).slice(0, 100),
-    domain,
-    timezone: tz,
-    currency: (b.currency || 'USD').toUpperCase().slice(0, 3),
-    api_key: 'ml_' + randomId(16),
-    dodo_webhook_secret: null,
-    created_at: Date.now(),
-  };
-  await c.env.DB.prepare(
-    'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, created_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  )
-    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, site.created_at, isHosted(c.env) ? user.id : null)
-    .run();
-  return c.json(publicSite(site));
+  return handled(c, () => createSite(c.env, c.get('user'), b));
 });
 
 app.get('/api/sites/:id', (c) => c.json(publicSite(c.get('site'))));
 
 app.patch('/api/sites/:id', async (c) => {
-  const site = c.get('site');
   const b = await c.req.json<Partial<Site>>().catch(() => ({}) as Partial<Site>);
-  const next = { ...site };
-  if (typeof b.name === 'string' && b.name.trim()) next.name = b.name.trim().slice(0, 100);
-  if (typeof b.domain === 'string') {
-    const d = cleanDomain(b.domain);
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)) return c.json({ error: 'Enter a domain like example.com' }, 400);
-    next.domain = d;
-  }
-  if (typeof b.timezone === 'string') {
-    if (!validTimezone(b.timezone)) return c.json({ error: 'Unknown timezone' }, 400);
-    next.timezone = b.timezone;
-  }
-  if (typeof b.currency === 'string' && /^[A-Za-z]{3}$/.test(b.currency)) next.currency = b.currency.toUpperCase();
-  if (typeof b.dodo_webhook_secret === 'string' && !b.dodo_webhook_secret.includes('•')) {
-    next.dodo_webhook_secret = b.dodo_webhook_secret.trim() || null;
-  }
-  if (typeof b.stripe_webhook_secret === 'string' && !b.stripe_webhook_secret.includes('•')) {
-    next.stripe_webhook_secret = b.stripe_webhook_secret.trim() || null;
-  }
-  if (typeof b.dodo_product_ids === 'string') {
-    const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
-    next.dodo_product_ids = ids.join(',') || null;
-  }
-  await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ? WHERE id = ?',
-  )
-    .bind(
-      next.name,
-      next.domain,
-      next.timezone,
-      next.currency,
-      next.dodo_webhook_secret,
-      next.dodo_product_ids ?? null,
-      next.stripe_webhook_secret ?? null,
-      site.id,
-    )
-    .run();
-  forgetSite(site.id);
-  return c.json(publicSite(next));
+  return handled(c, () => updateSite(c.env, c.get('site'), b));
 });
 
-app.post('/api/sites/:id/rotate-key', async (c) => {
-  const key = 'ml_' + randomId(16);
-  await c.env.DB.prepare('UPDATE sites SET api_key = ? WHERE id = ?').bind(key, c.get('site').id).run();
-  return c.json({ api_key: key });
-});
+app.post('/api/sites/:id/rotate-key', async (c) => c.json(await rotateApiKey(c.env, c.get('site'))));
 
-app.delete('/api/sites/:id', async (c) => {
-  const id = c.get('site').id;
-  await c.env.DB.batch(
-    ['events', 'sessions', 'visitors', 'payments', 'funnels'].map((t) =>
-      c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
-    ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
-  );
-  forgetSite(id);
-  return c.json({ ok: true });
-});
+app.delete('/api/sites/:id', async (c) => c.json(await deleteSite(c.env, c.get('site'))));
 
 // ---------- stats
 
@@ -241,15 +198,7 @@ app.get('/api/sites/:id/breakdown', async (c) => {
 app.get('/api/sites/:id/geo', async (c) => c.json(await geo(makeCtx(c))));
 
 // Dodo payments that couldn't be placed on a site yet, grouped by product.
-app.get('/api/sites/:id/pending-payments', async (c) => {
-  const r = await c.env.DB.prepare(
-    `SELECT product_id, COUNT(*) AS count, SUM(json_extract(payload, '$.amount')) AS amount, MAX(json_extract(payload, '$.currency')) AS currency
-     FROM pending_payments WHERE site_id = ? GROUP BY product_id ORDER BY MAX(ts) DESC`,
-  )
-    .bind(c.get('site').id)
-    .all();
-  return c.json(r.results);
-});
+app.get('/api/sites/:id/pending-payments', async (c) => c.json(await pendingPayments(c.env.DB, c.get('site'))));
 app.post('/api/sites/:id/pending-payments', async (c) => {
   const b = await c.req.json<{ product_id?: string }>().catch(() => ({}) as { product_id?: string });
   if (!b.product_id || !/^pdt_[\w-]+$/.test(b.product_id)) return c.json({ error: 'product_id is required' }, 400);
@@ -264,36 +213,22 @@ app.get('/api/sites/:id/visitors/:vid', async (c) =>
   c.json(await visitorProfile(c.env.DB, c.get('site'), c.req.param('vid'))),
 );
 
-app.get('/api/sites/:id/funnels', async (c) => {
-  const res = await c.env.DB.prepare('SELECT * FROM funnels WHERE site_id = ? ORDER BY created_at').bind(c.get('site').id).all();
-  return c.json(res.results.map((f: any) => ({ ...f, steps: JSON.parse(f.steps) })));
-});
+app.get('/api/sites/:id/funnels', async (c) => c.json(await listFunnels(c.env.DB, c.get('site'))));
 
 app.post('/api/sites/:id/funnels', async (c) => {
   const b = await c.req.json<{ name?: string; steps?: FunnelStep[] }>().catch(() => ({}) as { name?: string; steps?: FunnelStep[] });
-  const steps = (b.steps ?? [])
-    .filter((s) => (s.type === 'page' || s.type === 'goal') && typeof s.value === 'string' && s.value.trim())
-    .slice(0, 10)
-    .map((s) => ({ type: s.type, value: s.value.trim().slice(0, 200) }));
-  if (!b.name?.trim() || steps.length < 2) return c.json({ error: 'A funnel needs a name and at least 2 steps' }, 400);
-  const id = randomId(8);
-  await c.env.DB.prepare('INSERT INTO funnels (id, site_id, name, steps, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(id, c.get('site').id, b.name.trim().slice(0, 100), JSON.stringify(steps), Date.now())
-    .run();
-  return c.json({ id, name: b.name.trim(), steps });
+  return handled(c, () => createFunnel(c.env.DB, c.get('site'), b));
 });
 
 app.delete('/api/sites/:id/funnels/:fid', async (c) => {
-  await c.env.DB.prepare('DELETE FROM funnels WHERE id = ? AND site_id = ?').bind(c.req.param('fid'), c.get('site').id).run();
+  await deleteFunnel(c.env.DB, c.get('site'), c.req.param('fid'));
   return c.json({ ok: true });
 });
 
 app.get('/api/sites/:id/funnels/:fid/stats', async (c) => {
-  const f = await c.env.DB.prepare('SELECT * FROM funnels WHERE id = ? AND site_id = ?')
-    .bind(c.req.param('fid'), c.get('site').id)
-    .first<{ steps: string }>();
+  const f = await getFunnel(c.env.DB, c.get('site'), c.req.param('fid'));
   if (!f) return c.json({ error: 'funnel not found' }, 404);
-  return c.json(await funnel(makeCtx(c), JSON.parse(f.steps)));
+  return c.json(await funnel(makeCtx(c), f.steps));
 });
 
 app.all('/api/*', (c) => c.json({ error: 'not found' }, 404));

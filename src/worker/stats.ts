@@ -25,20 +25,25 @@ const SESSION_FILTERS = [
   'hostname',
 ] as const;
 
-export type Filters = Partial<Record<(typeof SESSION_FILTERS)[number] | 'page' | 'goal', string>>;
+export const FILTER_KEYS = [...SESSION_FILTERS, 'page', 'goal'] as const;
+export type Filters = Partial<Record<(typeof FILTER_KEYS)[number], string>>;
 
 export function parseFilters(raw: string | undefined): Filters {
   if (!raw) return {};
   try {
-    const obj = JSON.parse(raw);
-    const out: Filters = {};
-    for (const k of [...SESSION_FILTERS, 'page', 'goal'] as const) {
-      if (typeof obj[k] === 'string') out[k] = obj[k].slice(0, 500);
-    }
-    return out;
+    return cleanFilters(JSON.parse(raw));
   } catch {
     return {};
   }
+}
+
+export function cleanFilters(obj: Record<string, unknown> | null | undefined): Filters {
+  const out: Filters = {};
+  for (const k of FILTER_KEYS) {
+    const v = obj?.[k];
+    if (typeof v === 'string') out[k] = v.slice(0, 500);
+  }
+  return out;
 }
 
 /** SQL + params restricting sessions `s` by the dashboard filters (not by time). */
@@ -67,7 +72,7 @@ function filterSql(f: Filters): { sql: string; params: unknown[] } {
 
 const hasFilters = (f: Filters) => Object.keys(f).length > 0;
 
-interface Ctx {
+export interface Ctx {
   db: D1Database;
   site: Site;
   range: Range;
@@ -76,10 +81,18 @@ interface Ctx {
 }
 
 export function makeCtx(c: Context<AppEnv>): Ctx {
-  const site = c.get('site');
   const q = c.req.query();
+  return ctxFor(c.env.DB, c.get('site'), q, parseFilters(q.filters));
+}
+
+export function ctxFor(
+  db: D1Database,
+  site: Site,
+  q: { period?: string; from?: string; to?: string; granularity?: string },
+  filters: Filters = {},
+): Ctx {
   const range = resolveRange(q, site.timezone, site.created_at);
-  return { db: c.env.DB, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+  return { db, site, range, filters, offset: tzOffset(site.timezone, range.to) };
 }
 
 function sessionsWhere(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {
@@ -230,6 +243,9 @@ export interface BreakdownRow {
   icon?: string | null;
   extra?: string | null;
 }
+
+/** Everything `breakdown` can group by. */
+export const DIMENSIONS = [...Object.keys(SESSION_DIMS), 'page', 'exit_link', 'goal'];
 
 export async function breakdown(ctx: Ctx, dim: string, limit = 100): Promise<BreakdownRow[]> {
   const { db } = ctx;

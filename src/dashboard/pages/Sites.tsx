@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { navigate, useMe } from '../App';
+import { AgentsModal } from '../components/AgentsModal';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
@@ -22,6 +23,7 @@ const AUTO_REFRESH_MS = 60_000;
 export function Sites() {
   const { me } = useMe();
   const [adding, setAdding] = useState(false);
+  const [agents, setAgents] = useState(false);
   const [period, setPeriod] = usePref('ml_sites_period', '30d');
   const [reloadKey, setReloadKey] = useState(0);
   const { data: sites, loading: loadingSites } = useApi<Site[]>('/api/sites', reloadKey);
@@ -57,6 +59,9 @@ export function Sites() {
             </button>
           )}
           <ThemeToggle />
+          <button className="btn" onClick={() => setAgents(true)} title="Connect Claude, ChatGPT, Cursor… over MCP">
+            AI agents
+          </button>
           <button className="btn" onClick={logout}>
             Log out
           </button>
@@ -106,6 +111,7 @@ export function Sites() {
         )}
       </div>
       <AddSite open={adding} onClose={() => setAdding(false)} />
+      <AgentsModal open={agents} onClose={() => setAgents(false)} />
     </div>
   );
 }
