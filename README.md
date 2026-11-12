@@ -289,7 +289,11 @@ No analytics tool is 100% accurate. These are the main gaps and how this project
   rewrite). Payments are always recorded by the webhook, even when the visitor's browser blocked tracking.
 - **Safari** keeps cookies set by JavaScript for at most 7 days. A Safari visitor who returns after more than a week counts as new. The
   email fallback above recovers most of these payments.
-- **Bots** are filtered by user agent and the `navigator.webdriver` flag.
+- **Bots** with a bot user agent, or with the `navigator.webdriver` flag, are dropped. Other visits are counted as **likely bots**
+  instead of visitors when they come from a cloud or hosting network (AWS, Hetzner, DigitalOcean…), arrive without a browser
+  `Origin`, or never show a mouse movement, touch, wheel scroll or key press. Switch the dashboard from *Visitors* to *Likely bots*
+  to see them. Payments always count. When the script is proxied through your own domain, only the input check applies, since the
+  network and headers are the proxy's. AI agents driving a real browser from a home connection still look like people.
 - Revenue in a different currency than the site's is converted only when Dodo gives a settlement amount in the site's currency.
 
 ## Local development

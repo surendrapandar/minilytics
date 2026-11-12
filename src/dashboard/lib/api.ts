@@ -65,6 +65,7 @@ export interface Overview {
   current: Kpis;
   previous: Kpis;
   online: number;
+  traffic: { humans: number; bots: number };
   series: { bucket: string; visitors: number; pageviews: number; revenue: number; payments: number }[];
 }
 

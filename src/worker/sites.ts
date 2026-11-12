@@ -2,7 +2,7 @@ import { isHosted, siteAccessSql, type User } from './auth';
 import { forgetSite, type Env, type Site } from './env';
 import { randomId } from './lib/crypto';
 import { UserError } from './lib/errors';
-import type { FunnelStep } from './stats';
+import { HUMAN_SQL, type FunnelStep } from './stats';
 
 /**
  * Managing sites, funnels and goals. Shared by the dashboard API and the MCP tools, so both behave the same.
@@ -47,7 +47,7 @@ export async function listSites(env: Env, user: User) {
     env.DB.prepare(
       `SELECT site_id, COUNT(DISTINCT visitor_id) AS visitors,
               COUNT(DISTINCT CASE WHEN last_seen_at > ? THEN visitor_id END) AS online
-       FROM sessions WHERE started_at > ? GROUP BY site_id`,
+       FROM sessions s WHERE started_at > ? AND ${HUMAN_SQL} GROUP BY site_id`,
     ).bind(now - 5 * 60_000, now - 86_400_000),
   ]);
   const by = new Map((stats.results as any[]).map((r) => [r.site_id, r]));

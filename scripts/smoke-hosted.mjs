@@ -87,7 +87,7 @@ const ownerSites = (await call('/api/sites', { cookie: O })).body;
 assert(!ownerSites.some((s) => s.id === aliceSite), "owner doesn't see customers' sites");
 
 // Tracking stops when the plan ends
-const ev = (body) => fetch(BASE + '/api/event', { method: 'POST', headers: { 'user-agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/129 Safari/537.36' }, body: JSON.stringify({ w: aliceSite, u: 'https://alice-site.com/', t: 'pageview', vid: crypto.randomUUID(), sid: crypto.randomUUID(), ...body }) });
+const ev = (body) => fetch(BASE + '/api/event', { method: 'POST', headers: { 'user-agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/129 Safari/537.36', origin: 'https://alice-site.com' }, body: JSON.stringify({ w: aliceSite, u: 'https://alice-site.com/', t: 'pageview', vid: crypto.randomUUID(), sid: crypto.randomUUID(), ...body }) });
 await ev({});
 const visitorsWhilePaid = (await call(`/api/sites/${aliceSite}/overview?period=today`, { cookie: A })).body.current.visitors;
 assert(visitorsWhilePaid === 1, 'events recorded while paid');

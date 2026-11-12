@@ -25,7 +25,7 @@ const SESSION_FILTERS = [
   'hostname',
 ] as const;
 
-export const FILTER_KEYS = [...SESSION_FILTERS, 'page', 'goal'] as const;
+export const FILTER_KEYS = [...SESSION_FILTERS, 'page', 'goal', 'traffic'] as const;
 export type Filters = Partial<Record<(typeof FILTER_KEYS)[number], string>>;
 
 export function parseFilters(raw: string | undefined): Filters {
@@ -46,10 +46,16 @@ export function cleanFilters(obj: Record<string, unknown> | null | undefined): F
   return out;
 }
 
-/** SQL + params restricting sessions `s` by the dashboard filters (not by time). */
+/** Visits flagged on arrival (cloud network, no browser origin), or with no sign of a person (mouse, touch, typing). */
+export const BOT_SQL = '(s.bot IS NOT NULL OR s.engaged = 0)';
+export const HUMAN_SQL = '(s.bot IS NULL AND s.engaged = 1)';
+
+/** SQL + params restricting sessions `s` by the dashboard filters (not by time). Real visitors only, unless `traffic` is "bots" or "all". */
 function filterSql(f: Filters): { sql: string; params: unknown[] } {
   const parts: string[] = [];
   const params: unknown[] = [];
+  if (f.traffic === 'bots') parts.push(BOT_SQL);
+  else if (f.traffic !== 'all') parts.push(HUMAN_SQL);
   for (const k of SESSION_FILTERS) {
     const v = f[k];
     if (v === undefined) continue;
@@ -70,7 +76,8 @@ function filterSql(f: Filters): { sql: string; params: unknown[] } {
   return { sql: parts.length ? ' AND ' + parts.join(' AND ') : '', params };
 }
 
-const hasFilters = (f: Filters) => Object.keys(f).length > 0;
+/** Money is real even when the visit it's credited to looked automated, so traffic only narrows payments to bots. */
+const payFilters = (f: Filters): Filters => (f.traffic === 'bots' ? f : { ...f, traffic: 'all' });
 
 export interface Ctx {
   db: D1Database;
@@ -103,16 +110,17 @@ function sessionsWhere(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {
   };
 }
 
-/** Payments in the period; with filters, only those credited to a matching visit. */
+/** Payments in the period; with filters, only those credited to a matching visit (`joined`: `s` is available). */
 function paymentsFrom(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {
-  if (!hasFilters(ctx.filters)) {
-    return { sql: `payments p WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`, params: [ctx.site.id, from, to] };
+  const f = filterSql(payFilters(ctx.filters));
+  if (!f.sql) {
+    return { sql: `payments p WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`, params: [ctx.site.id, from, to], joined: false };
   }
-  const f = filterSql(ctx.filters);
   return {
     sql: `payments p JOIN sessions s ON s.site_id = p.site_id AND s.id = p.session_id
           WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?${f.sql}`,
     params: [ctx.site.id, from, to, ...f.params],
+    joined: true,
   };
 }
 
@@ -162,19 +170,20 @@ export async function overview(ctx: Ctx) {
   const prevFrom = range.from - (range.to - range.from);
   const cur = sessionsWhere(ctx);
   const prev = sessionsWhere(ctx, prevFrom, range.from);
+  const both = sessionsWhere({ ...ctx, filters: { ...ctx.filters, traffic: 'all' } });
   const curPay = paymentsFrom(ctx);
   const prevPay = paymentsFrom(ctx, prevFrom, range.from);
   const sb = bucketSql('s.started_at', range.granularity, ctx.offset);
   const pb = bucketSql('p.ts', range.granularity, ctx.offset);
   const now = Date.now();
 
-  const [k1, k0, r1, r0, online, ts, tr] = await db.batch([
+  const [k1, k0, r1, r0, online, ts, tr, split] = await db.batch([
     db.prepare(KPI_SQL(cur.sql)).bind(...cur.params),
     db.prepare(KPI_SQL(prev.sql)).bind(...prev.params),
     db.prepare(REVENUE_SQL(curPay.sql)).bind(...curPay.params),
     db.prepare(REVENUE_SQL(prevPay.sql)).bind(...prevPay.params),
     db
-      .prepare('SELECT COUNT(DISTINCT visitor_id) AS n FROM sessions WHERE site_id = ? AND started_at > ? AND last_seen_at > ?')
+      .prepare(`SELECT COUNT(DISTINCT visitor_id) AS n FROM sessions s WHERE site_id = ? AND started_at > ? AND last_seen_at > ? AND ${HUMAN_SQL}`)
       .bind(site.id, now - 6 * 3_600_000, now - 5 * 60_000),
     db
       .prepare(
@@ -188,6 +197,13 @@ export async function overview(ctx: Ctx) {
          FROM ${curPay.sql} GROUP BY b`,
       )
       .bind(...curPay.params),
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT CASE WHEN ${HUMAN_SQL} THEN s.visitor_id END) AS humans,
+                COUNT(DISTINCT CASE WHEN ${BOT_SQL} THEN s.visitor_id END) AS bots
+         FROM sessions s WHERE ${both.sql}`,
+      )
+      .bind(...both.params),
   ]);
 
   const visitorsBy = new Map((ts.results as any[]).map((r) => [r.b, r]));
@@ -208,6 +224,8 @@ export async function overview(ctx: Ctx) {
     current: kpis(k1.results[0] as KpiRow, r1.results[0] as RevRow),
     previous: kpis(k0.results[0] as KpiRow, r0.results[0] as RevRow),
     online: (online.results[0] as { n: number }).n,
+    /** Visitors on each side of the bot split, for the traffic switch. */
+    traffic: split.results[0] as { humans: number; bots: number },
     series,
   };
 }
@@ -256,7 +274,7 @@ export async function breakdown(ctx: Ctx, dim: string, limit = 100): Promise<Bre
     const w = sessionsWhere(ctx);
     const pay = paymentsFrom(ctx);
     // Payments need the session columns even without filters.
-    const payJoin = hasFilters(ctx.filters)
+    const payJoin = pay.joined
       ? pay
       : {
           sql: `payments p JOIN sessions s ON s.site_id = p.site_id AND s.id = p.session_id WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`,
@@ -284,7 +302,7 @@ export async function breakdown(ctx: Ctx, dim: string, limit = 100): Promise<Bre
 
   if (dim === 'page') {
     const f = filterSql(ctx.filters);
-    const join = hasFilters(ctx.filters) ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
+    const join = f.sql ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
     const params = [ctx.site.id, ctx.range.from, ctx.range.to, ...f.params];
     const base = `FROM events e ${join} WHERE e.site_id = ? AND e.type = 'pageview' AND e.ts >= ? AND e.ts < ?${f.sql}`;
     const [v, r] = await db.batch([
@@ -310,7 +328,7 @@ export async function breakdown(ctx: Ctx, dim: string, limit = 100): Promise<Bre
   if (dim === 'exit_link' || dim === 'goal') {
     const type = dim === 'goal' ? 'goal' : 'outbound';
     const f = filterSql(ctx.filters);
-    const join = hasFilters(ctx.filters) ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
+    const join = f.sql ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
     const params = [ctx.site.id, type, ctx.range.from, ctx.range.to, ...f.params];
     const base = `FROM events e ${join} WHERE e.site_id = ? AND e.type = ? AND e.ts >= ? AND e.ts < ?${f.sql}`;
     const [v, r] = await db.batch([
@@ -366,7 +384,7 @@ export async function geo(ctx: Ctx, limit = 150): Promise<GeoPoint[]> {
   const lim = Math.max(1, Math.min(500, limit));
   const w = sessionsWhere(ctx);
   const pay = paymentsFrom(ctx);
-  const payJoin = hasFilters(ctx.filters)
+  const payJoin = pay.joined
     ? pay
     : {
         sql: `payments p JOIN sessions s ON s.site_id = p.site_id AND s.id = p.session_id WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`,
@@ -398,8 +416,8 @@ export async function geo(ctx: Ctx, limit = 150): Promise<GeoPoint[]> {
 /** Customers in the period, with where they came from (the "Journey" tab). */
 export async function customers(ctx: Ctx) {
   const { db, site, range } = ctx;
-  const f = filterSql(ctx.filters);
-  const join = hasFilters(ctx.filters) ? 'JOIN' : 'LEFT JOIN';
+  const f = filterSql(payFilters(ctx.filters));
+  const join = f.sql ? 'JOIN' : 'LEFT JOIN';
   const res = await db
     .prepare(
       `SELECT p.id, p.ts, p.amount, p.currency, p.renewal, p.matched_by, p.email AS pay_email, p.name AS pay_name, p.visitor_id, p.session_id,
@@ -426,7 +444,8 @@ export async function visitors(ctx: Ctx) {
               (SELECT COALESCE(SUM(amount), 0) FROM payments p WHERE p.site_id = t.site_id AND p.visitor_id = t.visitor_id) AS spent
        FROM (
          SELECT s.site_id, s.visitor_id, MAX(s.last_seen_at) AS last_seen, COUNT(*) AS sessions, SUM(s.pageviews) AS pageviews,
-                SUM(s.duration) AS duration, s.source, s.referrer_domain, s.country, s.city, s.device, s.os, s.browser
+                SUM(s.duration) AS duration, s.source, s.referrer_domain, s.country, s.city, s.device, s.os, s.browser,
+                MAX(COALESCE(s.bot, CASE WHEN s.engaged = 0 THEN 'no_engagement' END)) AS bot
          FROM sessions s WHERE ${w.sql} GROUP BY s.visitor_id ORDER BY last_seen DESC LIMIT 200
        ) t LEFT JOIN visitors v ON v.site_id = t.site_id AND v.id = t.visitor_id
        ORDER BY t.last_seen DESC`,
@@ -466,7 +485,7 @@ export interface FunnelStep {
 export async function funnel(ctx: Ctx, steps: FunnelStep[]) {
   if (!steps.length) return [];
   const f = filterSql(ctx.filters);
-  const join = hasFilters(ctx.filters) ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
+  const join = f.sql ? 'JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id' : '';
   const conds: string[] = [];
   const params: unknown[] = [];
   for (const st of steps) {
@@ -516,7 +535,7 @@ export async function realtime(db: D1Database, site: Site, now = Date.now()) {
                 v.name, v.email,
                 (SELECT COALESCE(SUM(amount), 0) FROM payments p WHERE p.site_id = s.site_id AND p.visitor_id = s.visitor_id) AS spent
          FROM sessions s LEFT JOIN visitors v ON v.site_id = s.site_id AND v.id = s.visitor_id
-         WHERE s.site_id = ? AND s.started_at > ? AND s.last_seen_at > ?
+         WHERE s.site_id = ? AND s.started_at > ? AND s.last_seen_at > ? AND ${HUMAN_SQL}
          ORDER BY s.last_seen_at DESC LIMIT 500`,
       )
       .bind(site.id, now - 6 * 3_600_000, now - ACTIVE_MS),
@@ -526,7 +545,7 @@ export async function realtime(db: D1Database, site: Site, now = Date.now()) {
          FROM events e
          LEFT JOIN sessions s ON s.site_id = e.site_id AND s.id = e.session_id
          LEFT JOIN visitors v ON v.site_id = e.site_id AND v.id = e.visitor_id
-         WHERE e.site_id = ? AND e.ts > ? AND e.type IN ('pageview', 'goal')
+         WHERE e.site_id = ? AND e.ts > ? AND e.type IN ('pageview', 'goal') AND ${HUMAN_SQL}
          ORDER BY e.ts DESC LIMIT 100`,
       )
       .bind(site.id, now - FEED_MS),
@@ -605,19 +624,19 @@ export async function sparklines(db: D1Database, siteIds: string[], period: stri
 
   const [totals, pay, online, vs, rs] = await db.batch([
     db
-      .prepare(`SELECT site_id, COUNT(DISTINCT visitor_id) AS v FROM sessions WHERE site_id IN (${ids}) AND started_at >= ? GROUP BY site_id`)
+      .prepare(`SELECT site_id, COUNT(DISTINCT visitor_id) AS v FROM sessions s WHERE site_id IN (${ids}) AND started_at >= ? AND ${HUMAN_SQL} GROUP BY site_id`)
       .bind(...siteIds, from),
     db.prepare(`SELECT site_id, SUM(amount) AS r FROM payments WHERE site_id IN (${ids}) AND ts >= ? GROUP BY site_id`).bind(...siteIds, from),
     db
       .prepare(
-        `SELECT site_id, COUNT(DISTINCT visitor_id) AS n FROM sessions
-         WHERE site_id IN (${ids}) AND started_at > ? AND last_seen_at > ? GROUP BY site_id`,
+        `SELECT site_id, COUNT(DISTINCT visitor_id) AS n FROM sessions s
+         WHERE site_id IN (${ids}) AND started_at > ? AND last_seen_at > ? AND ${HUMAN_SQL} GROUP BY site_id`,
       )
       .bind(...siteIds, now - 6 * 3_600_000, now - 5 * 60_000),
     db
       .prepare(
-        `SELECT site_id, ${bucket('started_at')} AS b, COUNT(DISTINCT visitor_id) AS v FROM sessions
-         WHERE site_id IN (${ids}) AND started_at >= ? GROUP BY site_id, b`,
+        `SELECT site_id, ${bucket('started_at')} AS b, COUNT(DISTINCT visitor_id) AS v FROM sessions s
+         WHERE site_id IN (${ids}) AND started_at >= ? AND ${HUMAN_SQL} GROUP BY site_id, b`,
       )
       .bind(...siteIds, from),
     db

@@ -3,6 +3,7 @@ import { classify } from '../shared/sources';
 import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
 import { isOwnerVisit } from './owner';
+import { isDatacenter } from './lib/networks';
 import { isBot, parseUA } from './lib/ua';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
@@ -20,7 +21,12 @@ interface Payload {
   n?: string;
   p?: Record<string, unknown>;
   d?: number;
+  /** 1 once the visitor has moved the mouse, touched, scrolled with a wheel or typed. Older scripts don't send it. */
+  e?: number;
 }
+
+/** Why a visit was flagged as a likely bot when it arrived. */
+export type BotReason = 'datacenter' | 'no_origin';
 
 const clip = (s: unknown, n = 255): string | null =>
   typeof s === 'string' && s.trim() ? s.trim().slice(0, n) : null;
@@ -74,11 +80,42 @@ export async function handleEvent(c: Context<AppEnv>) {
   }
   // Only accept data for the site's own domain, so nobody can pollute your stats from elsewhere.
   if (!belongsTo(url.hostname, site.domain)) return c.body(null, 403);
+  // Browsers send the page's origin with this request; a page on another site can't pretend to be yours.
+  const origin = c.req.header('origin');
+  const hasOrigin = !!origin && origin !== 'null';
+  if (hasOrigin && !belongsTo(hostOf(origin), site.domain)) return c.body(null, 403);
   // Owners checking their own site would otherwise show up as visitors and "online".
   if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
-  await ingest(c.env.DB, site, body, url, ua, geoOf(c), Date.now());
+  await ingest(c.env.DB, site, body, url, ua, geoOf(c), Date.now(), botReason(c, hasOrigin));
   return c.body(null, 202);
+}
+
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Is the tracker proxied through the site's own domain (to dodge ad blockers)? Then the request comes from the
+ * proxy's server, so its network says nothing about the visitor.
+ */
+function isProxied(c: Context<AppEnv>): boolean {
+  if (c.req.header('x-vercel-ip-country')) return true;
+  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  return !!forwarded && forwarded !== c.req.header('cf-connecting-ip');
+}
+
+/** Signs of automation visible on arrival, before the visit does anything. */
+function botReason(c: Context<AppEnv>, hasOrigin: boolean): BotReason | null {
+  if (isProxied(c)) return null;
+  if (!hasOrigin) return 'no_origin';
+  const cf = (c.req.raw as { cf?: IncomingRequestCfProperties }).cf;
+  if (isDatacenter(cf?.asn as number | undefined)) return 'datacenter';
+  return null;
 }
 
 export interface Geo {
@@ -135,15 +172,18 @@ export async function ingest(
   ua: string,
   geo: Geo,
   now: number,
+  bot: BotReason | null = null,
 ) {
   const path = normalizePath(url.pathname);
   const { t, vid, sid } = body;
+  // Scripts from before engagement tracking can't tell, so they count as engaged.
+  const engaged = body.e === undefined || !!body.e ? 1 : 0;
 
   if (t === 'ping') {
     const ms = Math.max(0, Math.min(MAX_PING_MS, Math.round(Number(body.d) || 0)));
     await db
-      .prepare('UPDATE sessions SET duration = duration + ?, last_seen_at = ? WHERE site_id = ? AND id = ?')
-      .bind(ms, now, site.id, sid)
+      .prepare('UPDATE sessions SET duration = duration + ?, last_seen_at = ?, engaged = MAX(engaged, ?) WHERE site_id = ? AND id = ?')
+      .bind(ms, now, engaged, site.id, sid)
       .run();
     return;
   }
@@ -168,7 +208,9 @@ export async function ingest(
 
   const stmts: D1PreparedStatement[] = [];
   if (!existing) {
-    stmts.push(...newSession(db, site, body, url, path, ua, geo, now));
+    stmts.push(...newSession(db, site, body, url, path, ua, geo, now, bot, engaged));
+  } else if (engaged) {
+    stmts.push(db.prepare('UPDATE sessions SET engaged = 1 WHERE site_id = ? AND id = ? AND engaged = 0').bind(site.id, sid));
   }
 
   if (t === 'pageview') {
@@ -261,6 +303,8 @@ function newSession(
   ua: string,
   geo: Geo,
   now: number,
+  bot: BotReason | null,
+  engaged: number,
 ): D1PreparedStatement[] {
   let referrer: string | null = null;
   let referrerDomain: string | null = null;
@@ -297,8 +341,8 @@ function newSession(
       .prepare(
         `INSERT OR IGNORE INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, pageviews, hostname, entry_page, exit_page,
           referrer, referrer_domain, source, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref,
-          country, region, city, browser, os, device, lat, lon)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          country, region, city, browser, os, device, lat, lon, bot, engaged)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         site.id,
@@ -327,6 +371,8 @@ function newSession(
         device,
         geo.lat,
         geo.lon,
+        bot,
+        engaged,
       ),
     // Separate statement so concurrent first events (pageview + goal racing) never double count.
     ...(pageviews

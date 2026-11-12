@@ -6,6 +6,7 @@ import { belongsTo, normalizePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
 import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
 import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
+import { isDatacenter } from '../src/worker/lib/networks';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
 describe('classify', () => {
@@ -45,6 +46,16 @@ describe('user agents', () => {
     expect(isBot('Mozilla/5.0 HeadlessChrome/120')).toBe(true);
     expect(isBot('')).toBe(true);
     expect(isBot('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129 Safari/537.36')).toBe(false);
+  });
+});
+
+describe('networks', () => {
+  it('flags cloud providers but not privacy relays', () => {
+    expect(isDatacenter(16509)).toBe(true); // AWS
+    expect(isDatacenter(24940)).toBe(true); // Hetzner
+    expect(isDatacenter(13335)).toBe(false); // Cloudflare (iCloud Private Relay, WARP)
+    expect(isDatacenter(7922)).toBe(false); // Comcast
+    expect(isDatacenter(undefined)).toBe(false);
   });
 });
 

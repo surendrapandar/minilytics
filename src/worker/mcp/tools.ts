@@ -72,8 +72,12 @@ const RANGE: Record<string, Schema> = {
     description:
       'Only count visits matching all of these, like clicking rows in the dashboard. E.g. {"source":"Google","country":"US"}. ' +
       'Values are exact labels as returned by get_breakdown (countries are ISO codes). An empty string matches "none". ' +
-      '"page" keeps visits that viewed that path, "goal" visits that completed that goal.',
-    properties: Object.fromEntries(FILTER_KEYS.map((k) => [k, { type: 'string' } as Schema])),
+      '"page" keeps visits that viewed that path, "goal" visits that completed that goal. ' +
+      'Reports count real visitors only; "traffic": "bots" shows likely bots instead (cloud networks, non-browser requests, ' +
+      'no mouse/touch/keyboard input), "all" both. Revenue always counts every payment unless traffic is "bots".',
+    properties: Object.fromEntries(
+      FILTER_KEYS.map((k) => [k, (k === 'traffic' ? { type: 'string', enum: ['humans', 'bots', 'all'] } : { type: 'string' }) as Schema]),
+    ),
     additionalProperties: false,
   },
 };
@@ -338,6 +342,7 @@ export const TOOLS: Tool[] = [
         previous_range: { from: o.range.from - span, to: o.range.from },
         filters: sc.filters,
         online_now: o.online,
+        visitors_by_traffic: o.traffic,
         current: o.current,
         previous: o.previous,
         change_vs_previous: change,

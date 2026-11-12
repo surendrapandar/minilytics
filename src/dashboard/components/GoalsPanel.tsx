@@ -5,6 +5,7 @@ import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo, fmtDateTime, fmtDuration, fmtNumber, fmtPct } from '../lib/format';
 import { useApi } from '../lib/useApi';
+import { BotBadge } from './BotBadge';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 
 type Tab = 'goal' | 'funnel' | 'user' | 'journey';
@@ -418,7 +419,13 @@ function Users({ search }: { search: string }) {
                     device={r.device}
                     os={r.os}
                     browser={r.browser}
-                    badge={r.spent > 0 ? <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">Customer</span> : null}
+                    badge={
+                      r.spent > 0 ? (
+                        <span className="rounded-md border border-revenue/30 bg-revenueSoft/50 px-1.5 py-0.5 text-xs text-revenue">Customer</span>
+                      ) : (
+                        <BotBadge reason={r.bot} />
+                      )
+                    }
                   />
                 </td>
                 <td className="py-3">

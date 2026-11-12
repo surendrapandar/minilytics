@@ -2,6 +2,7 @@ import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo, fmtDateTime, fmtDuration } from '../lib/format';
 import { useApi } from '../lib/useApi';
+import { BotBadge, sessionBotReason } from './BotBadge';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 import { Modal } from './Modal';
 
@@ -84,6 +85,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                     {s.utm_campaign && <span className="rounded-md bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">campaign: {s.utm_campaign}</span>}
                     {s.ref && <span className="rounded-md bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-300">ref: {s.ref}</span>}
                     <span className="text-stone-400">{fmtDuration(s.duration)}</span>
+                    <BotBadge reason={sessionBotReason(s)} />
                   </div>
                   <ol className="mt-2 space-y-1 text-sm">
                     {evs.map((e, i) => (

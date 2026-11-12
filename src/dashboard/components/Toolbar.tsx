@@ -54,6 +54,12 @@ const Chevron = () => (
   </svg>
 );
 
+const TRAFFIC = [
+  { value: undefined, label: 'Visitors', hint: 'Real people' },
+  { value: 'bots', label: 'Likely bots', hint: 'Cloud networks, scripts and visits with no mouse, touch or typing' },
+  { value: 'all', label: 'All traffic', hint: 'Both' },
+];
+
 function itemCls(active: boolean) {
   return `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-stone-100 ${active ? 'font-medium text-ink' : 'text-stone-600'}`;
 }
@@ -208,6 +214,36 @@ export function Toolbar({
               {g.label}
             </button>
           ))
+        }
+      </Dropdown>
+
+      <Dropdown
+        button={
+          <button className="btn h-11 px-4 text-base">
+            {q.filters.traffic === 'bots' && <span className="h-2 w-2 rounded-full bg-amber-500" />}
+            {TRAFFIC.find((t) => t.value === q.filters.traffic)?.label ?? 'Visitors'} <Chevron />
+          </button>
+        }
+      >
+        {(close) =>
+          TRAFFIC.map((t) => {
+            const n = t.value === undefined ? overview?.traffic.humans : t.value === 'bots' ? overview?.traffic.bots : undefined;
+            return (
+              <button
+                key={t.label}
+                className={itemCls(q.filters.traffic === t.value)}
+                title={t.hint}
+                onClick={() => {
+                  close();
+                  const { traffic: _, ...rest } = q.filters;
+                  update({ filters: t.value ? { ...rest, traffic: t.value } : rest });
+                }}
+              >
+                <span className="flex-1">{t.label}</span>
+                {n !== undefined && <span className="text-xs tabular-nums text-stone-400">{n.toLocaleString()}</span>}
+              </button>
+            );
+          })
         }
       </Dropdown>
 

@@ -23,8 +23,13 @@ async function call(path, opts = {}) {
 }
 
 const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36';
-const event = (siteId, payload) =>
-  fetch(BASE + '/api/event', { method: 'POST', headers: { 'content-type': 'text/plain', 'user-agent': ua }, body: JSON.stringify({ w: siteId, ...payload }) });
+// Like the browser script: sent from the site's page (Origin), by someone who has moved the mouse or typed (e: 1).
+const post = (siteId, payload, headers = {}) => {
+  const h = { 'content-type': 'text/plain', 'user-agent': ua, origin: 'https://smoke-test.com', ...headers };
+  for (const k of Object.keys(h)) if (h[k] === null) delete h[k];
+  return fetch(BASE + '/api/event', { method: 'POST', headers: h, body: JSON.stringify({ w: siteId, e: 1, ...payload }) });
+};
+const event = (siteId, payload) => post(siteId, payload);
 
 assert((await call('/api/sites')).status === 401, 'dashboard API needs login');
 assert((await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ password: 'nope' }) })).status === 401, 'wrong password rejected');
@@ -182,6 +187,25 @@ for (const g of ['hour', 'day', 'week', 'month']) {
   const res = await call(`/api/sites/${site.id}/overview?period=30d&granularity=${g}`);
   assert(res.status === 200, `granularity ${g} -> ${res.body.range.granularity}`);
 }
+
+// Likely bots are counted apart from visitors, and can still be looked at
+const overviewWith = async (filters) => (await call(`/api/sites/${site.id}/overview?period=today&filters=${encodeURIComponent(JSON.stringify(filters))}`)).body;
+const before = (await overviewWith({})).traffic;
+r = await post(site.id, { t: 'pageview', u: 'https://smoke-test.com/', vid: crypto.randomUUID(), sid: crypto.randomUUID() }, { origin: 'https://evil.com' });
+assert(r.status === 403, 'Origin of another site rejected');
+r = await post(site.id, { t: 'pageview', u: 'https://smoke-test.com/', vid: crypto.randomUUID(), sid: crypto.randomUUID() }, { origin: null });
+assert(r.status === 202, 'request without Origin accepted (as a likely bot)');
+const idle = { vid: crypto.randomUUID(), sid: crypto.randomUUID() };
+await event(site.id, { t: 'pageview', u: 'https://smoke-test.com/', e: 0, ...idle });
+let traffic = (await overviewWith({})).traffic;
+assert(traffic.humans === before.humans && traffic.bots === before.bots + 2, `no Origin and no input count as bots (${JSON.stringify(traffic)})`);
+const botList = (await call(`/api/sites/${site.id}/visitors?period=today&filters=${encodeURIComponent(JSON.stringify({ traffic: 'bots' }))}`)).body;
+assert(botList.length === traffic.bots && botList.some((v) => v.bot === 'no_origin') && botList.some((v) => v.bot === 'no_engagement'), 'bot view lists them with a reason');
+assert((await overviewWith({ traffic: 'bots' })).current.revenue === 0, 'bots made no money');
+assert((await overviewWith({ traffic: 'all' })).current.visitors === traffic.humans + traffic.bots, 'all traffic = visitors + bots');
+await event(site.id, { t: 'ping', u: 'https://smoke-test.com/', d: 3000, ...idle });
+traffic = (await overviewWith({})).traffic;
+assert(traffic.humans === before.humans + 1 && traffic.bots === before.bots + 1, 'mouse/touch/typing makes it a person');
 
 const rt = (await call(`/api/sites/${site.id}/realtime`)).body;
 assert(rt.visitors.some((v) => v.visitor_id === vid) && rt.feed.some((f) => f.type === 'payment'), `live view: ${rt.visitors.length} online, ${rt.feed.length} recent events`);

@@ -82,7 +82,7 @@
   }
   function send(type, extra, beacon) {
     var id = ids();
-    var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
+    var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0, e: engaged ? 1 : 0 };
     for (var k in extra) if (extra[k] !== undefined) body[k] = extra[k];
     var json = JSON.stringify(body);
     // text/plain keeps this a "simple" request: no CORS preflight, works with sendBeacon.
@@ -97,10 +97,24 @@
   // ---- engaged time (only while the tab is visible)
   var visibleSince = d.visibilityState === 'visible' ? Date.now() : 0;
   var pending = 0, pings = 0;
-  function flushTime(beacon) {
+  function flushTime(beacon, force) {
     if (visibleSince) { pending += Date.now() - visibleSince; visibleSince = d.visibilityState === 'visible' ? Date.now() : 0; }
-    if (pending >= 1000) { send('ping', { d: Math.round(pending) }, beacon); pending = 0; }
+    if (pending >= 1000 || force) { send('ping', { d: Math.round(pending) }, beacon); pending = 0; }
   }
+
+  // ---- engagement: real input (mouse, touch, wheel, keys) tells a person from a bot that only loads pages.
+  // Sent once per visit; every later event carries it too, in case this one arrives before the visit is recorded.
+  var ENGAGED = 'ml_eng', INPUTS = ['pointermove', 'pointerdown', 'touchstart', 'wheel', 'keydown'];
+  var engaged = false;
+  try { var sid0 = readCookie(SID); engaged = !!sid0 && sessionStorage.getItem(ENGAGED) === sid0; } catch (e) {}
+  function onInput(e) {
+    if (engaged || !e.isTrusted) return;
+    engaged = true;
+    for (var i = 0; i < INPUTS.length; i++) w.removeEventListener(INPUTS[i], onInput, true);
+    try { sessionStorage.setItem(ENGAGED, ids().sid); } catch (err) {}
+    setTimeout(function () { flushTime(false, true); }, 500);
+  }
+  if (!engaged) for (var ii = 0; ii < INPUTS.length; ii++) w.addEventListener(INPUTS[ii], onInput, { capture: true, passive: true });
   d.addEventListener('visibilitychange', function () {
     if (d.visibilityState === 'visible') visibleSince = Date.now();
     else flushTime(true);

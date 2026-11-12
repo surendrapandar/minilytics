@@ -84,6 +84,8 @@ export function Dashboard({ siteId }: { siteId: string }) {
     );
   }
   if (!dash || !site) return null;
+  // The traffic switch lives in the toolbar, not with the filter chips.
+  const chips = Object.entries(q.filters).filter(([k]) => k !== 'traffic');
 
   return (
     <DashContext.Provider value={dash}>
@@ -99,9 +101,9 @@ export function Dashboard({ siteId }: { siteId: string }) {
           loading={loading}
         />
 
-        {Object.keys(q.filters).length > 0 && (
+        {chips.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {Object.entries(q.filters).map(([k, v]) => (
+            {chips.map(([k, v]) => (
               <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
                 <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
                 <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
@@ -110,7 +112,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
                 </button>
               </span>
             ))}
-            <button className="text-sm text-stone-500 underline-offset-2 hover:underline" onClick={() => update({ filters: {} })}>
+            <button
+              className="text-sm text-stone-500 underline-offset-2 hover:underline"
+              onClick={() => update({ filters: q.filters.traffic ? { traffic: q.filters.traffic } : {} })}
+            >
               Clear all
             </button>
           </div>
