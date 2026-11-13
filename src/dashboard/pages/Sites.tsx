@@ -3,6 +3,7 @@ import { navigate, useMe } from '../App';
 import { Favicon } from '../components/Icons';
 import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { Area, Bar, ComposedChart, ResponsiveContainer, YAxis } from 'recharts';
 import { currencyDecimals } from '../../shared/currency';
@@ -56,11 +57,12 @@ export function Sites() {
               {me.user.email}
             </button>
           )}
+          <ThemeToggle className="btn h-[38px] w-[38px] px-0" />
           <button className="btn" onClick={logout}>
             Log out
           </button>
           <button className="btn-dark" onClick={() => setAdding(true)}>
-            + Add website
+            + Add<span className="max-sm:hidden"> website</span>
           </button>
         </div>
       </div>

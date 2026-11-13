@@ -51,7 +51,7 @@ function CopyButton({ text, label = 'Copy', className = '' }: { text: string; la
 /** A code block with a small header bar, so the copy button never covers the code. */
 function Code({ label, children }: { label?: string; children: string }) {
   return (
-    <div className="overflow-hidden rounded-xl bg-stone-900">
+    <div className="keep-light overflow-hidden rounded-xl bg-stone-900 dark:ring-1 dark:ring-white/10">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
         <span className="font-mono text-xs text-stone-400">{label}</span>
         <CopyButton text={children} className={`${SMALL_BUTTON} text-stone-300 hover:bg-white/10 hover:text-white`} />
@@ -66,7 +66,7 @@ function CopyField({ value }: { value: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 py-1.5 pl-3 pr-1.5">
       <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{value}</code>
-      <CopyButton text={value} className={`${SMALL_BUTTON} border border-stone-200 bg-white hover:bg-stone-100`} />
+      <CopyButton text={value} className={`${SMALL_BUTTON} border border-stone-200 bg-surface hover:bg-stone-100`} />
     </div>
   );
 }
@@ -209,7 +209,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       </Section>
 
       {(saved || error) && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg ${error ? 'bg-red-600' : 'bg-ink'}`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm shadow-lg ${error ? 'bg-red-600 text-white' : 'bg-ink text-paper'}`}>
           {error || saved}
         </div>
       )}
@@ -473,7 +473,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
   const [open, setOpen] = useState(false);
   const prompt = buildAiPrompt(site, origin);
   return (
-    <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6">
+    <section className="card border-violet-200 bg-gradient-to-br from-violet-50 to-surface p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
@@ -484,7 +484,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
       <button className="mt-3 text-sm font-medium text-violet-700 hover:underline" onClick={() => setOpen((o) => !o)}>
         {open ? 'Hide prompt' : 'Preview prompt'}
       </button>
-      {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
+      {open && <pre className="code keep-light mt-3 dark:ring-1 dark:ring-white/10 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
     </section>
   );
 }

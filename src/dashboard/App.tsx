@@ -6,6 +6,7 @@ import { Landing } from './pages/Landing';
 import { Legal } from './pages/Legal';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
+import { useTheme } from './lib/theme';
 import { Sites } from './pages/Sites';
 
 export function navigate(to: string, { replace = false }: { replace?: boolean } = {}) {
@@ -83,6 +84,13 @@ export function App() {
   const path = usePath();
   const [me, setMe] = useState<Me | null>(null);
   usePageMeta(path);
+  const theme = useTheme();
+  // The public homepage and legal pages stay light; only the app follows the theme.
+  const dark = theme === 'dark' && !!me && !LEGAL.test(path) && !(me.hosted && !me.loggedIn);
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    setTag('meta[name="theme-color"]', meta('theme-color'), 'content', dark ? '#11100f' : '#f8f6f3');
+  }, [dark]);
 
   const refresh = useCallback(async () => {
     const r = await api<Me>('/api/auth/me').catch(() => ({ loggedIn: false, hosted: false, user: null }) as Me);
