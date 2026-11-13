@@ -122,7 +122,7 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
               {r.revenue !== 0 && <span className="hidden text-sm font-normal text-revenue group-hover:inline">{money(r.revenue)}</span>}
               {sort === 'revenue' ? money(r.revenue, true) : fmtNumber(r.visitors)}
             </div>
-            <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-60 -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-xs text-white shadow-lg group-hover:block">
+            <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-60 -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-xs text-paper shadow-lg group-hover:block">
               <div className="mb-1 truncate font-medium">{r.label ?? '(none)'}</div>
               <div className="flex justify-between"><span className="text-stone-400">Visitors</span>{fmtNumber(r.visitors)}</div>
               {r.pageviews !== undefined && dim === 'page' && <div className="flex justify-between"><span className="text-stone-400">Pageviews</span>{fmtNumber(r.pageviews)}</div>}
@@ -157,7 +157,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
   const filtered = (data ?? []).filter((r) => !search || (r.label ?? '').toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="card flex min-h-[560px] flex-col p-3">
+    <div className="card flex min-w-0 flex-col p-3 lg:min-h-[560px]">
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="tabs overflow-x-auto">
           {tabs.map((t) => (

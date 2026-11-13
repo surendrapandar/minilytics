@@ -4,6 +4,7 @@ import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
 import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 
 export const PERIODS: { value: string; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -37,7 +38,7 @@ function granularitiesForSpan(span: number): Granularity[] {
   return ['month'];
 }
 
-export function Dropdown({ button, children, align = 'left' }: { button: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right' }) {
+export function Dropdown({ button, children, align = 'left', className = '' }: { button: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -47,7 +48,7 @@ export function Dropdown({ button, children, align = 'left' }: { button: ReactNo
     return () => document.removeEventListener('mousedown', on);
   }, [open]);
   return (
-    <div className="relative flex" ref={ref}>
+    <div className={`relative flex ${className}`} ref={ref}>
       <div className="flex" onClick={() => setOpen((o) => !o)}>
         {button}
       </div>
@@ -152,7 +153,7 @@ export function Toolbar({
         )}
       </Dropdown>
 
-      <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
+      <div className="flex h-11 items-stretch justify-between rounded-xl border border-stone-200 bg-surface shadow-card max-sm:order-last max-sm:flex-1">
         <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
           ‹
         </button>
@@ -206,6 +207,8 @@ export function Toolbar({
       </div>
 
       <Dropdown
+        align="right"
+        className="max-sm:order-last"
         button={
           <button className="btn h-11 px-4 text-base">
             {GRANULARITIES.find((g) => g.value === currentGranularity)?.label ?? 'Daily'} <Chevron />
@@ -238,6 +241,8 @@ export function Toolbar({
           <path d="M21 3v5h-5" />
         </svg>
       </button>
+
+      <ThemeToggle className="btn h-11 w-11 px-0 max-sm:order-last" />
     </div>
   );
 }
