@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { BackButton } from '../components/BackButton';
 import { navigate, useMe } from '../App';
 import { Logo } from '../components/Logo';
 import { api } from '../lib/api';
@@ -72,12 +71,14 @@ export function Billing() {
 
   return (
     <div className="mx-auto max-w-md px-4 py-10">
-      <div className="flex items-center justify-between gap-2">
-        {user.paid ? <BackButton /> : <Logo />}
-        <button className="btn" onClick={logout}>
-          Log out
-        </button>
-      </div>
+      {!user.paid && (
+        <div className="flex items-center justify-between gap-2">
+          <Logo />
+          <button className="btn" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      )}
 
       <div className="card mt-10 p-8">
         <div className="flex items-center gap-3">

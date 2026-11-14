@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { BackButton } from '../components/BackButton';
+import { SITES_CHANGED } from '../components/NavBar';
 import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
@@ -129,6 +129,7 @@ export function Settings({ siteId }: { siteId: string }) {
     try {
       const s = await api<Site>(`/api/sites/${siteId}`, { method: 'PATCH', json: patch });
       setSite(s);
+      window.dispatchEvent(new Event(SITES_CHANGED));
       setSaved(msg);
       setTimeout(() => setSaved(''), 2000);
     } catch (e) {
@@ -141,12 +142,7 @@ export function Settings({ siteId }: { siteId: string }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:py-12">
-      <div className="flex items-center justify-between">
-        <BackButton fallback={`/site/${site.id}`} />
-        <div className="flex items-center gap-2 font-semibold">
-          <Favicon domain={site.domain} size={22} /> {site.name}
-        </div>
-      </div>
+      <h1 className="text-2xl font-semibold">Settings</h1>
 
       <AiSetup site={site} origin={origin} />
 

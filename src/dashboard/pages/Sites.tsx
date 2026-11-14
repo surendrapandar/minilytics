@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { navigate, useMe } from '../App';
+import { navigate } from '../App';
 import { Favicon } from '../components/Icons';
-import { Logo } from '../components/Logo';
 import { Modal } from '../components/Modal';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { Area, Bar, ComposedChart, ResponsiveContainer, YAxis } from 'recharts';
@@ -20,7 +19,6 @@ const PERIODS = [
 const AUTO_REFRESH_MS = 60_000;
 
 export function Sites() {
-  const { me } = useMe();
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = usePref('ml_sites_period', '30d');
   const [reloadKey, setReloadKey] = useState(0);
@@ -38,36 +36,16 @@ export function Sites() {
     return () => clearInterval(t);
   }, []);
 
-  async function logout() {
-    await api('/api/auth/logout', { method: 'POST' });
-    window.dispatchEvent(new Event('ml:logout'));
-  }
-
   const bySite = new Map(sparks?.map((s) => [s.id, s]));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
-      <div className="flex items-center justify-between">
-        <Logo />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Your websites</h1>
         <div className="flex items-center gap-2">
-          {me.hosted && me.user && (
-            <button className="hidden items-center gap-2 rounded-xl px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 sm:flex" onClick={() => navigate('/billing')} title="Plan & billing">
-              {me.user.avatar ? <img src={me.user.avatar} alt="" className="h-7 w-7 rounded-full" referrerPolicy="no-referrer" /> : null}
-              {me.user.email}
-            </button>
-          )}
-          <button className="btn" onClick={logout}>
-            Log out
-          </button>
           <button className="btn-dark" onClick={() => setAdding(true)}>
             + Add website
           </button>
-        </div>
-      </div>
-
-      <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Your websites</h1>
-        <div className="flex items-center gap-2">
           <div className="tabs">
             {PERIODS.map((p) => (
               <button key={p.value} className={`tab ${period === p.value ? 'tab-active' : ''}`} onClick={() => setPeriod(p.value)}>
