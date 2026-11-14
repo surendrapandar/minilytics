@@ -1,87 +1,104 @@
 import { Hono, type Context, type Next } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
-import { passwordsMatch, randomId, signToken, verifyToken } from './lib/crypto';
-import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handlePolarWebhook, rematchPayments } from './payments';
-import { breakdown, customers, funnel, makeCtx, overview, visitorProfile, visitors, type FunnelStep } from './stats';
+import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
+import { billingWebhook, checkout, planInfo } from './billing';
+import { passwordsMatch, randomId } from './lib/crypto';
+import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handlePolarWebhook, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
+import { rememberOwnerDevice } from './owner';
+import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
-const AUTH_COOKIE = 'ml_auth';
-const AUTH_DAYS = 30;
 const MAX_FAILURES = 10;
 const LOCKOUT_MS = 15 * 60_000;
+
+// Basic hardening for everything the Worker answers (API and app pages). Static files get the same
+// headers from public/_headers. The tracking script and endpoint stay embeddable on customers' sites.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (c.req.path.startsWith('/api/')) {
+    // Stats, settings and secrets must never sit in a shared or browser cache.
+    if (c.req.path !== '/api/event' && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
+  } else {
+    // The dashboard can't be framed by another site (clickjacking).
+    c.header('X-Frame-Options', 'DENY');
+    c.header('Content-Security-Policy', "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+  }
+});
 
 // ---------- public: tracking, webhooks, server-side API
 
 app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
 app.post('/api/event', handleEvent);
 app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
+app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/webhooks/polar/:siteId', handlePolarWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
 
 // ---------- login
 
-async function isLoggedIn(c: Context<AppEnv>) {
-  if (!c.env.SESSION_SECRET) return false;
-  const value = await verifyToken(c.env.SESSION_SECRET, getCookie(c, AUTH_COOKIE));
-  return !!value && Number(value.split('.')[1]) > Date.now();
-}
-
 app.post('/api/auth/login', async (c) => {
+  if (isHosted(c.env)) return c.json({ error: 'Use "Continue with Google".' }, 400);
   if (!c.env.ADMIN_PASSWORD || !c.env.SESSION_SECRET) {
     return c.json({ error: 'Set ADMIN_PASSWORD and SESSION_SECRET (see README).' }, 500);
   }
   // Lock an IP out after too many wrong passwords, so a public dashboard can't be brute-forced.
+  // The attempt is recorded and counted in one atomic batch BEFORE the password is checked: checking first
+  // and recording afterwards would let a burst of parallel guesses all slip under the limit.
   const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
   const now = Date.now();
-  const recent = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?')
-    .bind(ip, now - LOCKOUT_MS)
-    .first<{ n: number }>();
-  if ((recent?.n ?? 0) >= MAX_FAILURES) {
+  const [, , attempts] = await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
+    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
+    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(ip, now - LOCKOUT_MS),
+  ]);
+  if (((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES) {
     return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
   }
   const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
   if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
-    await c.env.DB.batch([
-      c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
-      c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
-    ]);
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: 'Wrong password' }, 401);
   }
   await c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip).run();
-  const expires = Date.now() + AUTH_DAYS * 86_400_000;
-  setCookie(c, AUTH_COOKIE, await signToken(c.env.SESSION_SECRET, `admin.${expires}`), {
-    httpOnly: true,
-    secure: new URL(c.req.url).protocol === 'https:',
-    sameSite: 'Lax',
-    path: '/',
-    maxAge: AUTH_DAYS * 86_400,
-  });
+  await setSession(c, 'admin');
   return c.json({ ok: true });
 });
+
+app.get('/api/auth/google', googleStart);
+app.get('/api/auth/google/callback', googleCallback);
 
 app.post('/api/auth/logout', (c) => {
-  deleteCookie(c, AUTH_COOKIE, { path: '/' });
+  clearSession(c);
   return c.json({ ok: true });
 });
 
-app.get('/api/auth/me', async (c) => c.json({ loggedIn: await isLoggedIn(c) }));
+app.get('/api/auth/me', async (c) => {
+  const user = await currentUser(c);
+  if (user) c.executionCtx.waitUntil(rememberOwnerDevice(c, user).catch(() => {}));
+  return c.json({ loggedIn: !!user, hosted: isHosted(c.env), user });
+});
+
+// ---------- billing (hosted mode)
+
+app.get('/api/public/plan', async (c) => c.json(await planInfo(c.env)));
+app.post('/api/billing/webhook', billingWebhook);
+app.get('/api/billing/checkout', requireUser, checkout);
 
 // ---------- dashboard API (login required)
 
-const requireAuth = async (c: Context<AppEnv>, next: Next) => {
-  if (!(await isLoggedIn(c))) return c.json({ error: 'unauthorized' }, 401);
-  await next();
-};
-app.use('/api/sites', requireAuth);
-app.use('/api/sites/*', requireAuth);
+app.use('/api/sites', requireUser);
+app.use('/api/sites/*', requireUser);
 
 const loadSite = async (c: Context<AppEnv>, next: Next) => {
-  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(c.req.param('id')).first<Site>();
+  const access = siteAccessSql(c.env, c.get('user'));
+  const site = await c.env.DB.prepare(`SELECT s.* FROM sites s WHERE s.id = ? AND ${access.sql}`)
+    .bind(c.req.param('id'), ...access.params)
+    .first<Site>();
   if (!site) return c.json({ error: 'site not found' }, 404);
   c.set('site', site);
   await next();
@@ -107,16 +124,19 @@ function validTimezone(tz: string) {
   }
 }
 
+const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
 const publicSite = (s: Site) => ({
   ...s,
-  dodo_webhook_secret: s.dodo_webhook_secret ? '••••••••' : null,
-  polar_webhook_secret: s.polar_webhook_secret ? '••••••••' : null,
+  dodo_webhook_secret: mask(s.dodo_webhook_secret),
+  stripe_webhook_secret: mask(s.stripe_webhook_secret),
+  polar_webhook_secret: mask(s.polar_webhook_secret),
 });
 
 app.get('/api/sites', async (c) => {
   const now = Date.now();
+  const access = siteAccessSql(c.env, c.get('user'));
   const [sites, stats] = await c.env.DB.batch([
-    c.env.DB.prepare('SELECT * FROM sites ORDER BY created_at'),
+    c.env.DB.prepare(`SELECT s.* FROM sites s WHERE ${access.sql} ORDER BY s.created_at`).bind(...access.params),
     c.env.DB.prepare(
       `SELECT site_id, COUNT(DISTINCT visitor_id) AS visitors,
               COUNT(DISTINCT CASE WHEN last_seen_at > ? THEN visitor_id END) AS online
@@ -133,11 +153,22 @@ app.get('/api/sites', async (c) => {
   );
 });
 
+// Every site's totals and sparkline for the all-websites view.
+app.use('/api/sites-overview', requireUser);
+app.get('/api/sites-overview', async (c) => {
+  const access = siteAccessSql(c.env, c.get('user'));
+  const rows = await c.env.DB.prepare(`SELECT s.id FROM sites s WHERE ${access.sql}`).bind(...access.params).all<{ id: string }>();
+  return c.json(await sparklines(c.env.DB, rows.results.map((r) => r.id), c.req.query('period') ?? '30d'));
+});
+
 app.post('/api/sites', async (c) => {
+  const user = c.get('user');
+  if (isHosted(c.env) && !user.paid) return c.json({ error: 'Choose a plan to add websites.' }, 402);
   const b = await c.req.json<Partial<Site>>().catch(() => ({}) as Partial<Site>);
   const domain = cleanDomain(b.domain ?? '');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return c.json({ error: 'Enter a domain like example.com' }, 400);
-  const tz = b.timezone && validTimezone(b.timezone) ? b.timezone : 'UTC';
+  if (b.timezone && !validTimezone(b.timezone)) return c.json({ error: 'Unknown timezone' }, 400);
+  const tz = b.timezone || 'UTC';
   const site: Site = {
     id: randomId(8),
     name: (b.name || domain).slice(0, 100),
@@ -150,9 +181,9 @@ app.post('/api/sites', async (c) => {
     created_at: Date.now(),
   };
   await c.env.DB.prepare(
-    'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, polar_webhook_secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, polar_webhook_secret, created_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, null, site.created_at)
+    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, null, site.created_at, isHosted(c.env) ? user.id : null)
     .run();
   return c.json(publicSite(site));
 });
@@ -177,13 +208,30 @@ app.patch('/api/sites/:id', async (c) => {
   if (typeof b.dodo_webhook_secret === 'string' && !b.dodo_webhook_secret.includes('•')) {
     next.dodo_webhook_secret = b.dodo_webhook_secret.trim() || null;
   }
+  if (typeof b.stripe_webhook_secret === 'string' && !b.stripe_webhook_secret.includes('•')) {
+    next.stripe_webhook_secret = b.stripe_webhook_secret.trim() || null;
+  }
   if (typeof b.polar_webhook_secret === 'string' && !b.polar_webhook_secret.includes('•')) {
     next.polar_webhook_secret = b.polar_webhook_secret.trim() || null;
   }
+  if (typeof b.dodo_product_ids === 'string') {
+    const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
+    next.dodo_product_ids = ids.join(',') || null;
+  }
   await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, polar_webhook_secret = ? WHERE id = ?',
+    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ?, polar_webhook_secret = ? WHERE id = ?',
   )
-    .bind(next.name, next.domain, next.timezone, next.currency, next.dodo_webhook_secret, next.polar_webhook_secret, site.id)
+    .bind(
+      next.name,
+      next.domain,
+      next.timezone,
+      next.currency,
+      next.dodo_webhook_secret,
+      next.dodo_product_ids ?? null,
+      next.stripe_webhook_secret ?? null,
+      next.polar_webhook_secret ?? null,
+      site.id,
+    )
     .run();
   forgetSite(site.id);
   return c.json(publicSite(next));
@@ -198,7 +246,8 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
-    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims'].map((t) =>
+    // Everything stored for the site, so deleting it really removes its visitors' data.
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );
@@ -218,7 +267,24 @@ app.get('/api/sites/:id/breakdown', async (c) => {
   }
 });
 
+// Dodo payments that couldn't be placed on a site yet, grouped by product.
+app.get('/api/sites/:id/pending-payments', async (c) => {
+  const r = await c.env.DB.prepare(
+    `SELECT product_id, COUNT(*) AS count, SUM(json_extract(payload, '$.amount')) AS amount, MAX(json_extract(payload, '$.currency')) AS currency
+     FROM pending_payments WHERE site_id = ? GROUP BY product_id ORDER BY MAX(ts) DESC`,
+  )
+    .bind(c.get('site').id)
+    .all();
+  return c.json(r.results);
+});
+app.post('/api/sites/:id/pending-payments', async (c) => {
+  const b = await c.req.json<{ product_id?: string }>().catch(() => ({}) as { product_id?: string });
+  if (!b.product_id || !/^pdt_[\w-]+$/.test(b.product_id)) return c.json({ error: 'product_id is required' }, 400);
+  await learnDodoProducts(c.env.DB, c.get('site'), [b.product_id]);
+  return c.json({ ok: true });
+});
 app.post('/api/sites/:id/rematch', async (c) => c.json(await rematchPayments(c.env.DB, c.get('site'))));
+app.get('/api/sites/:id/realtime', async (c) => c.json(await realtime(c.env.DB, c.get('site'))));
 app.get('/api/sites/:id/customers', async (c) => c.json(await customers(makeCtx(c))));
 app.get('/api/sites/:id/visitors', async (c) => c.json(await visitors(makeCtx(c))));
 app.get('/api/sites/:id/visitors/:vid', async (c) =>
@@ -259,7 +325,18 @@ app.get('/api/sites/:id/funnels/:fid/stats', async (c) => {
 
 app.all('/api/*', (c) => c.json({ error: 'not found' }, 404));
 
-// Everything else is the dashboard (static files).
-app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
+// Static files are served before the Worker runs. What reaches here is a client-side route, or a page that doesn't exist.
+const PUBLIC_PAGES = /^\/(terms|privacy|refund)\/?$/;
+const APP_PAGES = /^\/(billing(\/.*)?|site\/[\w-]+(\/settings)?\/?)$/;
+
+app.all('*', async (c) => {
+  const path = new URL(c.req.url).pathname;
+  const index = await c.env.ASSETS.fetch(new URL('/', c.req.url));
+  const headers = new Headers(index.headers);
+  // Signed-in pages are private and unknown paths shouldn't rank: keep both out of search results.
+  if (!PUBLIC_PAGES.test(path)) headers.set('X-Robots-Tag', 'noindex');
+  const status = PUBLIC_PAGES.test(path) || APP_PAGES.test(path) ? 200 : 404;
+  return new Response(index.body, { status, headers });
+});
 
 export default app;

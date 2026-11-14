@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { navigate } from '../App';
 import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
+import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
 
 export const PERIODS: { value: string; label: string }[] = [
@@ -22,6 +23,19 @@ const GRANULARITIES = [
   { value: 'week', label: 'Weekly' },
   { value: 'month', label: 'Monthly' },
 ];
+
+type Granularity = (typeof GRANULARITIES)[number]['value'];
+
+function granularitiesForSpan(span: number): Granularity[] {
+  const hour = 3_600_000;
+  const day = 24 * hour;
+  if (span <= 2 * day + hour) return ['hour'];
+  if (span <= 7 * day + hour) return ['hour', 'day'];
+  if (span <= 31 * day + hour) return ['day', 'week'];
+  if (span <= 120 * day + hour) return ['day', 'week', 'month'];
+  if (span <= 400 * day + hour) return ['week', 'month'];
+  return ['month'];
+}
 
 export function Dropdown({ button, children, align = 'left' }: { button: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
@@ -63,6 +77,7 @@ export function Toolbar({
   update,
   overview,
   onRefresh,
+  onLive,
   loading,
 }: {
   site: Site;
@@ -71,6 +86,7 @@ export function Toolbar({
   update: (p: Partial<Query>) => void;
   overview: Overview | null;
   onRefresh: () => void;
+  onLive: () => void;
   loading: boolean;
 }) {
   const [from, setFrom] = useState(q.from ?? '');
@@ -93,9 +109,13 @@ export function Toolbar({
     update({ period: 'custom', from: dayInTz(nf, site.timezone), to: dayInTz(Math.min(nt, Date.now()), site.timezone) });
   }
   const canForward = overview ? overview.range.to < Date.now() - 60_000 : false;
+  const allowedGranularities = granularitiesForSpan(overview ? overview.range.to - overview.range.from : 30 * 86_400_000);
+  const requestedGranularity = q.granularity as Granularity | undefined;
+  const currentGranularity = requestedGranularity && allowedGranularities.includes(requestedGranularity) ? requestedGranularity : overview?.range.granularity;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <BackButton to="/" label="" className="btn h-11 w-11 justify-center px-0" />
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">
@@ -113,7 +133,9 @@ export function Toolbar({
                 className={itemCls(s.id === site.id)}
                 onClick={() => {
                   close();
-                  navigate(`/site/${s.id}${window.location.search}`);
+                  // Switching sites replaces the history entry, so the browser's back button returns to the
+                  // all-websites page rather than stepping through every site viewed.
+                  navigate(`/site/${s.id}${window.location.search}`, { replace: true });
                 }}
               >
                 <Favicon domain={s.domain} size={16} /> {s.name}
@@ -186,15 +208,15 @@ export function Toolbar({
       <Dropdown
         button={
           <button className="btn h-11 px-4 text-base">
-            {GRANULARITIES.find((g) => g.value === (q.granularity ?? overview?.range.granularity))?.label ?? 'Daily'} <Chevron />
+            {GRANULARITIES.find((g) => g.value === currentGranularity)?.label ?? 'Daily'} <Chevron />
           </button>
         }
       >
         {(close) =>
-          GRANULARITIES.map((g) => (
+          GRANULARITIES.filter((g) => allowedGranularities.includes(g.value)).map((g) => (
             <button
               key={g.value}
-              className={itemCls((q.granularity ?? overview?.range.granularity) === g.value)}
+              className={itemCls(currentGranularity === g.value)}
               onClick={() => {
                 close();
                 update({ granularity: g.value });
@@ -205,6 +227,10 @@ export function Toolbar({
           ))
         }
       </Dropdown>
+
+      <button className="btn h-11 px-4 text-base" onClick={onLive} title="Live map (M)">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" /> Live
+      </button>
 
       <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>

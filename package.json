@@ -23,7 +23,8 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.13"
+    "hono": "^4.13.13",
+    "maplibre-gl": "^5.24.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261023.1",

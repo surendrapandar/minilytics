@@ -1,8 +1,10 @@
 import type { Context } from 'hono';
 import { classify } from '../shared/sources';
+import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
+import { isOwnerVisit } from './owner';
 import { isBot, parseUA } from './lib/ua';
-import { creditedSessionSql } from './payments';
+import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
 const TYPES = new Set(['pageview', 'goal', 'outbound', 'ping', 'identify']);
 const MAX_PING_MS = 10 * 60_000;
@@ -61,6 +63,8 @@ export async function handleEvent(c: Context<AppEnv>) {
 
   const site = await getSite(c.env.DB, body.w);
   if (!site) return c.body(null, 404);
+  // Hosted mode: stop recording when the owner's plan has ended (quietly, so their site never shows errors).
+  if (!siteOwnerActive(c.env, site)) return c.body(null, 202);
 
   let url: URL;
   try {
@@ -70,6 +74,8 @@ export async function handleEvent(c: Context<AppEnv>) {
   }
   // Only accept data for the site's own domain, so nobody can pollute your stats from elsewhere.
   if (!belongsTo(url.hostname, site.domain)) return c.body(null, 403);
+  // Owners checking their own site would otherwise show up as visitors and "online".
+  if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
   await ingest(c.env.DB, site, body, url, ua, geoOf(c), Date.now());
   return c.body(null, 202);
@@ -79,6 +85,14 @@ export interface Geo {
   country: string | null;
   region: string | null;
   city: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+/** City-level coordinates, rounded to 2 decimals (~1 km) so no precise location is ever stored. */
+function coord(v: unknown, max: number): number | null {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+  return Number.isFinite(n) && Math.abs(n) <= max ? Math.round(n * 100) / 100 : null;
 }
 
 /**
@@ -95,10 +109,22 @@ function geoOf(c: Context<AppEnv>): Geo {
     }
   };
   if (h('x-vercel-ip-country')) {
-    return { country: h('x-vercel-ip-country'), region: h('x-vercel-ip-country-region'), city: h('x-vercel-ip-city') };
+    return {
+      country: h('x-vercel-ip-country'),
+      region: h('x-vercel-ip-country-region'),
+      city: h('x-vercel-ip-city'),
+      lat: coord(h('x-vercel-ip-latitude'), 90),
+      lon: coord(h('x-vercel-ip-longitude'), 180),
+    };
   }
   const cf = (c.req.raw as { cf?: IncomingRequestCfProperties }).cf;
-  return { country: (cf?.country as string) ?? null, region: (cf?.region as string) ?? null, city: (cf?.city as string) ?? null };
+  return {
+    country: (cf?.country as string) ?? null,
+    region: (cf?.region as string) ?? null,
+    city: (cf?.city as string) ?? null,
+    lat: coord(cf?.latitude, 90),
+    lon: coord(cf?.longitude, 180),
+  };
 }
 
 export async function ingest(
@@ -172,19 +198,27 @@ export async function ingest(
     );
   }
   await db.batch(stmts);
+
+  // A link to a Dodo checkout, or a buyer back on the return page, tells which site a product belongs to.
+  const product = t === 'outbound' ? dodoProductOfLink(String(body.n ?? '')) : null;
+  const paid = t === 'pageview' ? url.searchParams.get('payment_id') : null;
+  if (product || (paid && /^pay_[\w-]{4,64}$/.test(paid))) await learnDodoProducts(db, site, product ? [product] : [], paid);
 }
 
 const DODO_CLAIM_ID = /^(pay|sub)_[\w-]{4,64}$/;
+const STRIPE_CLAIM_ID = /^cs_(test|live)_\w{4,200}$/;
 const UUID_CLAIM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Dodo sends buyers back to your return URL with ?payment_id=pay_... (or ?subscription_id=sub_...).
- * Polar uses ?checkout_id=<uuid>. Seeing that on a pageview tells us exactly which visitor made the
- * payment, even when the checkout had no metadata.
+ * Dodo sends buyers back to your return URL with ?payment_id=pay_... (or ?subscription_id=sub_...),
+ * Stripe with ?session_id=cs_... (when the success URL has {CHECKOUT_SESSION_ID}) and Polar with
+ * ?checkout_id=<uuid>. Seeing that on a pageview tells us exactly which visitor made the payment,
+ * even when the checkout had no metadata.
  */
 function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now: number): D1PreparedStatement[] {
-  const paymentId = url.searchParams.get('payment_id') ?? url.searchParams.get('subscription_id') ?? url.searchParams.get('checkout_id');
-  if (!paymentId || !(DODO_CLAIM_ID.test(paymentId) || UUID_CLAIM_ID.test(paymentId))) return [];
+  const q = url.searchParams;
+  const paymentId = q.get('payment_id') ?? q.get('subscription_id') ?? q.get('session_id') ?? q.get('checkout_id');
+  if (!paymentId || !(DODO_CLAIM_ID.test(paymentId) || STRIPE_CLAIM_ID.test(paymentId) || UUID_CLAIM_ID.test(paymentId))) return [];
   return [
     db
       .prepare('INSERT OR IGNORE INTO payment_claims (site_id, payment_id, visitor_id, ts) VALUES (?, ?, ?, ?)')
@@ -194,16 +228,16 @@ function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now
       .prepare(
         `UPDATE payments SET visitor_id = ?, matched_by = 'return_page',
            session_id = (${creditedSessionSql()})
-         WHERE site_id = ? AND (id = ? OR subscription_id = ? OR checkout_id = ?) AND visitor_id IS NULL`,
+         WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) AND visitor_id IS NULL`,
       )
-      .bind(vid, siteId, vid, now + 60_000, siteId, paymentId, paymentId, paymentId),
+      .bind(vid, siteId, vid, now + 60_000, siteId, paymentId),
     db
       .prepare(
-        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND (id = ? OR subscription_id = ? OR checkout_id = ?) LIMIT 1)),
-           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND (id = ? OR subscription_id = ? OR checkout_id = ?) LIMIT 1))
+        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1)),
+           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1))
          WHERE site_id = ? AND id = ?`,
       )
-      .bind(siteId, paymentId, paymentId, paymentId, siteId, paymentId, paymentId, paymentId, siteId, vid),
+      .bind(siteId, paymentId, siteId, paymentId, siteId, vid),
   ];
 }
 
@@ -268,8 +302,8 @@ function newSession(
       .prepare(
         `INSERT OR IGNORE INTO sessions (site_id, id, visitor_id, started_at, last_seen_at, pageviews, hostname, entry_page, exit_page,
           referrer, referrer_domain, source, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref,
-          country, region, city, browser, os, device)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          country, region, city, browser, os, device, lat, lon)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         site.id,
@@ -296,6 +330,8 @@ function newSession(
         browser,
         os,
         device,
+        geo.lat,
+        geo.lon,
       ),
     // Separate statement so concurrent first events (pageview + goal racing) never double count.
     ...(pageviews

@@ -130,7 +130,7 @@
     w.addEventListener('popstate', pageview);
   }
 
-  // ---- goals, outbound links, Dodo / Polar checkout links
+  // ---- goals, outbound links, Dodo / Stripe / Polar checkout links
   function goal(name, props) {
     if (!name) return;
     send('goal', { n: String(name).slice(0, 64), p: props || undefined }, true);
@@ -145,27 +145,32 @@
     if (/(^|\.)buy\.polar\.sh$/.test(u.hostname)) return true;
     return /polar_cl_|polar_c_/.test(u.pathname);
   }
-  // Checkout links carry the visitor as metadata. They're tagged as soon as they appear on the page,
-  // not just on click, because other scripts (e.g. Umami's click tracking) may copy the href and navigate
-  // before our click handler runs.
-  // Dodo: ?metadata_ml_visitor_id= (Dodo's payment-link syntax).
-  // Polar: checkout links only persist reference_id / UTM query params as metadata (not arbitrary keys).
+  // Checkout links carry the visitor: Dodo links as metadata, Stripe payment links (buy.stripe.com) in
+  // client_reference_id, unless the site already sets its own. Polar checkout links only persist
+  // reference_id / UTM query params, so the visitor goes in reference_id. They're tagged as soon as they
+  // appear on the page, not just on click, because other scripts (e.g. Umami's click tracking) may copy
+  // the href and navigate before our click handler runs.
   function tagCheckoutLink(a) {
     try {
       var u = new URL(a.href);
       var att = attribution();
+      var q = u.searchParams;
       if (/(^|\.)dodopayments\.com$/.test(u.hostname)) {
-        u.searchParams.set('metadata_ml_visitor_id', att.ml_visitor_id);
-        u.searchParams.set('metadata_ml_session_id', att.ml_session_id);
+        q.set('metadata_ml_visitor_id', att.ml_visitor_id);
+        q.set('metadata_ml_session_id', att.ml_session_id);
+      } else if (u.hostname === 'buy.stripe.com') {
+        var ref = q.get('client_reference_id');
+        if (ref && ref.indexOf('ml_') !== 0) return;
+        q.set('client_reference_id', 'ml_' + att.ml_visitor_id + '__' + att.ml_session_id);
       } else if (isPolarCheckout(u)) {
-        if (!u.searchParams.get('reference_id')) u.searchParams.set('reference_id', att.ml_visitor_id);
+        if (!q.get('reference_id')) q.set('reference_id', att.ml_visitor_id);
       } else return;
       var next = u.toString();
       if (a.href !== next) a.href = next;
     } catch (e) {}
   }
   function tagCheckoutLinks() {
-    var links = d.querySelectorAll('a[href*="dodopayments.com"], a[href*="polar.sh"]');
+    var links = d.querySelectorAll('a[href*="dodopayments.com"], a[href*="buy.stripe.com"], a[href*="polar.sh"]');
     for (var i = 0; i < links.length; i++) tagCheckoutLink(links[i]);
   }
   var tagQueued = false;

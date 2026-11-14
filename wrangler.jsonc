@@ -7,8 +7,8 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    // Only API calls run the Worker; the dashboard and /js/script.js are served as free static files.
+    "not_found_handling": "none",
+    // Static files skip the Worker. Anything else (client routes, unknown paths) runs it so missing pages return a real 404.
     "run_worker_first": ["/api/*"]
   },
   "d1_databases": [
