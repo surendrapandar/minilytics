@@ -320,6 +320,57 @@ for (const g of ['hour', 'day', 'week', 'month']) {
 const rt = (await call(`/api/sites/${site.id}/realtime`)).body;
 assert(rt.visitors.some((v) => v.visitor_id === vid) && rt.feed.some((f) => f.type === 'payment'), `live view: ${rt.visitors.length} online, ${rt.feed.length} recent events`);
 
+// ---------- accounts and public sites (sign-up runs when wrangler dev has --var ALLOW_SIGNUP:true)
+// Each "browser" keeps its own cookie.
+async function as(jar, path, opts = {}) {
+  const res = await fetch(BASE + path, { ...opts, headers: { 'content-type': 'application/json', cookie: jar.cookie } });
+  const set = res.headers.get('set-cookie');
+  if (set) jar.cookie = set.split(';')[0];
+  const text = await res.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = text; }
+  return { status: res.status, body };
+}
+const post = (body) => ({ method: 'POST', body: JSON.stringify(body) });
+const anon = { cookie: '' };
+
+assert((await as(anon, `/api/sites/${site.id}`)).status === 401, 'private site needs login');
+assert((await call(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ public: 1 }) })).body.public === 1, 'site made public');
+const seen = await as(anon, `/api/sites/${site.id}`);
+assert(seen.status === 200 && seen.body.readOnly === true && !('api_key' in seen.body), 'public site opens without login, with no keys');
+assert((await as(anon, `/api/sites/${site.id}/overview?period=7d`)).status === 200, 'public site: stats');
+assert((await as(anon, `/api/sites/${site.id}/customers?period=7d`)).status === 200, 'public site: customers');
+assert((await as(anon, `/api/sites/${site.id}/visitors/${vid}`)).status === 200, 'public site: visitor profile');
+assert((await as(anon, `/api/sites/${site.id}/pending-payments`)).status === 401, 'public site: settings data stays private');
+assert((await as(anon, `/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ name: 'hacked' }) })).status === 401, 'public site: no edits');
+
+if ((await call('/api/auth/me')).body.signup) {
+  const browser = { cookie: '' };
+  const email = `smoke-${Date.now()}@example.com`;
+  assert((await as(browser, '/api/auth/signup', post({ email, password: 'short' }))).status === 400, 'sign-up: short password refused');
+  assert((await as(browser, '/api/auth/signup', post({ email: EMAIL, password: 'long-enough-1' }))).status === 409, "sign-up: admin's email refused");
+  assert((await as(browser, '/api/auth/signup', post({ email, password: 'long-enough-1' }))).status === 200, 'sign-up');
+  assert((await as(browser, '/api/auth/me')).body.user?.email === email, 'sign-up: signed in');
+  assert(!(await as(browser, '/api/sites')).body.some((s) => s.id === site.id), "account doesn't list the admin's sites");
+  const mine = (await as(browser, '/api/sites', post({ domain: 'smoke-account.com' }))).body;
+  assert(!(await call('/api/sites')).body.some((s) => s.id === mine.id), "admin doesn't list the account's sites");
+  const other = await as(browser, `/api/sites/${site.id}`);
+  assert(other.status === 200 && other.body.readOnly === true, "account sees the admin's public site read-only");
+  assert((await as(browser, `/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ name: 'x' }) })).status === 404, "account can't edit the admin's site");
+
+  const second = { cookie: browser.cookie }; // the same account in another browser
+  assert((await as(browser, '/api/auth/password', post({ current: 'wrong-password', next: 'new-password-1' }))).status === 400, 'password: wrong current refused');
+  assert((await as(browser, '/api/auth/password', post({ current: 'long-enough-1', next: 'new-password-1' }))).status === 200, 'password changed');
+  assert((await as(browser, '/api/auth/me')).body.loggedIn, 'password: this browser stays signed in');
+  assert(!(await as(second, '/api/auth/me')).body.loggedIn, 'password: other browsers signed out');
+  assert((await as({ cookie: '' }, '/api/auth/login', post({ email, password: 'long-enough-1' }))).status === 401, 'password: old one refused');
+  assert((await as({ cookie: '' }, '/api/auth/login', post({ email, password: 'new-password-1' }))).status === 200, 'password: new one works');
+  await as(browser, `/api/sites/${mine.id}`, { method: 'DELETE' });
+}
+
+await call(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ public: 0 }) });
+assert((await as(anon, `/api/sites/${site.id}`)).status === 401, 'site made private again');
+
 await call(`/api/sites/${site.id}`, { method: 'DELETE' });
 assert((await call(`/api/sites/${site.id}`)).status === 404, 'site deleted');
 console.log('\nAll smoke tests passed');

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { navigate } from '../App';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
@@ -34,7 +34,8 @@ const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
   goal: { label: 'Completed goal', dim: 'goal' },
 };
 
-export function Dashboard({ siteId }: { siteId: string }) {
+/** `fallback` replaces the page when the site can't be loaded (e.g. the login, for a private site seen logged out). */
+export function Dashboard({ siteId, fallback, header }: { siteId: string; fallback?: ReactNode; header?: ReactNode }) {
   const [q, update] = useQueryState(siteId);
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
@@ -49,8 +50,9 @@ export function Dashboard({ siteId }: { siteId: string }) {
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
   }, []);
-  const { data: sites } = useApi<Site[]>('/api/sites');
-  const site = sites?.find((s) => s.id === siteId);
+  // Your own site, or someone's public site (then it comes back read-only).
+  const { data: site, error: siteError } = useApi<Site>(`/api/sites/${siteId}`);
+  const readOnly = !!site?.readOnly;
   const { data: overview, loading } = useApi<Overview>(site ? `/api/sites/${siteId}/overview?${qs(q)}` : null, reloadKey);
 
   const addFilter = useCallback((key: string, value: string) => update({ filters: { ...q.filters, [key]: value } }), [q.filters, update]);
@@ -70,10 +72,12 @@ export function Dashboard({ siteId }: { siteId: string }) {
       money: (minor, compact) => fmtMoney(minor, site.currency, decimals, compact),
       addFilter,
       openVisitor: setVisitor,
+      readOnly,
     };
-  }, [site, q, reloadKey, overview?.decimals, addFilter]);
+  }, [site, q, reloadKey, overview?.decimals, addFilter, readOnly]);
 
-  if (sites && !site) {
+  if (siteError && fallback) return <>{fallback}</>;
+  if (siteError) {
     return (
       <div className="p-10 text-center">
         Site not found.{' '}
@@ -87,6 +91,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
   return (
     <DashContext.Provider value={dash}>
+      {header}
       <div className="mx-auto max-w-[1480px] px-3 py-6 sm:px-6 lg:py-10">
         <Toolbar
           site={site}
@@ -157,10 +162,15 @@ export function Dashboard({ siteId }: { siteId: string }) {
         </div>
 
         <p className="mt-8 text-center text-xs text-stone-400">
-          Times in {site.timezone} · Revenue in {site.currency} ·{' '}
-          <button className="underline-offset-2 hover:underline" onClick={() => navigate(`/site/${site.id}/settings`)}>
-            Settings & install
-          </button>
+          Times in {site.timezone} · Revenue in {site.currency}
+          {!readOnly && (
+            <>
+              {' · '}
+              <button className="underline-offset-2 hover:underline" onClick={() => navigate(`/site/${site.id}/settings`)}>
+                Settings & install
+              </button>
+            </>
+          )}
         </p>
       </div>
       {live && (

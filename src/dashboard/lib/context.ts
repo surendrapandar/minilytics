@@ -9,6 +9,8 @@ export interface Dash {
   money: (minor: number, compact?: boolean) => string;
   addFilter: (key: string, value: string) => void;
   openVisitor: (visitorId: string) => void;
+  /** Someone else's public site: hide anything that edits it or links to its settings. */
+  readOnly: boolean;
 }
 
 export const DashContext = createContext<Dash | null>(null);
