@@ -16,11 +16,24 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:migrate:local": "wrangler d1 migrations apply minilytics --local",
-    "db:migrate": "wrangler d1 migrations apply minilytics --remote",
-    "deploy": "vite build && wrangler d1 migrations apply minilytics --remote && wrangler deploy",
-    "seed": "node scripts/seed-demo.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed.sql",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "deploy": "vite build && npm run db:migrate && wrangler deploy",
+    "seed": "node scripts/seed-demo.mjs && wrangler d1 execute DB --local --file .wrangler/seed.sql",
     "smoke": "node scripts/smoke.mjs"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_PASSWORD": {
+        "description": "The password you'll log in to the dashboard with. Use a strong one."
+      },
+      "SESSION_SECRET": {
+        "description": "Any long random text. It signs the login cookie. Generate one with `openssl rand -hex 32`."
+      },
+      "DB": {
+        "description": "Stores your sites, visits and payments. Cloudflare creates it for you."
+      }
+    }
   },
   "dependencies": {
     "hono": "^4.13.13",

@@ -13,7 +13,7 @@ const assert = (cond, msg) => {
   if (!cond) throw new Error('FAIL: ' + msg);
   console.log('ok -', msg);
 };
-const sql = (q) => execSync(`npx wrangler d1 execute minilytics --local --command ${JSON.stringify(q)}`, { stdio: 'ignore' });
+const sql = (q) => execSync(`npx wrangler d1 execute DB --local --command ${JSON.stringify(q)}`, { stdio: 'ignore' });
 const cookieFor = (userId) => {
   const value = `u:${userId}.${Date.now() + 86_400_000}`;
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64').replace(/=+$/, '');

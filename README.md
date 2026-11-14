@@ -4,6 +4,8 @@ Revenue-first web analytics for your own websites, inspired by DataFast. It show
 tweet, article, Google page or AI assistant), what they did, and **which source made you money**. It runs on
 Cloudflare's free plan.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rizaardiyanto1412/minilytics)
+
 ![Dashboard](docs/dashboard.png)
 
 ## Sponsors
@@ -67,6 +69,21 @@ Cloudflare's free plan.
 
 Every person deploys **their own copy** on their own free Cloudflare account. Your data stays on your account, and you
 get your own dashboard with its own password.
+
+### One click
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rizaardiyanto1412/minilytics)
+
+1. Click the button and sign in to Cloudflare (a free account is fine).
+2. Connect GitHub or GitLab. Cloudflare copies Minilytics into a new repository on your account.
+3. Fill in **ADMIN_PASSWORD** (your login password) and **SESSION_SECRET** (any long random text, e.g. the output of
+   `openssl rand -hex 32`). Keep the suggested build and deploy commands.
+4. Click **Create and deploy**. Cloudflare creates the database and its tables, then prints your link, e.g.
+   `https://minilytics.<you>.workers.dev`.
+
+Every push to your new repository deploys again. To get updates, pull this repository's `main` into yours.
+
+### From your terminal
 
 You need a free [Cloudflare account](https://dash.cloudflare.com/sign-up), [Node.js 20+](https://nodejs.org) and Git.
 Run these commands in a terminal on your computer. You only do this once; afterwards the app runs on Cloudflare.

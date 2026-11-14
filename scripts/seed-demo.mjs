@@ -1,5 +1,5 @@
 // Fills the LOCAL database with 30 days of fake traffic so you can see the dashboard.
-// Usage: node scripts/seed-demo.mjs && npx wrangler d1 execute minilytics --local --file .wrangler/seed.sql
+// Usage: node scripts/seed-demo.mjs && npx wrangler d1 execute DB --local --file .wrangler/seed.sql
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const DAY = 86_400_000;
