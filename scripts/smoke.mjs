@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 
 const BASE = process.env.BASE ?? 'http://localhost:8787';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'change-me';
+const EMAIL = process.env.ADMIN_EMAIL ?? 'you@example.com';
 let cookie = '';
 const assert = (cond, msg) => {
   if (!cond) throw new Error('FAIL: ' + msg);
@@ -28,7 +29,9 @@ const event = (siteId, payload) =>
 
 assert((await call('/api/sites')).status === 401, 'dashboard API needs login');
 assert((await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ password: 'nope' }) })).status === 401, 'wrong password rejected');
-assert((await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ password: PASSWORD }) })).status === 200, 'login');
+assert((await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'someone@else.com', password: PASSWORD }) })).status === 401, 'wrong email rejected');
+assert((await call('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: ` ${EMAIL.toUpperCase()} `, password: PASSWORD }) })).status === 200, 'login');
+assert((await call('/api/auth/me')).body.user?.email === EMAIL, 'menu shows the login email');
 
 // Remove leftovers from an interrupted earlier run (payment ids would collide).
 for (const old of (await call('/api/sites')).body) if (old.domain === 'smoke-test.com') await call(`/api/sites/${old.id}`, { method: 'DELETE' });

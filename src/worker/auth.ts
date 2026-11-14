@@ -5,7 +5,7 @@ import { randomId, signToken, verifyToken } from './lib/crypto';
 
 /**
  * Two modes:
- *  - self-hosted (default): one owner, password login (ADMIN_PASSWORD), sees every site.
+ *  - self-hosted (default): one owner, email + password login (ADMIN_EMAIL, ADMIN_PASSWORD), sees every site.
  *  - hosted: set GOOGLE_CLIENT_ID/SECRET; anyone can sign in with Google, pays for a plan and sees only their own sites.
  *    Emails in ADMIN_EMAILS never pay and also own the sites created before accounts existed.
  */
@@ -34,9 +34,9 @@ interface UserRow {
   plan: string | null;
 }
 
-const SELF_HOSTED_OWNER: User = {
+const selfHostedOwner = (env: Env): User => ({
   id: 'admin',
-  email: null,
+  email: env.ADMIN_EMAIL?.trim() || null,
   name: null,
   avatar: null,
   admin: true,
@@ -44,7 +44,10 @@ const SELF_HOSTED_OWNER: User = {
   plan_status: 'active',
   plan_until: null,
   plan: null,
-};
+});
+
+/** Self-hosted login checks the email too once ADMIN_EMAIL is set. */
+export const emailLogin = (env: Env) => !!env.ADMIN_EMAIL?.trim();
 
 export const AUTH_COOKIE = 'ml_auth';
 const AUTH_DAYS = 30;
@@ -93,7 +96,7 @@ export async function currentUser(c: Context<AppEnv>): Promise<User | null> {
   const parts = value.split('.');
   if (Number(parts[parts.length - 1]) <= Date.now()) return null;
   // Self-hosted password session: "admin.<expires>"
-  if (parts[0] === 'admin') return isHosted(c.env) ? null : SELF_HOSTED_OWNER;
+  if (parts[0] === 'admin') return isHosted(c.env) ? null : selfHostedOwner(c.env);
   // Hosted Google session: "u:<userId>.<expires>"
   if (!parts[0].startsWith('u:') || !isHosted(c.env)) return null;
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(parts[0].slice(2)).first<UserRow>();
