@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { NavBar } from './components/NavBar';
 import { api, type Me } from './lib/api';
 import { Billing } from './pages/Billing';
 import { Dashboard } from './pages/Dashboard';
@@ -120,11 +121,14 @@ export function App() {
   if (path !== '/' && !APP_PAGE.test(path)) return <NotFound />;
 
   let page;
+  let nav = true;
   if (!me.loggedIn) {
+    nav = false;
     page = me.hosted ? <Landing /> : <Login onLogin={refresh} />;
   } else if (me.hosted && !me.user?.paid) {
     // Signed in but hasn't paid yet: the only thing to do is pick the plan.
     page = <Billing />;
+    nav = false;
   } else if (path.startsWith('/billing')) {
     page = <Billing />;
   } else {
@@ -132,5 +136,10 @@ export function App() {
     const site = /^\/site\/([\w-]+)\/?$/.exec(path);
     page = settings ? <Settings siteId={settings[1]} /> : site ? <Dashboard siteId={site[1]} /> : <Sites />;
   }
-  return <MeContext.Provider value={{ me, refresh }}>{page}</MeContext.Provider>;
+  return (
+    <MeContext.Provider value={{ me, refresh }}>
+      {nav && <NavBar path={path} />}
+      {page}
+    </MeContext.Provider>
+  );
 }

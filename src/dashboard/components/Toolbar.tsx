@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { navigate } from '../App';
 import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
-import { BackButton } from './BackButton';
-import { Favicon } from './Icons';
 
 export const PERIODS: { value: string; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -72,7 +69,6 @@ function itemCls(active: boolean) {
 
 export function Toolbar({
   site,
-  sites,
   q,
   update,
   overview,
@@ -81,7 +77,6 @@ export function Toolbar({
   loading,
 }: {
   site: Site;
-  sites: Site[];
   q: Query;
   update: (p: Partial<Query>) => void;
   overview: Overview | null;
@@ -115,43 +110,6 @@ export function Toolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <BackButton to="/" label="" className="btn h-11 w-11 justify-center px-0" />
-      <Dropdown
-        button={
-          <button className="btn h-11 px-4 text-base">
-            <Favicon domain={site.domain} size={22} />
-            <span className="max-w-[180px] truncate font-semibold">{site.name}</span>
-            <Chevron />
-          </button>
-        }
-      >
-        {(close) => (
-          <>
-            {sites.map((s) => (
-              <button
-                key={s.id}
-                className={itemCls(s.id === site.id)}
-                onClick={() => {
-                  close();
-                  // Switching sites replaces the history entry, so the browser's back button returns to the
-                  // all-websites page rather than stepping through every site viewed.
-                  navigate(`/site/${s.id}${window.location.search}`, { replace: true });
-                }}
-              >
-                <Favicon domain={s.domain} size={16} /> {s.name}
-              </button>
-            ))}
-            <div className="my-1 border-t border-stone-100" />
-            <button className={itemCls(false)} onClick={() => navigate(`/site/${site.id}/settings`)}>
-              ⚙️ Site settings & install
-            </button>
-            <button className={itemCls(false)} onClick={() => navigate('/')}>
-              ＋ All websites
-            </button>
-          </>
-        )}
-      </Dropdown>
-
       <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
         <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
           ‹

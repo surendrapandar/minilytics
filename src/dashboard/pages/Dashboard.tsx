@@ -90,7 +90,6 @@ export function Dashboard({ siteId }: { siteId: string }) {
       <div className="mx-auto max-w-[1480px] px-3 py-6 sm:px-6 lg:py-10">
         <Toolbar
           site={site}
-          sites={sites!}
           q={q}
           update={update}
           overview={overview}
