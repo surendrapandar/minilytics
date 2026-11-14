@@ -124,7 +124,7 @@ export function App() {
   let nav = true;
   if (!me.loggedIn) {
     nav = false;
-    page = me.hosted ? <Landing /> : <Login onLogin={refresh} />;
+    page = me.hosted ? <Landing /> : <Login withEmail={!!me.emailLogin} onLogin={refresh} />;
   } else if (me.hosted && !me.user?.paid) {
     // Signed in but hasn't paid yet: the only thing to do is pick the plan.
     page = <Billing />;

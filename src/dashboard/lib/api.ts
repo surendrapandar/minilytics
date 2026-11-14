@@ -102,6 +102,8 @@ export function qs(q: Query, extra: Record<string, string | number> = {}) {
 export interface Me {
   loggedIn: boolean;
   hosted: boolean;
+  /** Self-hosted login asks for an email as well as the password. */
+  emailLogin?: boolean;
   user: {
     id: string;
     email: string | null;

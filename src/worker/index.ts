@@ -2,7 +2,7 @@ import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
-import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
+import { clearSession, currentUser, emailLogin, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handlePolarWebhook, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
@@ -59,10 +59,14 @@ app.post('/api/auth/login', async (c) => {
   if (((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES) {
     return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
   }
-  const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
-  if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
+  const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({ email: undefined, password: undefined }));
+  const needEmail = emailLogin(c.env);
+  // Check both before answering, so the reply doesn't say which one was wrong.
+  const emailOk = !needEmail || passwordsMatch((email ?? '').trim().toLowerCase(), c.env.ADMIN_EMAIL!.trim().toLowerCase());
+  const passwordOk = !!password && passwordsMatch(password, c.env.ADMIN_PASSWORD);
+  if (!emailOk || !passwordOk) {
     await new Promise((r) => setTimeout(r, 500));
-    return c.json({ error: 'Wrong password' }, 401);
+    return c.json({ error: needEmail ? 'Wrong email or password' : 'Wrong password' }, 401);
   }
   await c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip).run();
   await setSession(c, 'admin');
@@ -80,7 +84,7 @@ app.post('/api/auth/logout', (c) => {
 app.get('/api/auth/me', async (c) => {
   const user = await currentUser(c);
   if (user) c.executionCtx.waitUntil(rememberOwnerDevice(c, user).catch(() => {}));
-  return c.json({ loggedIn: !!user, hosted: isHosted(c.env), user });
+  return c.json({ loggedIn: !!user, hosted: isHosted(c.env), emailLogin: !isHosted(c.env) && emailLogin(c.env), user });
 });
 
 // ---------- billing (hosted mode)

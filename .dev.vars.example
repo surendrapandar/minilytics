@@ -1,3 +1,4 @@
 # Secrets. Copy to .dev.vars for local dev; the Deploy to Cloudflare button asks for each one.
+ADMIN_EMAIL=you@example.com # the email you'll log in with
 ADMIN_PASSWORD=change-me # the password you'll log in with
 SESSION_SECRET=any-long-random-string # signs the login cookie; openssl rand -hex 32

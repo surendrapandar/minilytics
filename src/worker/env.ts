@@ -3,6 +3,8 @@ export interface Env {
   ASSETS: Fetcher;
   /** Dashboard login password (set with `wrangler secret put ADMIN_PASSWORD`). */
   ADMIN_PASSWORD: string;
+  /** Dashboard login email (`wrangler secret put ADMIN_EMAIL`). Optional: without it, login asks for the password only. */
+  ADMIN_EMAIL?: string;
   /** Random string used to sign the login cookie (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET: string;
 

@@ -76,7 +76,7 @@ get your own dashboard with its own password.
 
 1. Click the button and sign in to Cloudflare (a free account is fine).
 2. Connect GitHub or GitLab. Cloudflare copies Minilytics into a new repository on your account.
-3. Fill in **ADMIN_PASSWORD** (your login password) and **SESSION_SECRET** (any long random text, e.g. the output of
+3. Fill in **ADMIN_EMAIL** and **ADMIN_PASSWORD** (your login) and **SESSION_SECRET** (any long random text, e.g. the output of
    `openssl rand -hex 32`). Keep the suggested build and deploy commands.
 4. Click **Create and deploy**. Cloudflare creates the database and its tables, then prints your link, e.g.
    `https://minilytics.<you>.workers.dev`.
@@ -107,9 +107,10 @@ If Wrangler asks *"Would you like Wrangler to add it on your behalf?"*, answer *
 "Cloudflare skills" questions too. Then copy the printed `database_id` and paste it into `wrangler.jsonc`, replacing
 `00000000-0000-0000-0000-000000000000`. There must be exactly **one** entry under `d1_databases`, with `"binding": "DB"`.
 
-**3. Set your password and a signing secret**
+**3. Set your login and a signing secret**
 
 ```bash
+npx wrangler secret put ADMIN_EMAIL        # the email you'll log in with
 npx wrangler secret put ADMIN_PASSWORD     # the password you'll log in with (use a strong one)
 npx wrangler secret put SESSION_SECRET     # any long random text, e.g. the output of: openssl rand -hex 32
 ```

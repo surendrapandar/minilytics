@@ -24,6 +24,9 @@
   },
   "cloudflare": {
     "bindings": {
+      "ADMIN_EMAIL": {
+        "description": "The email you'll log in to the dashboard with."
+      },
       "ADMIN_PASSWORD": {
         "description": "The password you'll log in to the dashboard with. Use a strong one."
       },
