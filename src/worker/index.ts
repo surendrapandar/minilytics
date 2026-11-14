@@ -2,9 +2,9 @@ import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
-import { clearSession, currentUser, emailLogin, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
+import { ADMIN_ID, adminEmail, clearSession, currentUser, emailLogin, googleCallback, googleStart, isHosted, requireUser, setSession, signupOpen, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
-import { passwordsMatch, randomId } from './lib/crypto';
+import { hashPassword, passwordsMatch, randomId, verifyPassword } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handlePolarWebhook, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
@@ -41,35 +41,121 @@ app.post('/api/v1/goals', handleGoalApi);
 
 // ---------- login
 
+/**
+ * Lock an IP out after too many attempts (login, sign-up, password change), so a public dashboard can't be
+ * brute-forced. The attempt is recorded and counted in one atomic batch BEFORE the password is checked: checking
+ * first and recording afterwards would let a burst of parallel guesses all slip under the limit.
+ */
+async function tooManyAttempts(c: Context<AppEnv>) {
+  const now = Date.now();
+  const [, , attempts] = await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
+    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(clientIp(c), now),
+    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(clientIp(c), now - LOCKOUT_MS),
+  ]);
+  return ((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES;
+}
+const clientIp = (c: Context<AppEnv>) => c.req.header('cf-connecting-ip') ?? 'unknown';
+const forgetAttempts = (c: Context<AppEnv>) => c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(clientIp(c)).run();
+const slowDown = () => new Promise((r) => setTimeout(r, 500));
+const TOO_MANY = 'Too many attempts. Try again in 15 minutes.';
+const MIN_PASSWORD = 8;
+
+/** Is this the admin's password? A password set in the dashboard replaces ADMIN_PASSWORD. */
+async function adminPasswordOk(c: Context<AppEnv>, password: string) {
+  const row = await c.env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(ADMIN_ID).first<{ password_hash: string | null }>();
+  return row?.password_hash ? verifyPassword(password, row.password_hash) : passwordsMatch(password, c.env.ADMIN_PASSWORD);
+}
+
+async function accountPasswordOk(c: Context<AppEnv>, userId: string, password: string) {
+  const row = await c.env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(userId).first<{ password_hash: string | null }>();
+  return verifyPassword(password, row?.password_hash);
+}
+
 app.post('/api/auth/login', async (c) => {
   if (isHosted(c.env)) return c.json({ error: 'Use "Continue with Google".' }, 400);
   if (!c.env.ADMIN_PASSWORD || !c.env.SESSION_SECRET) {
     return c.json({ error: 'Set ADMIN_PASSWORD and SESSION_SECRET (see README).' }, 500);
   }
-  // Lock an IP out after too many wrong passwords, so a public dashboard can't be brute-forced.
-  // The attempt is recorded and counted in one atomic batch BEFORE the password is checked: checking first
-  // and recording afterwards would let a burst of parallel guesses all slip under the limit.
-  const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+  if (await tooManyAttempts(c)) return c.json({ error: TOO_MANY }, 429);
+  const b = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}) as { email?: string; password?: string });
+  const email = (b.email ?? '').trim().toLowerCase();
+  const password = b.password ?? '';
+  const admin = adminEmail(c.env);
+  let subject: string | null = null;
+  if (password && (admin ? email === admin : !email)) {
+    if (await adminPasswordOk(c, password)) subject = ADMIN_ID;
+  } else if (password && email) {
+    const row = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ? AND password_hash IS NOT NULL')
+      .bind(email, ADMIN_ID)
+      .first<{ id: string }>();
+    if (row && (await accountPasswordOk(c, row.id, password))) subject = `u:${row.id}`;
+  }
+  if (!subject) {
+    await slowDown();
+    return c.json({ error: emailLogin(c.env) ? 'Wrong email or password' : 'Wrong password' }, 401);
+  }
+  await forgetAttempts(c);
+  await setSession(c, subject);
+  return c.json({ ok: true });
+});
+
+app.post('/api/auth/signup', async (c) => {
+  if (!signupOpen(c.env)) return c.json({ error: 'Sign-up is closed.' }, 403);
+  if (!c.env.SESSION_SECRET) return c.json({ error: 'Set SESSION_SECRET (see README).' }, 500);
+  // Counts toward the same limit as logins, so one IP can't create accounts in bulk.
+  if (await tooManyAttempts(c)) return c.json({ error: TOO_MANY }, 429);
+  const b = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}) as { email?: string; password?: string });
+  const email = (b.email ?? '').trim().toLowerCase();
+  const password = b.password ?? '';
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: 'Enter a valid email.' }, 400);
+  if (password.length < MIN_PASSWORD) return c.json({ error: `Use at least ${MIN_PASSWORD} characters for the password.` }, 400);
+  if (password.length > 200) return c.json({ error: 'That password is too long.' }, 400);
+  const taken = email === adminEmail(c.env) || !!(await c.env.DB.prepare('SELECT 1 FROM users WHERE email = ?').bind(email).first());
+  if (taken) return c.json({ error: 'An account with this email already exists. Log in instead.' }, 409);
+  const id = randomId(10);
+  try {
+    await c.env.DB.prepare('INSERT INTO users (id, email, created_at, password_hash) VALUES (?, ?, ?, ?)')
+      .bind(id, email, Date.now(), await hashPassword(password))
+      .run();
+  } catch {
+    // Two sign-ups with the same email at once: the unique index stops the second.
+    return c.json({ error: 'An account with this email already exists. Log in instead.' }, 409);
+  }
+  await setSession(c, `u:${id}`);
+  return c.json({ ok: true });
+});
+
+app.post('/api/auth/password', requireUser, async (c) => {
+  if (isHosted(c.env)) return c.json({ error: 'You sign in with Google, so there is no password to change.' }, 400);
+  if (await tooManyAttempts(c)) return c.json({ error: TOO_MANY }, 429);
+  const user = c.get('user');
+  const b = await c.req.json<{ current?: string; next?: string }>().catch(() => ({}) as { current?: string; next?: string });
+  const current = b.current ?? '';
+  const next = b.next ?? '';
+  if (next.length < MIN_PASSWORD) return c.json({ error: `Use at least ${MIN_PASSWORD} characters for the new password.` }, 400);
+  if (next.length > 200) return c.json({ error: 'That password is too long.' }, 400);
+  const ok = !!current && (user.id === ADMIN_ID ? await adminPasswordOk(c, current) : await accountPasswordOk(c, user.id, current));
+  if (!ok) {
+    await slowDown();
+    return c.json({ error: 'Your current password is wrong.' }, 400);
+  }
+  const hash = await hashPassword(next);
   const now = Date.now();
-  const [, , attempts] = await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOCKOUT_MS),
-    c.env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)').bind(ip, now),
-    c.env.DB.prepare('SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?').bind(ip, now - LOCKOUT_MS),
-  ]);
-  if (((attempts.results[0] as { n: number } | undefined)?.n ?? 0) > MAX_FAILURES) {
-    return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
+  if (user.id === ADMIN_ID) {
+    // The admin gets a users row the first time; from then on it holds their password instead of ADMIN_PASSWORD.
+    await c.env.DB.prepare(
+      `INSERT INTO users (id, email, created_at, password_hash, password_changed_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash, password_changed_at = excluded.password_changed_at`,
+    )
+      .bind(ADMIN_ID, adminEmail(c.env) ?? 'admin', now, hash, now)
+      .run();
+  } else {
+    await c.env.DB.prepare('UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?').bind(hash, now, user.id).run();
   }
-  const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({ email: undefined, password: undefined }));
-  const needEmail = emailLogin(c.env);
-  // Check both before answering, so the reply doesn't say which one was wrong.
-  const emailOk = !needEmail || passwordsMatch((email ?? '').trim().toLowerCase(), c.env.ADMIN_EMAIL!.trim().toLowerCase());
-  const passwordOk = !!password && passwordsMatch(password, c.env.ADMIN_PASSWORD);
-  if (!emailOk || !passwordOk) {
-    await new Promise((r) => setTimeout(r, 500));
-    return c.json({ error: needEmail ? 'Wrong email or password' : 'Wrong password' }, 401);
-  }
-  await c.env.DB.prepare('DELETE FROM login_failures WHERE ip = ?').bind(ip).run();
-  await setSession(c, 'admin');
+  await forgetAttempts(c);
+  // Other browsers are now signed out; keep this one signed in.
+  await setSession(c, user.id === ADMIN_ID ? ADMIN_ID : `u:${user.id}`);
   return c.json({ ok: true });
 });
 
@@ -84,7 +170,7 @@ app.post('/api/auth/logout', (c) => {
 app.get('/api/auth/me', async (c) => {
   const user = await currentUser(c);
   if (user) c.executionCtx.waitUntil(rememberOwnerDevice(c, user).catch(() => {}));
-  return c.json({ loggedIn: !!user, hosted: isHosted(c.env), emailLogin: !isHosted(c.env) && emailLogin(c.env), user });
+  return c.json({ loggedIn: !!user, hosted: isHosted(c.env), emailLogin: emailLogin(c.env), signup: signupOpen(c.env), user });
 });
 
 // ---------- billing (hosted mode)
@@ -93,19 +179,37 @@ app.get('/api/public/plan', async (c) => c.json(await planInfo(c.env)));
 app.post('/api/billing/webhook', billingWebhook);
 app.get('/api/billing/checkout', requireUser, checkout);
 
-// ---------- dashboard API (login required)
+// ---------- dashboard API (login required, except viewing a public site)
 
 app.use('/api/sites', requireUser);
-app.use('/api/sites/*', requireUser);
+
+// What a visitor without access may load from a public site: the dashboard's data, never its settings.
+const PUBLIC_READS = /^\/api\/sites\/[\w-]+(\/(overview|breakdown|realtime|customers|visitors(\/[\w-]+)?|funnels(\/[\w-]+\/stats)?))?\/?$/;
 
 const loadSite = async (c: Context<AppEnv>, next: Next) => {
-  const access = siteAccessSql(c.env, c.get('user'));
-  const site = await c.env.DB.prepare(`SELECT s.* FROM sites s WHERE s.id = ? AND ${access.sql}`)
-    .bind(c.req.param('id'), ...access.params)
-    .first<Site>();
-  if (!site) return c.json({ error: 'site not found' }, 404);
-  c.set('site', site);
-  await next();
+  const id = c.req.param('id');
+  const user = await currentUser(c);
+  if (user) {
+    c.set('user', user);
+    const access = siteAccessSql(c.env, user);
+    const site = await c.env.DB.prepare(`SELECT s.* FROM sites s WHERE s.id = ? AND ${access.sql}`)
+      .bind(id, ...access.params)
+      .first<Site>();
+    if (site) {
+      c.set('site', site);
+      c.set('readOnly', false);
+      return next();
+    }
+  }
+  if (c.req.method === 'GET' && PUBLIC_READS.test(c.req.path)) {
+    const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ? AND public = 1').bind(id).first<Site>();
+    if (site) {
+      c.set('site', site);
+      c.set('readOnly', true);
+      return next();
+    }
+  }
+  return user ? c.json({ error: 'site not found' }, 404) : c.json({ error: 'unauthorized' }, 401);
 };
 app.use('/api/sites/:id', loadSite);
 app.use('/api/sites/:id/*', loadSite);
@@ -129,11 +233,23 @@ function validTimezone(tz: string) {
 }
 
 const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
-const publicSite = (s: Site) => ({
+const ownerSite = (s: Site) => ({
   ...s,
   dodo_webhook_secret: mask(s.dodo_webhook_secret),
   stripe_webhook_secret: mask(s.stripe_webhook_secret),
   polar_webhook_secret: mask(s.polar_webhook_secret),
+  readOnly: false,
+});
+// Someone viewing a public site: what the dashboard needs, and none of the keys or secrets.
+const viewerSite = (s: Site) => ({
+  id: s.id,
+  name: s.name,
+  domain: s.domain,
+  timezone: s.timezone,
+  currency: s.currency,
+  created_at: s.created_at,
+  public: s.public,
+  readOnly: true,
 });
 
 app.get('/api/sites', async (c) => {
@@ -150,7 +266,7 @@ app.get('/api/sites', async (c) => {
   const by = new Map((stats.results as any[]).map((r) => [r.site_id, r]));
   return c.json(
     (sites.results as unknown as Site[]).map((s) => ({
-      ...publicSite(s),
+      ...ownerSite(s),
       visitors24h: by.get(s.id)?.visitors ?? 0,
       online: by.get(s.id)?.online ?? 0,
     })),
@@ -187,12 +303,13 @@ app.post('/api/sites', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO sites (id, name, domain, timezone, currency, api_key, dodo_webhook_secret, polar_webhook_secret, created_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, null, site.created_at, isHosted(c.env) ? user.id : null)
+    // Self-hosted admin sites have no owner (the admin owns those); every account owns its own.
+    .bind(site.id, site.name, site.domain, site.timezone, site.currency, site.api_key, null, null, site.created_at, user.admin && !isHosted(c.env) ? null : user.id)
     .run();
-  return c.json(publicSite(site));
+  return c.json(ownerSite(site));
 });
 
-app.get('/api/sites/:id', (c) => c.json(publicSite(c.get('site'))));
+app.get('/api/sites/:id', (c) => c.json(c.get('readOnly') ? viewerSite(c.get('site')) : ownerSite(c.get('site'))));
 
 app.patch('/api/sites/:id', async (c) => {
   const site = c.get('site');
@@ -222,8 +339,9 @@ app.patch('/api/sites/:id', async (c) => {
     const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
     next.dodo_product_ids = ids.join(',') || null;
   }
+  if (b.public !== undefined) next.public = b.public ? 1 : 0;
   await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ?, polar_webhook_secret = ? WHERE id = ?',
+    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ?, polar_webhook_secret = ?, public = ? WHERE id = ?',
   )
     .bind(
       next.name,
@@ -234,11 +352,12 @@ app.patch('/api/sites/:id', async (c) => {
       next.dodo_product_ids ?? null,
       next.stripe_webhook_secret ?? null,
       next.polar_webhook_secret ?? null,
+      next.public ? 1 : 0,
       site.id,
     )
     .run();
   forgetSite(site.id);
-  return c.json(publicSite(next));
+  return c.json(ownerSite(next));
 });
 
 app.post('/api/sites/:id/rotate-key', async (c) => {
@@ -331,7 +450,7 @@ app.all('/api/*', (c) => c.json({ error: 'not found' }, 404));
 
 // Static files are served before the Worker runs. What reaches here is a client-side route, or a page that doesn't exist.
 const PUBLIC_PAGES = /^\/(terms|privacy|refund)\/?$/;
-const APP_PAGES = /^\/(billing(\/.*)?|site\/[\w-]+(\/settings)?\/?)$/;
+const APP_PAGES = /^\/(billing(\/.*)?|account\/?|site\/[\w-]+(\/settings)?\/?)$/;
 
 app.all('*', async (c) => {
   const path = new URL(c.req.url).pathname;

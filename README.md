@@ -152,9 +152,19 @@ npm run deploy
 
 At 5–10k visitors a month you'll use a few percent of this. If you outgrow it, Cloudflare's Workers Paid plan is $5/month.
 
+## Accounts, passwords and public dashboards
+
+- **Change your password** in the dashboard: account menu → *Account & password*. The new password replaces
+  `ADMIN_PASSWORD` from then on, and other browsers are logged out.
+- **Let other people sign up** with email + password: `npx wrangler secret put ALLOW_SIGNUP` and enter `true`.
+  Each account sees only the sites it adds. You (the `ADMIN_EMAIL` account) keep your own sites. There's no
+  email verification or password reset by email, so only turn it on if that's fine for you.
+- **Make a site public**: site *Settings* → *Public dashboard*. Anyone with the link sees the full dashboard
+  without logging in (including customers, visitor profiles and live view). Settings, keys and secrets stay private.
+
 ## Run it as a hosted SaaS (optional)
 
-By default Minilytics is single-user with a password. Set the Google values below and it becomes a hosted product:
+By default Minilytics uses email + password logins. Set the Google values below and it becomes a hosted product:
 a landing page with pricing, **Sign in with Google**, a paid plan through Dodo Payments, and every customer sees only
 their own sites. Tracking stops (quietly) for sites whose owner's plan has ended.
 

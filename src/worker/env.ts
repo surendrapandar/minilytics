@@ -5,6 +5,8 @@ export interface Env {
   ADMIN_PASSWORD: string;
   /** Dashboard login email (`wrangler secret put ADMIN_EMAIL`). Optional: without it, login asks for the password only. */
   ADMIN_EMAIL?: string;
+  /** "true" lets anyone create an account with email + password (self-hosted). Each account sees only its own sites. */
+  ALLOW_SIGNUP?: string;
   /** Random string used to sign the login cookie (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET: string;
 
@@ -47,12 +49,14 @@ export interface Site {
   owner_id?: string | null;
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
+  /** 1 = the dashboard is viewable without logging in. */
+  public?: number;
 }
 
 /** A site plus its owner's plan, used to stop recording when a hosted plan lapses. */
 export type SiteWithOwner = Site & { owner_email?: string | null; owner_plan_status?: string | null; owner_plan_until?: number | null };
 
-export type AppEnv = { Bindings: Env; Variables: { site: Site; user: import('./auth').User } };
+export type AppEnv = { Bindings: Env; Variables: { site: Site; user: import('./auth').User; readOnly: boolean } };
 
 const siteCache = new Map<string, { site: SiteWithOwner | null; at: number }>();
 

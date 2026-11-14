@@ -23,6 +23,31 @@ async function logout() {
   navigate('/');
 }
 
+const Mark = () => (
+  <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+    <rect width="32" height="32" rx="8" fill="#1c1917" />
+    <path d="M8 22l5-7 4 4 7-10" stroke="#e07b5f" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+/** The bar on a public dashboard seen without logging in. */
+export function PublicBar() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-white/85 backdrop-blur">
+      <nav className="mx-auto flex h-14 max-w-[1480px] items-center gap-2 px-3 sm:px-6">
+        <span className="flex items-center gap-2 px-1.5">
+          <Mark />
+          <span className="font-semibold tracking-tight">Minilytics</span>
+        </span>
+        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-500">Public dashboard</span>
+        <button className="btn ml-auto py-1.5" onClick={() => navigate('/')}>
+          Log in
+        </button>
+      </nav>
+    </header>
+  );
+}
+
 /** The bar at the top of every signed-in page: home, the current site and its pages, and the account menu. */
 export function NavBar({ path }: { path: string }) {
   const { me } = useMe();
@@ -57,10 +82,7 @@ export function NavBar({ path }: { path: string }) {
           className="flex shrink-0 items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-stone-100"
           aria-label="All websites"
         >
-          <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-            <rect width="32" height="32" rx="8" fill="#1c1917" />
-            <path d="M8 22l5-7 4 4 7-10" stroke="#e07b5f" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Mark />
           <span className="hidden font-semibold tracking-tight md:inline">Minilytics</span>
         </a>
 
@@ -162,6 +184,17 @@ export function NavBar({ path }: { path: string }) {
                     }}
                   >
                     {site.name} settings
+                  </button>
+                )}
+                {!me.hosted && (
+                  <button
+                    className={item(path.startsWith('/account'))}
+                    onClick={() => {
+                      close();
+                      navigate('/account');
+                    }}
+                  >
+                    Account & password
                   </button>
                 )}
                 {me.hosted && (

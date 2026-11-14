@@ -5,7 +5,8 @@ import { randomId, signToken, verifyToken } from './lib/crypto';
 
 /**
  * Two modes:
- *  - self-hosted (default): one owner, email + password login (ADMIN_EMAIL, ADMIN_PASSWORD), sees every site.
+ *  - self-hosted (default): an admin logs in with ADMIN_EMAIL + ADMIN_PASSWORD and owns the sites with no owner.
+ *    With ALLOW_SIGNUP=true, anyone can also create an email + password account that sees only its own sites.
  *  - hosted: set GOOGLE_CLIENT_ID/SECRET; anyone can sign in with Google, pays for a plan and sees only their own sites.
  *    Emails in ADMIN_EMAILS never pay and also own the sites created before accounts existed.
  */
@@ -32,11 +33,16 @@ interface UserRow {
   plan_status: string;
   plan_until: number | null;
   plan: string | null;
+  password_hash: string | null;
+  password_changed_at: number | null;
 }
 
+/** The self-hosted admin's id. Their users row only exists once they change their password in the dashboard. */
+export const ADMIN_ID = 'admin';
+
 const selfHostedOwner = (env: Env): User => ({
-  id: 'admin',
-  email: env.ADMIN_EMAIL?.trim() || null,
+  id: ADMIN_ID,
+  email: adminEmail(env),
   name: null,
   avatar: null,
   admin: true,
@@ -46,8 +52,13 @@ const selfHostedOwner = (env: Env): User => ({
   plan: null,
 });
 
-/** Self-hosted login checks the email too once ADMIN_EMAIL is set. */
-export const emailLogin = (env: Env) => !!env.ADMIN_EMAIL?.trim();
+export const adminEmail = (env: Env) => env.ADMIN_EMAIL?.trim().toLowerCase() || null;
+
+/** Self-hosted: anyone may create an account (ALLOW_SIGNUP=true). Each account sees only its own sites. */
+export const signupOpen = (env: Env) => !isHosted(env) && /^(1|true|yes)$/i.test(env.ALLOW_SIGNUP?.trim() ?? '');
+
+/** Self-hosted login asks for an email once there's an admin email or other accounts can exist. */
+export const emailLogin = (env: Env) => !isHosted(env) && (!!adminEmail(env) || signupOpen(env));
 
 export const AUTH_COOKIE = 'ml_auth';
 const AUTH_DAYS = 30;
@@ -94,13 +105,25 @@ export async function currentUser(c: Context<AppEnv>): Promise<User | null> {
   const value = await verifyToken(c.env.SESSION_SECRET, getCookie(c, AUTH_COOKIE));
   if (!value) return null;
   const parts = value.split('.');
-  if (Number(parts[parts.length - 1]) <= Date.now()) return null;
-  // Self-hosted password session: "admin.<expires>"
-  if (parts[0] === 'admin') return isHosted(c.env) ? null : selfHostedOwner(c.env);
-  // Hosted Google session: "u:<userId>.<expires>"
-  if (!parts[0].startsWith('u:') || !isHosted(c.env)) return null;
+  const expires = Number(parts[parts.length - 1]);
+  if (expires <= Date.now()) return null;
+  // Changing the password signs out every session started before the change.
+  const issued = expires - AUTH_DAYS * 86_400_000;
+  const stale = (row: { password_changed_at: number | null } | null) => !!row?.password_changed_at && issued < row.password_changed_at;
+  // Self-hosted admin session: "admin.<expires>"
+  if (parts[0] === ADMIN_ID) {
+    if (isHosted(c.env)) return null;
+    const row = await c.env.DB.prepare('SELECT password_changed_at FROM users WHERE id = ?').bind(ADMIN_ID).first<UserRow>();
+    return stale(row) ? null : selfHostedOwner(c.env);
+  }
+  // Account session (Google when hosted, email + password when self-hosted): "u:<userId>.<expires>"
+  if (!parts[0].startsWith('u:')) return null;
   const row = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(parts[0].slice(2)).first<UserRow>();
-  if (!row) return null;
+  if (!row || row.id === ADMIN_ID || stale(row)) return null;
+  if (!isHosted(c.env)) {
+    // Self-hosted accounts don't pay.
+    return { id: row.id, email: row.email, name: row.name, avatar: row.avatar, admin: false, paid: true, plan_status: 'active', plan_until: null, plan: null };
+  }
   const admin = isAdminEmail(c.env, row.email);
   return {
     id: row.id,
@@ -124,7 +147,10 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 
 /** SQL that limits `sites s` to the ones this user may see. */
 export function siteAccessSql(env: Env, user: User): { sql: string; params: unknown[] } {
-  if (!isHosted(env)) return { sql: '1 = 1', params: [] };
+  if (!isHosted(env)) {
+    // Self-hosted: the admin keeps the ownerless sites; signed-up accounts see only their own.
+    return user.admin ? { sql: 's.owner_id IS NULL', params: [] } : { sql: 's.owner_id = ?', params: [user.id] };
+  }
   if (user.admin) return { sql: '(s.owner_id = ? OR s.owner_id IS NULL)', params: [user.id] };
   return { sql: 's.owner_id = ?', params: [user.id] };
 }

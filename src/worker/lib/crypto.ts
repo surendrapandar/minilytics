@@ -112,3 +112,26 @@ export async function verifyToken(secret: string, token: string | undefined): Pr
 export function passwordsMatch(a: string, b: string): boolean {
   return safeEqual(a, b);
 }
+
+// ---------- account passwords (PBKDF2-SHA256; Workers allow at most 100k iterations)
+
+const PBKDF2_ITERATIONS = 100_000;
+
+async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<ArrayBuffer> {
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+}
+
+/** Returns "pbkdf2$<iterations>$<salt>$<hash>" for storing in the database. */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${bytesToB64(salt.buffer)}$${bytesToB64(hash)}`;
+}
+
+export async function verifyPassword(password: string, stored: string | null | undefined): Promise<boolean> {
+  const [kind, iter, salt, hash] = (stored ?? '').split('$');
+  if (kind !== 'pbkdf2' || !iter || !salt || !hash) return false;
+  const actual = await pbkdf2(password, b64ToBytes(salt), Number(iter));
+  return safeEqual(bytesToB64(actual), hash);
+}

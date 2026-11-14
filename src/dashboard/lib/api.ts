@@ -34,6 +34,10 @@ export interface Site {
   stripe_webhook_secret?: string | null;
   polar_webhook_secret?: string | null;
   created_at: number;
+  /** 1 = anyone with the link can view the dashboard. */
+  public?: number;
+  /** Viewing someone else's public site: no settings or edits. */
+  readOnly?: boolean;
   visitors24h?: number;
   online?: number;
 }
@@ -104,6 +108,8 @@ export interface Me {
   hosted: boolean;
   /** Self-hosted login asks for an email as well as the password. */
   emailLogin?: boolean;
+  /** Self-hosted sign-up is open (ALLOW_SIGNUP). */
+  signup?: boolean;
   user: {
     id: string;
     email: string | null;

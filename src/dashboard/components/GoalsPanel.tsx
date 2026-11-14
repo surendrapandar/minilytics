@@ -78,7 +78,7 @@ interface FunnelDef {
 }
 
 function Funnels() {
-  const { site, q, reloadKey } = useDash();
+  const { site, q, reloadKey, readOnly } = useDash();
   const [version, setVersion] = useState(0);
   const { data: funnels } = useApi<FunnelDef[]>(`/api/sites/${site.id}/funnels`, version);
   const [selected, setSelected] = useState<string | null>(null);
@@ -90,6 +90,7 @@ function Funnels() {
   );
 
   if (!funnels) return <div className="h-40 animate-pulse" />;
+  if (readOnly && !funnels.length) return <div className="p-8 text-center text-sm text-stone-500">No funnels yet.</div>;
   if (creating || !funnels.length)
     return (
       <FunnelForm
@@ -113,10 +114,12 @@ function Funnels() {
             </option>
           ))}
         </select>
-        <button className="btn py-1.5" onClick={() => setCreating(true)}>
-          + New funnel
-        </button>
-        {current && (
+        {!readOnly && (
+          <button className="btn py-1.5" onClick={() => setCreating(true)}>
+            + New funnel
+          </button>
+        )}
+        {current && !readOnly && (
           <button
             className="btn py-1.5 text-red-600"
             onClick={async () => {
@@ -263,7 +266,7 @@ const MATCH_LABELS: Record<string, string> = {
 };
 
 function Journey({ search }: { search: string }) {
-  const { site, q, reloadKey, money, openVisitor } = useDash();
+  const { site, q, reloadKey, money, openVisitor, readOnly } = useDash();
   const [all, setAll] = useState(false);
   const [version, setVersion] = useState(0);
   const [rematch, setRematch] = useState<string | null>(null);
@@ -271,11 +274,16 @@ function Journey({ search }: { search: string }) {
   const { data } = useApi<any[]>(`/api/sites/${site.id}/customers?${qs(q)}`, reloadKey + version);
   if (!data) return <div className="h-40 animate-pulse" />;
   if (!data.length)
-    return <div className="p-8 text-center text-sm text-stone-500">No payments in this period. Connect Dodo Payments or Stripe in site settings to see who paid and where they came from.</div>;
+    return (
+      <div className="p-8 text-center text-sm text-stone-500">
+        No payments in this period.
+        {!readOnly && ' Connect Dodo Payments or Stripe in site settings to see who paid and where they came from.'}
+      </div>
+    );
   const unmatched = data.filter((r) => !r.visitor_id).length;
   return (
     <div className="overflow-x-auto">
-      {unmatched > 0 && (
+      {unmatched > 0 && !readOnly && (
         <div className="mx-3 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span>
             {unmatched} payment{unmatched > 1 ? 's' : ''} not linked to a visitor yet.{' '}

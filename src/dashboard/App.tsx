@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { NavBar } from './components/NavBar';
+import { NavBar, PublicBar } from './components/NavBar';
 import { api, type Me } from './lib/api';
+import { Account } from './pages/Account';
 import { Billing } from './pages/Billing';
 import { Dashboard } from './pages/Dashboard';
 import { Landing } from './pages/Landing';
@@ -36,7 +37,7 @@ const LEGAL_META = {
   refund: { title: 'Refund Policy | Minilytics', description: 'How refunds work for Minilytics, including the 14-day money-back guarantee.' },
 };
 const LEGAL = /^\/(terms|privacy|refund)\/?$/;
-const APP_PAGE = /^\/(billing(\/.*)?|site\/[\w-]+(\/settings)?\/?)$/;
+const APP_PAGE = /^\/(billing(\/.*)?|account\/?|site\/[\w-]+(\/settings)?\/?)$/;
 
 function setTag(selector: string, create: () => HTMLElement, attr: string, value: string) {
   let el = document.head.querySelector<HTMLElement>(selector);
@@ -122,9 +123,21 @@ export function App() {
 
   let page;
   let nav = true;
+  const login = me.hosted ? <Landing /> : <Login withEmail={!!me.emailLogin} signup={!!me.signup} onLogin={refresh} />;
+  const dashboardPath = /^\/site\/([\w-]+)\/?$/.exec(path);
+  if (!me.loggedIn && dashboardPath) {
+    // A public site's dashboard opens without logging in; any other site shows the login.
+    return (
+      <MeContext.Provider value={{ me, refresh }}>
+        <Dashboard siteId={dashboardPath[1]} fallback={login} header={<PublicBar />} />
+      </MeContext.Provider>
+    );
+  }
   if (!me.loggedIn) {
     nav = false;
-    page = me.hosted ? <Landing /> : <Login withEmail={!!me.emailLogin} onLogin={refresh} />;
+    page = login;
+  } else if (path.startsWith('/account')) {
+    page = <Account />;
   } else if (me.hosted && !me.user?.paid) {
     // Signed in but hasn't paid yet: the only thing to do is pick the plan.
     page = <Billing />;

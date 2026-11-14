@@ -181,6 +181,8 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
 
       <LinkBuilder domain={site.domain} />
 
+      <PublicDashboard site={site} origin={origin} onChange={(on) => save({ public: on ? 1 : 0 }, on ? 'Dashboard is public' : 'Dashboard is private')} />
+
       <Section title="General">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -224,6 +226,36 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
         </button>
       </Section>
     </div>
+  );
+}
+
+/** Share the dashboard: anyone with the link sees it (not these settings) without logging in. */
+function PublicDashboard({ site, origin, onChange }: { site: Site; origin: string; onChange: (on: boolean) => void }) {
+  const on = !!site.public;
+  const link = `${origin}/site/${site.id}`;
+  return (
+    <Section
+      title="Public dashboard"
+      desc="Anyone with the link can see this dashboard without logging in, including customers, visitor profiles and live view. Settings stay private."
+    >
+      <label className="flex cursor-pointer items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={() => onChange(!on)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? 'bg-ink' : 'bg-stone-300'}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
+        </button>
+        <span className="text-sm font-medium">{on ? 'Public' : 'Private'}</span>
+      </label>
+      {on && (
+        <div className="mt-4">
+          <CopyField value={link} />
+        </div>
+      )}
+    </Section>
   );
 }
 
