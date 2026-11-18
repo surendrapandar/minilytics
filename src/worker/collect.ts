@@ -1,10 +1,15 @@
 import type { Context } from 'hono';
+import { identifyBot } from '../shared/bots';
 import { classify } from '../shared/sources';
 import { siteOwnerActive } from './auth';
+import { recordBeaconBot } from './bots';
 import { getSite, type AppEnv, type Site } from './env';
 import { isOwnerVisit } from './owner';
-import { isBot, parseUA } from './lib/ua';
+import { parseUA } from './lib/ua';
+import { belongsTo, normalizePath, stripWww } from './lib/url';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
+
+export { belongsTo, normalizePath };
 
 const TYPES = new Set(['pageview', 'goal', 'outbound', 'ping', 'identify']);
 const MAX_PING_MS = 10 * 60_000;
@@ -20,32 +25,14 @@ interface Payload {
   n?: string;
   p?: Record<string, unknown>;
   d?: number;
+  /** 1 when the browser is automated (navigator.webdriver): the tracker then sends only `w`, `t` and `u`. */
+  bot?: number;
 }
 
 const clip = (s: unknown, n = 255): string | null =>
   typeof s === 'string' && s.trim() ? s.trim().slice(0, n) : null;
 
 const isId = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{8,64}$/.test(s);
-
-export function normalizePath(pathname: string): string {
-  let p = pathname || '/';
-  try {
-    p = decodeURI(p);
-  } catch {}
-  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-  return p.slice(0, 500);
-}
-
-function stripWww(h: string) {
-  return h.replace(/^www\./, '').toLowerCase();
-}
-
-/** Is `hostname` the site's domain or one of its subdomains? */
-export function belongsTo(hostname: string, domain: string): boolean {
-  const h = stripWww(hostname);
-  const d = stripWww(domain);
-  return h === d || h.endsWith('.' + d);
-}
 
 export async function handleEvent(c: Context<AppEnv>) {
   const raw = await c.req.text();
@@ -56,10 +43,16 @@ export async function handleEvent(c: Context<AppEnv>) {
   } catch {
     return c.body(null, 400);
   }
-  if (!body || !isId(body.w) || !TYPES.has(body.t) || !isId(body.vid) || !isId(body.sid)) return c.body(null, 400);
+  if (!body || !isId(body.w) || !TYPES.has(body.t)) return c.body(null, 400);
 
   const ua = c.req.header('user-agent') ?? '';
-  if (isBot(ua)) return c.body(null, 202);
+  // Bots and AI agents that run JavaScript are counted as bot hits (one per page), never as visitors.
+  const bot = identifyBot(ua, { signatureAgent: c.req.header('signature-agent'), automated: body.bot === 1 });
+  if (bot) {
+    if (body.t === 'pageview' && typeof body.u === 'string') c.executionCtx.waitUntil(recordBeaconBot(c, bot, body.w, body.u).catch(() => {}));
+    return c.body(null, 202);
+  }
+  if (!isId(body.vid) || !isId(body.sid)) return c.body(null, 400);
 
   const site = await getSite(c.env.DB, body.w);
   if (!site) return c.body(null, 404);

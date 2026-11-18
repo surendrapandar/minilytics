@@ -3,3 +3,6 @@ dist
 .wrangler
 .dev.vars
 *.log
+
+# Notes and research stay local
+docs/

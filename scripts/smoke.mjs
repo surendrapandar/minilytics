@@ -42,7 +42,7 @@ assert(r.status === 202, 'pageview accepted');
 r = await event(site.id, { t: 'pageview', u: 'https://evil.com/', r: '', vid, sid });
 assert(r.status === 403, 'other domains rejected');
 r = await fetch(BASE + '/api/event', { method: 'POST', headers: { 'user-agent': 'Googlebot/2.1' }, body: JSON.stringify({ w: site.id, t: 'pageview', u: 'https://smoke-test.com/', vid, sid }) });
-assert(r.status === 202, 'bots silently dropped');
+assert(r.status === 202, 'bots are accepted but not counted as visitors');
 await event(site.id, { t: 'pageview', u: 'https://app.smoke-test.com/pricing/', r: 'https://smoke-test.com/', vid, sid });
 await event(site.id, { t: 'goal', u: 'https://app.smoke-test.com/pricing', n: 'checkout_click', p: { plan: 'pro' }, vid, sid });
 await event(site.id, { t: 'outbound', u: 'https://app.smoke-test.com/pricing', n: 'https://checkout.dodopayments.com/buy/pdt_1', vid, sid });
@@ -185,6 +185,35 @@ for (const g of ['hour', 'day', 'week', 'month']) {
 
 const rt = (await call(`/api/sites/${site.id}/realtime`)).body;
 assert(rt.visitors.some((v) => v.visitor_id === vid) && rt.feed.some((f) => f.type === 'payment'), `live view: ${rt.visitors.length} online, ${rt.feed.length} recent events`);
+
+// --- Bots, crawlers and AI agents
+// The server snippet reports crawlers that never run JavaScript; people in the batch are skipped.
+const hits = (body, key = site.api_key) =>
+  fetch(BASE + '/api/v1/hits', { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+assert((await hits({ url: '/', ua: 'GPTBot/1.2' }, 'ml_wrong')).status === 401, 'bot reports need the API key');
+const gptbot = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)';
+const hr = await (
+  await hits({
+    hits: [
+      { url: 'https://smoke-test.com/llms.txt', ua: gptbot, ip: '203.0.113.9', status: 200 },
+      { url: 'https://smoke-test.com/llms.txt', ua: gptbot, ip: '203.0.113.9', status: 200 },
+      { url: '/pricing', ua: 'curl/8.4.0', status: 429, blocked: true },
+      { url: '/', ua },
+    ],
+  })
+).json();
+assert(hr.received === 4 && hr.bots === 3, `hits API keeps only bots (${hr.bots} of ${hr.received})`);
+// An automated browser running the script (navigator.webdriver) is a bot hit too.
+await fetch(BASE + '/api/event', { method: 'POST', headers: { 'user-agent': ua }, body: JSON.stringify({ w: site.id, t: 'pageview', u: 'https://smoke-test.com/docs', bot: 1 }) });
+await new Promise((r) => setTimeout(r, 1500)); // script hits are saved after the response
+const bo = (await call(`/api/sites/${site.id}/bots?period=today`)).body;
+assert(bo.current.hits === 5 && bo.current.ai === 2 && bo.current.blocked === 1 && bo.serverReportAt, `bot totals ${JSON.stringify(bo.current)}`);
+assert(bo.current.verified === 0, 'bots from the wrong addresses are not verified');
+const byBot = (await call(`/api/sites/${site.id}/bots/breakdown?period=today&dim=bot`)).body;
+assert(['GPTBot', 'Googlebot', 'curl', 'Headless browser'].every((n) => byBot.some((b) => b.label === n)), `bots: ${byBot.map((b) => b.label)}`);
+assert(byBot.find((b) => b.label === 'GPTBot').operator === 'OpenAI', 'GPTBot belongs to OpenAI');
+const curlPages = (await call(`/api/sites/${site.id}/bots/breakdown?period=today&dim=page&filters=${encodeURIComponent(JSON.stringify({ bot: 'curl' }))}`)).body;
+assert(curlPages.length === 1 && curlPages[0].label === '/pricing' && curlPages[0].blocked === 1, 'filter bots by name');
 
 await call(`/api/sites/${site.id}`, { method: 'DELETE' });
 assert((await call(`/api/sites/${site.id}`)).status === 404, 'site deleted');

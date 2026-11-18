@@ -5,13 +5,15 @@ import { Favicon } from '../components/Icons';
 import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
-import { fmtMoney } from '../lib/format';
+import { botSnippet, SNIPPET_LABELS, type BotPlatform } from '../lib/botSnippets';
+import { fmtAgo, fmtMoney } from '../lib/format';
+import { usePref } from '../lib/prefs';
 
 const DOCS = 'https://github.com/surendrapandar/minilytics#';
 
-function Section({ title, desc, docs, children }: { title: string; desc?: ReactNode; docs?: string; children: ReactNode }) {
+function Section({ id, title, desc, docs, children }: { id?: string; title: string; desc?: ReactNode; docs?: string; children: ReactNode }) {
   return (
-    <section className="card p-6">
+    <section id={id} className="card scroll-mt-6 p-6">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold">{title}</h2>
         {docs && <DocsLink anchor={docs} />}
@@ -135,6 +137,11 @@ export function Settings({ siteId }: { siteId: string }) {
     }
   }
 
+  // Links like /site/x/settings#bots open at that section.
+  useEffect(() => {
+    if (site && window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'start' });
+  }, [!!site]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!site) return null;
   const set = (patch: Partial<Site>) => setForm({ ...form, ...patch });
 
@@ -181,6 +188,8 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       </Section>
 
       <Revenue site={site} origin={origin} form={form} set={set} save={save} onKeyRotated={(api_key) => setSite({ ...site, api_key })} />
+
+      <BotSetup site={site} origin={origin} />
 
       <LinkBuilder domain={site.domain} />
 
@@ -477,7 +486,7 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">✨ Set up with AI</h2>
-          <p className="mt-1 text-sm text-stone-600">Paste into Claude Code or Cursor in your project. It does steps 1–3 for you.</p>
+          <p className="mt-1 text-sm text-stone-600">Paste into Claude Code or Cursor in your project. It does steps 1–4 for you.</p>
         </div>
         <CopyButton text={prompt} label="Copy AI prompt" className="btn-dark shrink-0" />
       </div>
@@ -486,6 +495,90 @@ function AiSetup({ site, origin }: { site: Site; origin: string }) {
       </button>
       {open && <pre className="code mt-3 max-h-96 whitespace-pre-wrap">{prompt}</pre>}
     </section>
+  );
+}
+
+function Choice<T extends string | number | boolean | null>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <div className="tabs">
+      {options.map(([v, label]) => (
+        <button key={String(v)} className={`tab ${v === value ? 'tab-active' : ''}`} onClick={() => onChange(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Bots and AI crawlers: what the script sees on its own, and the server snippet for everything else. */
+function BotSetup({ site, origin }: { site: Site; origin: string }) {
+  const [platform, setPlatform] = usePref<BotPlatform>('ml_bot_platform', 'nextjs');
+  const [aiOnly, setAiOnly] = useState(false);
+  const [limit, setLimit] = useState<number | null>(120);
+  const lastReport = site.bot_feed_at;
+  return (
+    <Section
+      id="bots"
+      title="4. Track bots & AI crawlers"
+      desc="See which AI models, search engines and scripts read your site, and slow down any bot that floods it."
+      docs="bots-and-ai-crawlers"
+    >
+      <ul className="mb-6 space-y-2 text-sm">
+        <li className="flex gap-2">
+          <span className="text-emerald-600">✓</span>
+          <span>
+            <b>Automatic:</b> bots that run JavaScript (AI browser agents like ChatGPT agent and Claude, Googlebot, headless browsers) count as bots,
+            never as visitors.
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className={lastReport ? 'text-emerald-600' : 'text-stone-400'}>{lastReport ? '✓' : '○'}</span>
+          <span>
+            <b>Server snippet:</b>{' '}
+            {lastReport
+              ? `connected, last report ${fmtAgo(Date.now() - lastReport)} ago.`
+              : 'not set up. AI crawlers (GPTBot, ClaudeBot, PerplexityBot, Meta, ByteDance…) never run JavaScript; your server is the only place that sees them.'}
+          </span>
+        </li>
+      </ul>
+      <Steps>
+        <Step
+          n={1}
+          title={
+            <>
+              Add this site's API key to your server's environment as <code>MINILYTICS_API_KEY</code>:
+            </>
+          }
+        >
+          <CopyField value={site.api_key} />
+        </Step>
+        <Step n={2} title="Choose what to report, and when a bot counts as flooding:">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Choice value={aiOnly} options={[[false, 'All bots'], [true, 'AI bots only']]} onChange={setAiOnly} />
+            <div className="flex items-center gap-2">
+              <span className="text-stone-500">Block after</span>
+              <Choice value={limit} options={[[60, '60/min'], [120, '120/min'], [300, '300/min'], [null, 'Never']]} onChange={setLimit} />
+            </div>
+          </div>
+        </Step>
+        <Step n={3} title="Add this to your server:">
+          <div className="tabs mb-2 max-w-full overflow-x-auto">
+            {(Object.keys(SNIPPET_LABELS) as BotPlatform[]).map((p) => (
+              <button key={p} className={`tab whitespace-nowrap ${p === platform ? 'tab-active' : ''}`} onClick={() => setPlatform(p)}>
+                {SNIPPET_LABELS[p].label}
+              </button>
+            ))}
+          </div>
+          <Code label={SNIPPET_LABELS[platform].file}>{botSnippet(platform, { origin, aiOnly, limit })}</Code>
+        </Step>
+      </Steps>
+      <p className="mt-5 border-t border-stone-100 pt-4 text-sm text-stone-500">
+        A bot (one IP and user agent) that goes over the limit gets <code>429 Too Many Requests</code> for the rest of the minute; bots under it
+        are never touched, and people never are. Counting happens in each server instance, so this stops one bot hammering the site; a flood from
+        many addresses needs your host's firewall (Cloudflare or Vercel rate limiting). Each reported bot visit is one request to Minilytics, and a
+        flood is reported once a minute, not per request.
+      </p>
+    </Section>
   );
 }
 

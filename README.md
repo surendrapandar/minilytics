@@ -58,6 +58,7 @@ Cloudflare's free plan.
 - **Where they are and what they use**: country, region, city, browser, OS, device
 - **What they did**: pages, entry pages, exit links (outbound clicks), button clicks and custom goals, funnels
 - **Who paid**: a Journey list of every customer with their source, amount, time to convert, and a full visitor timeline (visit → pages → clicks → payment)
+- **Bots & AI crawlers**: which AI models (GPTBot, ClaudeBot, PerplexityBot, Gemini/Googlebot, Meta, ByteDance…), search engines, link previews and scripts read your site, which pages they read (including `robots.txt` and `llms.txt`), whether each one is really who it claims to be, and any bot that got rate-limited for flooding. Bots never count as visitors
 - **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
@@ -131,6 +132,7 @@ npm run deploy
 | 100,000 D1 rows written/day | About 10k pageviews per day |
 | 5M D1 rows read/day | A dashboard load reads roughly 10 times the sessions in the range, so with 10k visitors/month that's hundreds of loads a day |
 | 5 GB D1 storage | Years of data at side-project traffic |
+| Bot reports from your server | Each reported bot visit is 1 request and about 1 row written, from the same daily allowance. Choose "AI bots only" in the snippet if crawlers would use too much of it |
 
 At 5–10k visitors a month you'll use a few percent of this. If you outgrow it, Cloudflare's Workers Paid plan is $5/month.
 
@@ -257,6 +259,41 @@ curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..."
   -d '{"transaction_id":"txn_1","amount":29.99,"currency":"USD","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
 ```
 
+## Bots and AI crawlers
+
+Bots are kept apart from people: they never count as visitors, and the dashboard shows them in their own **Bots & AI
+crawlers** card (hits over time, by bot, company, type and page).
+
+- **Automatic:** bots that run JavaScript load the script like a browser and are counted as bots: AI browser agents
+  (ChatGPT agent, Claude, Google-Agent), Googlebot's renderer, and headless browsers (Puppeteer, Playwright, Selenium
+  report `navigator.webdriver`).
+- **Server snippet (recommended):** most AI crawlers (GPTBot, ClaudeBot, PerplexityBot, Meta, ByteDance, Common Crawl)
+  never run JavaScript, so only your server sees them. Site settings → **Track bots & AI crawlers** has a ready-made
+  snippet for Next.js, a Cloudflare Worker and Express. Add the site's API key to your server as `MINILYTICS_API_KEY`
+  and paste the snippet. People are left alone; only requests that look automated are reported, after the response,
+  so pages never wait for it.
+
+**Flood protection.** The snippet also rate-limits bots: one bot (same IP and user agent) sending more than 120
+requests a minute (60, 300 or never, your choice) gets `429 Too Many Requests` with `Retry-After: 60` until the minute
+is over. Bots under the limit and people are never blocked. Counting happens per server instance, so it stops a single
+bot hammering your site; a flood from many addresses needs your host's firewall (Cloudflare or Vercel rate limiting).
+A flood is reported once a minute, not per request, and shows up as **Blocked** in the dashboard.
+
+**Is it really GPTBot?** Anyone can put "GPTBot" in a user agent. Each hit is checked against the address list the
+bot's company publishes (OpenAI, Anthropic, Perplexity, Google, Bing, Apple, DuckDuckGo, Mistral, Common Crawl), and
+signed agents (ChatGPT agent, Google-Agent) are verified by their Web Bot Auth signature. Hits from the wrong address
+show as **fake**; companies that publish nothing (Meta, ByteDance) stay unverified.
+
+**Other servers or logs:** send hits yourself with the site's API key (up to 500 per request, ideally only bots):
+
+```bash
+curl -X POST https://YOUR-HOST/api/v1/hits -H "Authorization: Bearer ml_..." -H "Content-Type: application/json" \
+  -d '{"hits": [{"url": "https://yoursite.com/llms.txt", "ua": "<user agent>", "ip": "<client ip>", "status": 200, "ts": "2026-11-18T09:30:00Z"}]}'
+```
+
+Optional fields: `signature`, `signature_input`, `signature_agent` (the request's Web Bot Auth headers) and
+`blocked: true` (you answered 429). Bots are stored per hour, bot and page, never one row per hit.
+
 ## Accuracy notes
 
 No analytics tool is 100% accurate. These are the main gaps and how this project handles them:
@@ -265,7 +302,8 @@ No analytics tool is 100% accurate. These are the main gaps and how this project
   rewrite). Payments are always recorded by the webhook, even when the visitor's browser blocked tracking.
 - **Safari** keeps cookies set by JavaScript for at most 7 days. A Safari visitor who returns after more than a week counts as new. The
   email fallback above recovers most of these payments.
-- **Bots** are filtered by user agent and the `navigator.webdriver` flag.
+- **Bots** are recognised by user agent, `navigator.webdriver` and Web Bot Auth signatures, and kept out of visitor
+  numbers. AI crawlers that don't run JavaScript are only seen with the server snippet (see above).
 - Revenue in a different currency than the site's is converted only when Dodo gives a settlement amount in the site's currency.
 
 ## Local development
@@ -285,7 +323,8 @@ node scripts/smoke-hosted.mjs         # hosted-mode test (see the comment at the
 ## How it's built
 
 - `public/js/script.js`: the tracker, 9 KB (about 3.5 KB gzipped). It handles cookies, pageviews, engaged time, goals, outbound links and Dodo link tagging
-- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, the Dodo webhook, the payments and goals API, and stats queries on D1 (SQLite)
+- `src/worker`: a Hono app on Cloudflare Workers that handles event ingestion, the Dodo webhook, the payments, goals and bot-hits API, and stats queries on D1 (SQLite)
+- `src/shared/bots.ts`: the list of known bots, AI crawlers and agents (shared by the Worker and the dashboard)
 - `src/dashboard`: the React dashboard (Vite, Tailwind, Recharts), served as static files by the same Worker
 - `migrations/`: the database schema
 

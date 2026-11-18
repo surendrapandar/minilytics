@@ -1,5 +1,6 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
+import { botBreakdown, botOverview, handleHitsApi, makeBotCtx } from './bots';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
@@ -37,6 +38,7 @@ app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
+app.post('/api/v1/hits', handleHitsApi);
 
 // ---------- login
 
@@ -236,7 +238,7 @@ app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
     // Everything stored for the site, so deleting it really removes its visitors' data.
-    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products'].map((t) =>
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products', 'bot_hits'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );
@@ -251,6 +253,16 @@ app.get('/api/sites/:id/overview', async (c) => c.json(await overview(makeCtx(c)
 app.get('/api/sites/:id/breakdown', async (c) => {
   try {
     return c.json(await breakdown(makeCtx(c), c.req.query('dim') ?? 'source', Number(c.req.query('limit')) || 100));
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+// Bots, crawlers and AI agents (their own filters: bot, operator, category, page).
+app.get('/api/sites/:id/bots', async (c) => c.json(await botOverview(makeBotCtx(c))));
+app.get('/api/sites/:id/bots/breakdown', async (c) => {
+  try {
+    return c.json(await botBreakdown(makeBotCtx(c), c.req.query('dim') ?? 'bot', Number(c.req.query('limit')) || 100));
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
   }

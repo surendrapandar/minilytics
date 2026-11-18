@@ -32,6 +32,8 @@ export interface Site {
   dodo_webhook_secret: string | null;
   dodo_product_ids?: string | null;
   stripe_webhook_secret?: string | null;
+  /** When the site's server last reported bots (null: not set up). */
+  bot_feed_at?: number | null;
   created_at: number;
   visitors24h?: number;
   online?: number;
@@ -75,6 +77,38 @@ export interface BreakdownRow {
   revenue: number;
   customers: number;
   extra?: string | null;
+}
+
+export interface BotTotals {
+  hits: number;
+  ai: number;
+  verified: number;
+  spoofed: number;
+  blocked: number;
+  bots: number;
+  pages: number;
+}
+
+export interface BotOverview {
+  range: Overview['range'];
+  current: BotTotals;
+  previous: BotTotals;
+  series: { bucket: string; ai: number; other: number }[];
+  serverReportAt: number | null;
+}
+
+export interface BotRow {
+  label: string | null;
+  hits: number;
+  verified: number;
+  spoofed: number;
+  errors: number;
+  blocked: number;
+  bots: number;
+  pages: number;
+  operator: string | null;
+  category: string | null;
+  last_seen: number;
 }
 
 export type Filters = Record<string, string>;

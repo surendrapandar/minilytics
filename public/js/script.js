@@ -23,11 +23,11 @@
   var ignored = false;
   try { ignored = localStorage.getItem('ml_ignore') === '1'; } catch (e) {}
   var local = /^(localhost|127\.|0\.0\.0\.0|\[::1\]|.*\.local$)/.test(loc.hostname) || loc.protocol === 'file:';
-  if (!siteId || ignored || nav.webdriver || (local && !allowLocal)) {
+  function disable() {
     w.minilytics = noop;
     w.minilytics.attribution = function () { return {}; };
-    return;
   }
+  if (!siteId || ignored || (local && !allowLocal)) return disable();
 
   // ---- cookies (first-party, shared across subdomains so app.site.com and site.com are one visitor)
   function readCookie(name) {
@@ -84,7 +84,9 @@
     var id = ids();
     var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
     for (var k in extra) if (extra[k] !== undefined) body[k] = extra[k];
-    var json = JSON.stringify(body);
+    post(JSON.stringify(body), beacon);
+  }
+  function post(json, beacon) {
     // text/plain keeps this a "simple" request: no CORS preflight, works with sendBeacon.
     if (beacon && nav.sendBeacon) {
       try { if (nav.sendBeacon(endpoint, new Blob([json], { type: 'text/plain' }))) return; } catch (e) {}
@@ -92,6 +94,13 @@
     try {
       fetch(endpoint, { method: 'POST', body: json, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'text/plain' } }).catch(noop);
     } catch (e) {}
+  }
+
+  // Automated browsers (Puppeteer, Playwright, Selenium, some AI agents) are counted as bots, not visitors:
+  // one hit for the page, with no cookies, and nothing else.
+  if (nav.webdriver) {
+    post(JSON.stringify({ w: siteId, t: 'pageview', u: cleanUrl(loc.href), bot: 1 }), false);
+    return disable();
   }
 
   // ---- engaged time (only while the tab is visible)

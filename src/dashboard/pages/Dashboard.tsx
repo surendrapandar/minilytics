@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { navigate } from '../App';
+import { BotsPanel } from '../components/BotsPanel';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
 import { Panel, renderLabel } from '../components/Panel';
@@ -155,6 +156,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
         <div className="mt-5">
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
+        </div>
+
+        <div className="mt-5">
+          <BotsPanel />
         </div>
 
         <p className="mt-8 text-center text-xs text-stone-400">

@@ -38,8 +38,8 @@ const DEVICES = [[['Chrome', 'Mac OS', 'Desktop'], 40], [['Safari', 'Mac OS', 'D
 const NAMES = ['Vlad Petrov', 'Jordan Lee', 'Ricardo Alves', 'Mia Schmidt', 'Jack Turner', 'Aisha Khan', 'Lucas Martin', 'Priya Sharma', 'Noah Kim', 'Emma Rossi', 'Ravi Patel', 'Sofia Garcia', 'Liam Chen', 'Chloe Dubois'];
 
 const out = [];
-out.push(`DELETE FROM events WHERE site_id = '${siteId}';`, `DELETE FROM sessions WHERE site_id = '${siteId}';`, `DELETE FROM visitors WHERE site_id = '${siteId}';`, `DELETE FROM payments WHERE site_id = '${siteId}';`, `DELETE FROM funnels WHERE site_id = '${siteId}';`, `DELETE FROM sites WHERE id = '${siteId}';`);
-out.push(`INSERT INTO sites (id, name, domain, timezone, currency, api_key, created_at) VALUES ('${siteId}', 'ShipKit', 'shipkit.dev', 'UTC', 'USD', 'ml_demo_key', ${now - 60 * DAY});`);
+out.push(`DELETE FROM events WHERE site_id = '${siteId}';`, `DELETE FROM sessions WHERE site_id = '${siteId}';`, `DELETE FROM visitors WHERE site_id = '${siteId}';`, `DELETE FROM payments WHERE site_id = '${siteId}';`, `DELETE FROM funnels WHERE site_id = '${siteId}';`, `DELETE FROM bot_hits WHERE site_id = '${siteId}';`, `DELETE FROM sites WHERE id = '${siteId}';`);
+out.push(`INSERT INTO sites (id, name, domain, timezone, currency, api_key, created_at, bot_feed_at) VALUES ('${siteId}', 'ShipKit', 'shipkit.dev', 'UTC', 'USD', 'ml_demo_key', ${now - 60 * DAY}, ${now - 4 * 60_000});`);
 out.push(`INSERT INTO funnels (id, site_id, name, steps, created_at) VALUES ('fun00001', '${siteId}', 'Landing → Checkout', ${q(JSON.stringify([{ type: 'page', value: '/' }, { type: 'page', value: '/pricing' }, { type: 'goal', value: 'checkout_click' }]))}, ${now});`);
 
 let payN = 0;
@@ -107,6 +107,57 @@ LIVE.forEach(([cc, city, lat, lon, source, domain, channel, page], i) => {
     out.push(`INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name) VALUES ('pay_demo_live', '${siteId}', 'dodo', ${start + 60_000}, 9900, 'payment', 'USD', '${vid}', '${sid}', 'cus_live', 'socianova@example.com', 'SociaNova');`);
   }
 });
+
+// Bots, crawlers and AI agents: [name, operator, category, hits per day, share verified, share fake, pages]
+const BOT_PAGES = ['/', '/pricing', '/features', '/docs', '/blog/seo-for-saas', '/blog/how-to-get-first-customers', '/changelog'];
+const CRAWLER_FILES = ['/robots.txt', '/sitemap.xml', '/llms.txt', '/llms-full.txt'];
+const BOTS = [
+  ['Googlebot', 'Google', 'Search engine', 60, 0.97, 0.03, [...BOT_PAGES, '/robots.txt', '/sitemap.xml']],
+  ['GPTBot', 'OpenAI', 'AI training', 45, 0.92, 0.08, [...BOT_PAGES, ...CRAWLER_FILES]],
+  ['ClaudeBot', 'Anthropic', 'AI training', 38, 1, 0, [...BOT_PAGES, ...CRAWLER_FILES]],
+  ['OAI-SearchBot', 'OpenAI', 'AI search', 22, 1, 0, [...BOT_PAGES, '/robots.txt']],
+  ['ChatGPT-User', 'OpenAI', 'AI assistant', 14, 1, 0, ['/', '/pricing', '/docs', '/blog/seo-for-saas']],
+  ['PerplexityBot', 'Perplexity', 'AI search', 16, 0.85, 0.15, [...BOT_PAGES, '/robots.txt']],
+  ['Claude-User', 'Anthropic', 'AI assistant', 8, 1, 0, ['/', '/docs', '/pricing', '/llms.txt']],
+  ['Bingbot', 'Microsoft', 'Search engine', 25, 1, 0, [...BOT_PAGES, '/robots.txt', '/sitemap.xml']],
+  ['Meta-ExternalAgent', 'Meta', 'AI training', 18, 0, 0, BOT_PAGES],
+  ['Bytespider', 'ByteDance', 'AI training', 12, 0, 0, BOT_PAGES],
+  ['CCBot', 'Common Crawl', 'AI training', 6, 1, 0, [...BOT_PAGES, '/robots.txt']],
+  ['Applebot', 'Apple', 'Search engine', 9, 1, 0, [...BOT_PAGES, '/robots.txt']],
+  ['AhrefsBot', 'Ahrefs', 'SEO', 20, 0, 0, BOT_PAGES],
+  ['Twitterbot', 'X', 'Social preview', 7, 0, 0, ['/', '/blog/how-to-get-first-customers']],
+  ['Claude-Agent', 'Anthropic', 'AI agent', 2, 1, 0, ['/', '/pricing']],
+  ['ChatGPT agent', 'OpenAI', 'AI agent', 2, 1, 0, ['/', '/pricing', '/features']],
+  ['UptimeRobot', 'UptimeRobot', 'Monitoring', 288, 0, 0, ['/']],
+  ['Python script', '', 'Automation', 30, 0, 0, ['/', '/pricing', '/docs']],
+  ['curl', '', 'Automation', 4, 0, 0, ['/', '/robots.txt']],
+];
+for (let d = 34; d >= 0; d--) {
+  for (const [bot, operator, category, perDay, okShare, fakeShare, pages] of BOTS) {
+    const rows = new Map();
+    const n = Math.round(perDay * (0.6 + rand() * 0.8));
+    for (let i = 0; i < n; i++) {
+      const ts = now - d * DAY - Math.floor(rand() * DAY);
+      if (ts > now) continue;
+      const hour = Math.floor(ts / 3_600_000) * 3_600_000;
+      const path = pick(pages);
+      const key = `${hour}|${path}`;
+      const r = rows.get(key) ?? { hour, path, hits: 0, verified: 0, spoofed: 0, errors: 0, blocked: 0, last: ts };
+      const v = rand();
+      r.hits++;
+      if (v < okShare) r.verified++;
+      else if (v < okShare + fakeShare) r.spoofed++;
+      if (rand() < 0.04) r.errors++;
+      r.last = Math.max(r.last, ts);
+      rows.set(key, r);
+    }
+    // One scraper flooded the site a few days ago and got rate-limited.
+    if (bot === 'Python script' && d === 3) rows.set('flood', { hour: Math.floor((now - 3 * DAY) / 3_600_000) * 3_600_000, path: '/pricing', hits: 6, verified: 0, spoofed: 0, errors: 6, blocked: 6, last: now - 3 * DAY });
+    for (const r of rows.values()) {
+      out.push(`INSERT INTO bot_hits (site_id, hour, bot, path, operator, category, hits, verified, spoofed, errors, blocked, last_seen) VALUES ('${siteId}', ${r.hour}, ${q(bot)}, ${q(r.path)}, ${q(operator)}, ${q(category)}, ${r.hits}, ${r.verified}, ${r.spoofed}, ${r.errors}, ${r.blocked}, ${r.last}) ON CONFLICT DO UPDATE SET hits = hits + excluded.hits, verified = verified + excluded.verified, spoofed = spoofed + excluded.spoofed, errors = errors + excluded.errors, blocked = blocked + excluded.blocked;`);
+    }
+  }
+}
 
 mkdirSync('.wrangler', { recursive: true });
 writeFileSync('.wrangler/seed.sql', out.join('\n'));

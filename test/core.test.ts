@@ -17,6 +17,8 @@ describe('classify', () => {
   });
   it('recognises AI assistants, including utm_source=chatgpt.com', () => {
     expect(classify({ referrerDomain: null, utmSource: 'chatgpt.com' })).toMatchObject({ source: 'ChatGPT', channel: 'AI' });
+    expect(classify({ referrerDomain: 'meta.ai' })).toMatchObject({ source: 'Meta AI', channel: 'AI' });
+    expect(classify({ referrerDomain: 'chat.mistral.ai' })).toMatchObject({ source: 'Mistral', channel: 'AI' });
   });
   it('lets ref/utm tags win over the referrer', () => {
     expect(classify({ referrerDomain: 'google.com', ref: 'producthunt' })).toMatchObject({ source: 'Product Hunt' });

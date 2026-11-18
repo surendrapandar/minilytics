@@ -1,4 +1,5 @@
 import type { Site } from './api';
+import { botSnippet } from './botSnippets';
 
 /**
  * A copy-paste prompt for the site owner's coding AI (Claude Code, Cursor, Copilot…),
@@ -46,6 +47,18 @@ Add data attributes to the most important calls-to-action (no JS needed), using 
 Optional details: data-ml-goal-plan="pro". From code: window.minilytics?.('goal', 'signup_completed', { plan: 'pro' }).
 Track at least: the main signup/get-started button(s), pricing-page plan buttons, and the checkout/buy button. Also fire window.minilytics?.('goal', 'signup_completed') after a successful signup.
 
+## Task 5 — Report bots and AI crawlers from the server (and slow down floods)
+AI crawlers (GPTBot, ClaudeBot, PerplexityBot…) never run JavaScript, so only the server sees them.
+- Add server middleware that, for requests whose user agent matches the BOT pattern below (or that carry a \`Signature-Agent\` header, or have no user agent), POSTs a small JSON report to ${origin}/api/v1/hits with \`Authorization: Bearer \${process.env.MINILYTICS_API_KEY}\`. Fire and forget (waitUntil / after the response); it must never delay or break a page.
+- Skip static assets (JS, CSS, images, fonts) but keep pages, robots.txt, sitemap.xml, llms.txt and .md files.
+- Rate-limit bots only: more than 120 requests a minute from one IP + user agent gets \`429 Too Many Requests\` with \`Retry-After: 60\` until the minute is over; report the first blocked request with "blocked": true and don't report the rest. Never rate-limit requests that don't match BOT.
+- Read the key from the environment variable MINILYTICS_API_KEY (don't hardcode it); I'll set it from my Minilytics settings. If the project already has a middleware/proxy file, merge into it.
+- Reference implementation for Next.js (adapt it to this project's framework):
+
+\`\`\`ts
+${botSnippet('nextjs', { origin, aiOnly: false, limit: 120 })}
+\`\`\`
+
 ## TypeScript
 If the project uses TypeScript, add a global declaration so calls type-check:
   declare global { interface Window { minilytics?: ((cmd: 'goal' | 'identify' | 'pageview', a?: any, b?: any) => void) & { attribution?: () => { ml_visitor_id?: string; ml_session_id?: string } } } }
@@ -60,5 +73,6 @@ Always call it with optional chaining (window.minilytics?.(...)) so pages never 
 1. A list of every file you changed and why.
 2. Which checkout/payment code paths now send ml_visitor_id / ml_session_id (and any you could not find or were unsure about).
 3. Which goals you added and where.
-4. How I can verify: open the site, in DevTools → Network a POST to ${origin}/api/event returns 202, and the visit appears in my Minilytics dashboard within seconds.`;
+4. Where the bot-reporting middleware lives, and a reminder for me to set MINILYTICS_API_KEY.
+5. How I can verify: open the site, in DevTools → Network a POST to ${origin}/api/event returns 202, and the visit appears in my Minilytics dashboard within seconds.`;
 }

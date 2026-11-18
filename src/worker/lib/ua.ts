@@ -1,14 +1,14 @@
+import { identifyBot } from '../../shared/bots';
+
 export interface ParsedUA {
   browser: string;
   os: string;
   device: 'Desktop' | 'Mobile' | 'Tablet';
 }
 
-const BOT_RE =
-  /bot|crawl|spider|slurp|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|discord|preview|headless|phantom|puppeteer|playwright|selenium|lighthouse|pingdom|uptime|monitor|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|httpclient|vercel|chatgpt-user|gptbot|claudebot|perplexity|bytespider|ahrefs|semrush|mj12|dotbot/i;
-
+/** Any known bot, crawler, AI agent or script (see shared/bots.ts for the list). An empty user agent counts too. */
 export function isBot(ua: string): boolean {
-  return !ua || BOT_RE.test(ua);
+  return identifyBot(ua) !== null;
 }
 
 // Order matters: in-app browsers and Chromium forks before Chrome, Chrome before Safari.
