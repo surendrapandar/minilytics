@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { navigate } from '../App';
+import { CrawlersCard } from '../components/CrawlersCard';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { OverviewCard } from '../components/OverviewCard';
 import { Panel, renderLabel } from '../components/Panel';
@@ -102,7 +103,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
         {Object.keys(q.filters).length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {Object.entries(q.filters).map(([k, v]) => (
-              <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
+              <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-surface py-1 pl-3 pr-1 text-sm shadow-card">
                 <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
                 <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
                 <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label="Remove filter">
@@ -155,6 +156,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
         <div className="mt-5">
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
+        </div>
+
+        <div className="mt-5">
+          <CrawlersCard />
         </div>
 
         <p className="mt-8 text-center text-xs text-stone-400">

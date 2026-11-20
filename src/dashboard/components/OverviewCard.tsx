@@ -78,18 +78,18 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
                   <stop offset="100%" stopColor="#8dbdf0" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#efedea" strokeDasharray="4 4" />
+              <CartesianGrid vertical={false} stroke="rgb(var(--chart-grid))" strokeDasharray="4 4" />
               <XAxis
                 dataKey="bucket"
                 tickFormatter={(b) => bucketLabel(b, g)}
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: 'rgb(var(--stone-400))', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 minTickGap={24}
               />
               <YAxis
                 yAxisId="v"
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: 'rgb(var(--stone-400))', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={44}
@@ -99,7 +99,7 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
               <YAxis
                 yAxisId="r"
                 orientation="right"
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: 'rgb(var(--stone-400))', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={56}
@@ -109,7 +109,7 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
                 domain={[0, (max: number) => Math.max(1, Math.ceil(max * 1.6))]}
               />
               <Tooltip
-                cursor={{ fill: 'rgba(28,25,23,0.03)' }}
+                cursor={{ fill: 'rgb(var(--ink) / 0.04)' }}
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const d = payload[0].payload as Overview['series'][0];
@@ -136,7 +136,7 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
                   strokeWidth={2.5}
                   fill="url(#vis)"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#7cb1ea', stroke: '#fff', strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: '#7cb1ea', stroke: 'rgb(var(--surface))', strokeWidth: 2 }}
                   isAnimationActive={false}
                 />
               )}

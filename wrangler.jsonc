@@ -16,7 +16,7 @@
       "binding": "DB",
       "database_name": "minilytics",
       // Replace with the id printed by `npx wrangler d1 create minilytics`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "7ffd71a6-efba-4b08-a222-dbf4172c7d94",
       "migrations_dir": "migrations"
     }
   ]

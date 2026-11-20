@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '../components/Logo';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { api, type PlanInfo } from '../lib/api';
 
 export const GITHUB_URL = 'https://github.com/surendrapandar/minilytics';
@@ -72,7 +73,7 @@ export function GoogleButton({
       data-ml-goal="signup_click"
       data-ml-goal-location={location}
       className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-6 text-base font-medium shadow-card transition ${
-        light ? 'bg-white text-ink hover:bg-stone-100' : 'bg-ink text-white hover:bg-stone-700'
+        light ? 'bg-surface text-ink hover:bg-stone-100' : 'bg-ink text-paper hover:bg-stone-700'
       } ${className}`}
     >
       <GoogleIcon />
@@ -103,7 +104,7 @@ function Shot({ src, alt, size, eager = false, className = '' }: { src: string; 
       height={size[1]}
       loading={eager ? 'eager' : 'lazy'}
       fetchPriority={eager ? 'high' : 'auto'}
-      className={`w-full rounded-2xl border border-stone-200 bg-white shadow-xl ${className}`}
+      className={`w-full rounded-2xl border border-stone-200 bg-surface shadow-xl ${className}`}
     />
   );
 }
@@ -130,7 +131,7 @@ export function Landing() {
   return (
     <div className="min-h-screen overflow-x-hidden">
       {spots && spots.left > 0 && (
-        <a href="#pricing" className="block bg-ink px-4 py-2 text-center text-sm text-white" data-ml-goal="pricing_cta" data-ml-goal-location="top-bar">
+        <a href="#pricing" className="block bg-ink px-4 py-2 text-center text-sm text-paper" data-ml-goal="pricing_cta" data-ml-goal-location="top-bar">
           {lastSold ? (
             <>
               🔥 First {soldCount} sold out at <s>{lastSold.price}</s>. Now <b>{priceText}</b> · <b>{spots.left}</b> of {spots.total} spots left
@@ -152,15 +153,16 @@ export function Landing() {
           <a href="#pricing" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline" data-ml-goal="pricing_cta" data-ml-goal-location="nav">Pricing</a>
           <a href="#sponsors" className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline">Sponsors</a>
           <a href={GITHUB_URL} className="hidden rounded-lg px-3 py-2 text-stone-600 hover:text-ink sm:inline">GitHub</a>
+          <ThemeToggle className="rounded-lg p-2 text-stone-600 hover:text-ink" />
           <a href="/api/auth/google" className="btn" data-ml-goal="signup_click" data-ml-goal-location="nav">Sign in</a>
         </nav>
       </header>
 
-      {error && <div className="mx-auto max-w-xl rounded-xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">{error}</div>}
+      {error && <div className="mx-auto max-w-xl rounded-xl bg-red-50 px-4 py-3 text-center text-sm text-red-700 dark:bg-red-900/25 dark:text-red-300">{error}</div>}
 
       {/* ---------- Hero */}
       <section className="mx-auto max-w-4xl px-4 pb-12 pt-10 text-center sm:pt-16">
-        <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1 text-sm text-stone-600 shadow-card">
+        <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-stone-200 bg-surface px-3 py-1 text-sm text-stone-600 shadow-card">
           <span className="h-2 w-2 rounded-full bg-revenue" /> Revenue-first analytics for indie makers
         </div>
         <h1 className="mt-6 text-[40px] font-semibold leading-[1.05] tracking-tight sm:text-6xl">
@@ -183,12 +185,12 @@ export function Landing() {
 
       <section className="relative mx-auto max-w-6xl px-4">
         <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" size={[2160, 1500]} eager />
-        <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
+        <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-surface px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
           <div className="text-stone-500">Revenue from</div>
           <div className="font-semibold">𝕏 launch-tweet</div>
           <div className="text-xl font-semibold text-revenue">$497</div>
         </div>
-        <div className="absolute -right-1 top-[18%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-right-6">
+        <div className="absolute -right-1 top-[18%] hidden rounded-2xl border border-stone-200 bg-surface px-4 py-3 text-sm shadow-xl md:block lg:-right-6">
           <div className="text-stone-500">New customer</div>
           <div className="font-semibold">came from ChatGPT</div>
           <div className="text-stone-500">paid 8 days after first visit</div>
@@ -222,7 +224,7 @@ export function Landing() {
             ['3', 'See what makes money', 'Revenue next to every source, campaign and page. Post more of what pays, drop what doesn’t.'],
           ].map(([n, title, text]) => (
             <div key={n} className="card p-6">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-semibold text-white">{n}</div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-semibold text-paper">{n}</div>
               <h3 className="mt-4 text-lg font-semibold">{title}</h3>
               <p className="mt-2 text-stone-600">{text}</p>
             </div>
@@ -315,7 +317,7 @@ export function Landing() {
             None showed me money. Now I run my own products on it, and I post more of what pays.”
           </p>
           <div className="mt-6 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-ink font-semibold text-white">S</div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-ink font-semibold text-paper">S</div>
             <div>
               <div className="font-semibold">Surendra</div>
               <div className="text-sm text-stone-500">Maker of DiskMate & PasteBuddy</div>
@@ -466,7 +468,7 @@ export function Landing() {
 
       {/* ---------- Final CTA */}
       <section className="mx-auto mt-28 max-w-6xl px-4">
-        <div className="rounded-3xl bg-ink px-6 py-14 text-center text-white sm:py-20">
+        <div className="rounded-3xl bg-ink px-6 py-14 text-center text-paper sm:py-20">
           <h2 className="text-3xl font-semibold tracking-tight sm:text-5xl">Find the posts that pay your rent.</h2>
           <p className="mx-auto mt-4 max-w-xl text-lg text-stone-300">Two minutes to set up. Know what’s working by tomorrow.</p>
           <GoogleButton light label={cta} className="mt-8" location="final-cta" />

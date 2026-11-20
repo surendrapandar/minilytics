@@ -128,3 +128,17 @@ export interface PlanInfo {
   /** Monthly subscription offered next to the main plan, when configured. */
   monthly?: { price: string } | null;
 }
+
+export type CrawlerCategory = 'answers' | 'indexing' | 'training';
+
+export interface CrawlerStats {
+  range: { from: number; to: number; granularity: 'hour' | 'day' | 'week' | 'month' };
+  totals: Record<CrawlerCategory, number>;
+  /** Every crawler seen in the active category (for the filter). */
+  crawlers: { name: string; hits: number; domain: string | null }[];
+  /** Keys drawn on the chart, in the same order as `series[].values`. */
+  keys: string[];
+  series: { bucket: string; values: number[] }[];
+  /** Ranked crawlers or pages. */
+  rows: { key: string; hits: number; domain: string | null }[];
+}

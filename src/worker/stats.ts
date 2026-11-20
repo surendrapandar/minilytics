@@ -67,7 +67,7 @@ function filterSql(f: Filters): { sql: string; params: unknown[] } {
 
 const hasFilters = (f: Filters) => Object.keys(f).length > 0;
 
-interface Ctx {
+export interface Ctx {
   db: D1Database;
   site: Site;
   range: Range;
@@ -75,11 +75,14 @@ interface Ctx {
   offset: number;
 }
 
-export function makeCtx(c: Context<AppEnv>): Ctx {
-  const site = c.get('site');
-  const q = c.req.query();
+/** Stats context from query-style params (period, from, to, granularity, filters as JSON). */
+export function ctxFrom(db: D1Database, site: Site, q: { period?: string; from?: string; to?: string; granularity?: string; filters?: string }): Ctx {
   const range = resolveRange(q, site.timezone, site.created_at);
-  return { db: c.env.DB, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+  return { db, site, range, filters: parseFilters(q.filters), offset: tzOffset(site.timezone, range.to) };
+}
+
+export function makeCtx(c: Context<AppEnv>): Ctx {
+  return ctxFrom(c.env.DB, c.get('site'), c.req.query());
 }
 
 function sessionsWhere(ctx: Ctx, from = ctx.range.from, to = ctx.range.to) {
@@ -220,6 +223,9 @@ const SESSION_DIMS: Record<string, string> = {
   hostname: 's.hostname',
   referrer: 's.referrer',
 };
+
+/** Every dimension `breakdown` accepts. */
+export const BREAKDOWN_DIMENSIONS = [...Object.keys(SESSION_DIMS), 'page', 'goal', 'exit_link'];
 
 export interface BreakdownRow {
   label: string | null;

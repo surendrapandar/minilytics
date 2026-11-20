@@ -4,6 +4,7 @@ import type { Overview, Query, Site } from '../lib/api';
 import { dayInTz } from '../lib/format';
 import { BackButton } from './BackButton';
 import { Favicon } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 
 export const PERIODS: { value: string; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -152,7 +153,7 @@ export function Toolbar({
         )}
       </Dropdown>
 
-      <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
+      <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-surface shadow-card">
         <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
           ‹
         </button>
@@ -238,6 +239,8 @@ export function Toolbar({
           <path d="M21 3v5h-5" />
         </svg>
       </button>
+
+      <ThemeToggle />
     </div>
   );
 }

@@ -90,7 +90,7 @@ export function Billing() {
 
         {user.paid ? (
           <>
-            <div className="mt-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <div className="mt-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-200">
               {user.admin ? '✓ Owner account: free, unlimited.' : '✓ Your plan is active.'}
               {!user.admin && (until ? ` Access until ${until}${user.plan_status === 'cancelled' ? ' (cancelled)' : ', renews automatically'}.` : ' Paid for life.')}
             </div>
@@ -132,9 +132,9 @@ export function Billing() {
           </div>
         ) : (
           <>
-            {ended && <div className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">Your plan has ended. Renew to keep tracking.</div>}
+            {ended && <div className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-900/25 dark:text-amber-200">Your plan has ended. Renew to keep tracking.</div>}
             {timedOut && (
-              <div className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-900/25 dark:text-amber-200">
                 We haven't received the payment confirmation yet. Refresh this page in a minute
                 {plan?.supportEmail ? ` or email ${plan.supportEmail}` : ''}.
               </div>

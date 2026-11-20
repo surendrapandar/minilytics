@@ -74,15 +74,15 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
               const pays = p.payments.filter((x) => x.ts >= s.started_at && x.ts <= s.last_seen_at + 30 * 60_000);
               return (
                 <div key={s.id} className="relative border-l-2 border-stone-100 pl-5">
-                  <div className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-visitors ring-4 ring-white" />
+                  <div className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-visitors ring-4 ring-surface" />
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                     <span className="font-semibold">{fmtDateTime(s.started_at, site.timezone)}</span>
                     <span className="flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-0.5">
                       <SourceIcon source={s.source} domain={s.referrer_domain} size={14} /> {s.source}
                     </span>
                     {s.referrer && <span className="max-w-[260px] truncate text-stone-500">{s.referrer}</span>}
-                    {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">campaign: {s.utm_campaign}</span>}
-                    {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">ref: {s.ref}</span>}
+                    {s.utm_campaign && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">campaign: {s.utm_campaign}</span>}
+                    {s.ref && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">ref: {s.ref}</span>}
                     <span className="text-stone-400">{fmtDuration(s.duration)}</span>
                   </div>
                   <ol className="mt-2 space-y-1 text-sm">
@@ -93,7 +93,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                         </span>
                         {e.type === 'pageview' && <span className="text-stone-700">📄 {e.path}</span>}
                         {e.type === 'goal' && (
-                          <span className="font-medium text-violet-700">
+                          <span className="font-medium text-violet-700 dark:text-violet-300">
                             🎯 {e.name} <span className="font-normal text-stone-400">on {e.path}</span>
                           </span>
                         )}

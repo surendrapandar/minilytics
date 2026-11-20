@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useDash } from '../lib/context';
 import { countryName, flag, fmtAgo } from '../lib/format';
 import { playPayment, playVisitor, unlockAudio } from '../lib/sounds';
+import { currentTheme } from '../lib/theme';
 import { DeviceIcon, Favicon, Flag, SourceIcon } from './Icons';
 
 interface LiveVisitor {
@@ -113,7 +114,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
 
   const [data, setData] = useState<Realtime | null>(null);
   const [error, setError] = useState('');
-  const [style, setStyle] = useState<StyleName>(() => pref('ml_live_style', 'light'));
+  const [style, setStyle] = useState<StyleName>(() => pref<StyleName>('ml_live_style', currentTheme()));
   const [projection, setProjection] = useState<Projection>(() => pref('ml_live_projection', 'globe'));
   const [sound, setSound] = useState(() => pref<string>('ml_live_sound', 'off') === 'on');
   const soundRef = useRef(sound);
@@ -283,7 +284,7 @@ export default function LiveView({ onClose }: { onClose: () => void }) {
   const btn = `rounded-lg p-1.5 transition ${dark ? 'hover:bg-white/10' : 'hover:bg-stone-100'}`;
 
   return (
-    <div ref={rootRef} className="fixed inset-0 z-50 bg-[#070b1a]">
+    <div ref={rootRef} className="theme-light fixed inset-0 z-50 bg-[#070b1a]">
       {/* MapLibre's CSS makes its container position:relative, so it gets its own full-size wrapper. */}
       <div className="absolute inset-0">
         <div ref={mapEl} className="h-full w-full" />
