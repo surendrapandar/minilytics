@@ -138,7 +138,11 @@ export function bucketLabels(range: Range, offsetMs: number): string[] {
   const labels: string[] = [];
   const seen = new Set<string>();
   const step = range.granularity === 'hour' ? HOUR : DAY;
-  for (let t = range.from; t < range.to; t += step) {
+  // `range.from` for a rolling window (24h/48h) keeps the current minute, so it is not aligned to a
+  // bucket boundary. Starting from the aligned boundary at or before it (in site time) ensures the
+  // partial bucket that contains `range.to` is produced, matching bucketSql's truncation.
+  const start = range.granularity === 'hour' ? Math.floor((range.from + offsetMs) / HOUR) * HOUR - offsetMs : range.from;
+  for (let t = start; t < range.to; t += step) {
     const d = new Date(t + offsetMs);
     let label: string;
     const iso = d.toISOString();
