@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { getSite, type AppEnv, type Site } from './env';
 import { verifyStandardWebhook, verifyStripeWebhook } from './lib/crypto';
 import { currencyDecimals } from '../shared/currency';
+import { convertForeignPayments, toSiteMoney } from './fx';
 
 export { currencyDecimals };
 
@@ -144,14 +145,16 @@ async function matchByTiming(db: D1Database, site: Site, p: PaymentInput): Promi
 
 export async function recordPayment(db: D1Database, site: Site, p: PaymentInput) {
   const { visitorId, sessionId, renewal, matchedBy } = await attribute(db, site, p);
+  // Totals add up amounts, so every payment is stored in the site's currency (the original is kept alongside).
+  const money = await toSiteMoney(db, site, p.amount, p.currency, p.ts);
   // Seen before (a retry, or Stripe's invoice.paid arriving before checkout.session.completed): fill in what
   // was missing, and let checkout metadata win over a weaker match.
   const better = `(payments.visitor_id IS NULL OR excluded.matched_by = 'metadata')`;
   const stmts = [
     db
       .prepare(
-        `INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, renewal, matched_by, subscription_id, checkout_id, product_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, renewal, matched_by, subscription_id, checkout_id, product_id, original_amount, original_currency)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            visitor_id = CASE WHEN ${better} THEN COALESCE(excluded.visitor_id, payments.visitor_id) ELSE payments.visitor_id END,
            session_id = CASE WHEN ${better} THEN COALESCE(excluded.session_id, payments.session_id) ELSE payments.session_id END,
@@ -164,9 +167,9 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
         site.id,
         p.provider,
         p.ts,
-        p.amount,
+        money.amount,
         p.kind,
-        p.currency.toUpperCase(),
+        money.currency,
         visitorId,
         sessionId,
         p.customerId ?? null,
@@ -177,6 +180,8 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
         p.subscriptionId ?? null,
         p.checkoutId ?? null,
         p.productId ?? null,
+        money.originalAmount,
+        money.originalCurrency,
       ),
   ];
   // A payment tells us who an anonymous visitor really is.
@@ -192,8 +197,29 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
   return { visitorId, sessionId };
 }
 
+type OriginalPayment = { amount: number; currency: string; original_amount: number | null; original_currency: string | null };
+
+/**
+ * A refund in the site's currency. A refund in the same currency as its payment uses the payment's rate,
+ * so refunding a converted payment in full nets to exactly zero. With no refund amount, the whole payment.
+ */
+export async function refundMoney(db: D1Database, site: Site, original: OriginalPayment, amount: number, currency: string | null, ts: number) {
+  const cur = (currency ?? original.original_currency ?? original.currency).toUpperCase();
+  if (!amount) return { amount: original.amount, currency: original.currency, originalAmount: original.original_amount, originalCurrency: original.original_currency };
+  if (original.original_currency && original.original_amount && cur === original.original_currency) {
+    return {
+      amount: Math.round((original.amount * amount) / original.original_amount),
+      currency: original.currency,
+      originalAmount: amount,
+      originalCurrency: cur,
+    };
+  }
+  return toSiteMoney(db, site, amount, cur, ts);
+}
+
 /** Try again to link payments that have no visitor yet (e.g. ones recorded before a fallback existed). */
 export async function rematchPayments(db: D1Database, site: Site) {
+  await convertForeignPayments(db, site);
   const rows = await db
     .prepare("SELECT * FROM payments WHERE site_id = ? AND kind = 'payment' AND visitor_id IS NULL ORDER BY ts LIMIT 500")
     .bind(site.id)
@@ -374,28 +400,30 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
   } else if (event.type === 'refund.succeeded') {
     const original = await c.env.DB.prepare('SELECT * FROM payments WHERE id = ? AND site_id = ?')
       .bind(String(data.payment_id), site.id)
-      .first<{ visitor_id: string | null; session_id: string | null; currency: string; amount: number }>();
+      .first<{ visitor_id: string | null; session_id: string | null } & OriginalPayment>();
     // A refund of a payment this site never recorded (another product, or before tracking) isn't this site's.
     if (!original) {
       await c.env.DB.prepare('DELETE FROM pending_payments WHERE site_id = ? AND payment_id = ?').bind(site.id, String(data.payment_id)).run();
       return c.json({ ok: true, ignored: 'unknown payment' });
     }
-    const amount = Number(data.amount) || original.amount || 0;
+    const m = await refundMoney(c.env.DB, site, original, Math.abs(Number(data.amount) || 0), str(data.currency), ts);
     await c.env.DB.prepare(
-      `INSERT OR IGNORE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name)
-       VALUES (?, ?, 'dodo', ?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, original_amount, original_currency)
+       VALUES (?, ?, 'dodo', ?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         String(data.refund_id ?? `refund_${data.payment_id}`),
         site.id,
         ts,
-        -Math.abs(amount),
-        String(data.currency ?? original.currency ?? site.currency).toUpperCase(),
+        -Math.abs(m.amount),
+        m.currency,
         original.visitor_id ?? null,
         original.session_id ?? null,
         str(customer.customer_id),
         str(customer.email)?.toLowerCase() ?? null,
         str(customer.name),
+        m.originalAmount == null ? null : -Math.abs(m.originalAmount),
+        m.originalCurrency,
       )
       .run();
   }
@@ -502,28 +530,31 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
     const original =
       (await c.env.DB.prepare('SELECT * FROM payments WHERE site_id = ? AND id IN (?, ?)')
         .bind(site.id, str(o.payment_intent) ?? '', str(o.invoice) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>()) ??
+        .first<{ id: string; visitor_id: string | null; session_id: string | null } & OriginalPayment>()) ??
       // Newer API versions don't link a charge to its invoice; fall back to the customer's latest payment.
       (await c.env.DB.prepare("SELECT * FROM payments WHERE site_id = ? AND customer_id = ? AND kind = 'payment' ORDER BY ts DESC LIMIT 1")
         .bind(site.id, str(o.customer) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>());
+        .first<{ id: string; visitor_id: string | null; session_id: string | null } & OriginalPayment>());
     if (!original) return c.json({ ok: true, ignored: 'unknown payment' });
+    const m = await refundMoney(c.env.DB, site, original, Math.abs(Number(o.amount_refunded) || 0), str(o.currency), Date.now());
     // amount_refunded is the running total, so a second partial refund replaces the row.
     await c.env.DB.prepare(
-      `INSERT OR REPLACE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name)
-       VALUES (?, ?, 'stripe', ?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, original_amount, original_currency)
+       VALUES (?, ?, 'stripe', ?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         `${o.id}:refund`,
         site.id,
         Date.now(),
-        -Math.abs(Number(o.amount_refunded) || 0),
-        String(o.currency ?? site.currency).toUpperCase(),
+        -Math.abs(m.amount),
+        m.currency,
         original.visitor_id,
         original.session_id,
         str(o.customer),
         str(o.billing_details?.email)?.toLowerCase() ?? null,
         str(o.billing_details?.name),
+        m.originalAmount == null ? null : -Math.abs(m.originalAmount),
+        m.originalCurrency,
       )
       .run();
   }

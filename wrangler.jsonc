@@ -8,15 +8,13 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "none",
-    // Static files skip the Worker. Anything else (client routes, unknown paths) runs it so missing pages return a real 404.
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/oauth/*", "/.well-known/*"]
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "minilytics",
-      // Replace with the id printed by `npx wrangler d1 create minilytics`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "0e5ff7e4-49c9-4e81-9b33-3efc0fac6a7f",
       "migrations_dir": "migrations"
     }
   ]

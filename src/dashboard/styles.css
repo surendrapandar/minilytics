@@ -2,17 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #f8f6f3; color: #1c1917; }
-body { font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
+html, body { background: #f8fafc; color: #09090b; }
+body { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'tnum' 1; -webkit-font-smoothing: antialiased; }
 
 @layer components {
-  .card { @apply rounded-2xl border border-stone-200/80 bg-white shadow-card; }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-sm font-medium shadow-card transition hover:bg-stone-50 disabled:opacity-50; }
-  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700 disabled:opacity-50; }
-  .input { @apply w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200; }
-  .label { @apply mb-1 block text-sm font-medium text-stone-600; }
-  .tabs { @apply inline-flex rounded-xl bg-stone-100/80 p-1; }
-  .tab { @apply rounded-lg px-3 py-1 text-sm text-stone-500 transition hover:text-stone-800; }
-  .tab-active { @apply bg-white text-ink shadow-card; }
-  .code { @apply block overflow-x-auto whitespace-pre rounded-xl bg-stone-900 p-4 font-mono text-[13px] leading-relaxed text-stone-100; }
+  .card { @apply rounded-xl border border-zinc-200/80 bg-white shadow-card transition-shadow; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 hover:text-zinc-900 hover:border-zinc-300 disabled:opacity-50; }
+  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-50; }
+  .input { @apply w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100; }
+  .label { @apply mb-1 block text-xs font-medium text-zinc-600; }
+  .tabs { @apply inline-flex rounded-lg bg-zinc-100/90 p-1 border border-zinc-200/50; }
+  .tab { @apply rounded-md px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:text-zinc-900; }
+  .tab-active { @apply bg-white text-zinc-900 shadow-sm border border-zinc-200/60; }
+  .code { @apply block overflow-x-auto whitespace-pre rounded-lg bg-zinc-950 p-4 font-mono text-[13px] leading-relaxed text-zinc-200 border border-zinc-800; }
 }

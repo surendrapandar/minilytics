@@ -86,6 +86,20 @@ export async function verifyToken(secret: string, token: string | undefined): Pr
   return safeEqual(expected, token) ? value : null;
 }
 
+/** SHA-256 as lowercase hex (API tokens are stored only as this hash). */
+export async function sha256Hex(value: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', enc.encode(value));
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** SHA-256 as unpadded base64url, the PKCE S256 code challenge of a verifier. */
+export async function pkceChallenge(verifier: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', enc.encode(verifier));
+  return bytesToB64(d).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export { safeEqual };
+
 /** Constant-time regardless of input length: `safeEqual` alone would return early on a length
  * mismatch, which leaks the stored password's length through response timing. */
 export async function passwordsMatch(a: string, b: string): Promise<boolean> {

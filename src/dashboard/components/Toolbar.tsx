@@ -67,7 +67,7 @@ const Chevron = () => (
 );
 
 function itemCls(active: boolean) {
-  return `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-stone-100 ${active ? 'font-medium text-ink' : 'text-stone-600'}`;
+  return `flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-zinc-100 ${active ? 'font-semibold text-zinc-900 bg-zinc-50' : 'text-zinc-600'}`;
 }
 
 export function Toolbar({
@@ -115,12 +115,12 @@ export function Toolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <BackButton to="/" label="" className="btn h-11 w-11 justify-center px-0" />
+      <BackButton to="/" label="" className="btn h-9 w-9 justify-center px-0 text-zinc-600" />
       <Dropdown
         button={
-          <button className="btn h-11 px-4 text-base">
-            <Favicon domain={site.domain} size={22} />
-            <span className="max-w-[180px] truncate font-semibold">{site.name}</span>
+          <button className="btn h-9 px-3 text-xs font-semibold text-zinc-900 border-zinc-200">
+            <Favicon domain={site.domain} size={18} />
+            <span className="max-w-[180px] truncate">{site.name}</span>
             <Chevron />
           </button>
         }
@@ -138,10 +138,10 @@ export function Toolbar({
                   navigate(`/site/${s.id}${window.location.search}`, { replace: true });
                 }}
               >
-                <Favicon domain={s.domain} size={16} /> {s.name}
+                <Favicon domain={s.domain} size={15} /> {s.name}
               </button>
             ))}
-            <div className="my-1 border-t border-stone-100" />
+            <div className="my-1 border-t border-zinc-100" />
             <button className={itemCls(false)} onClick={() => navigate(`/site/${site.id}/settings`)}>
               ⚙️ Site settings & install
             </button>
@@ -152,13 +152,13 @@ export function Toolbar({
         )}
       </Dropdown>
 
-      <div className="flex h-11 items-stretch rounded-xl border border-stone-200 bg-white shadow-card">
-        <button className="rounded-l-xl px-3 text-xl text-stone-500 hover:bg-stone-50" onClick={() => shift(-1)} aria-label="Previous period">
+      <div className="flex h-9 items-stretch rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <button className="rounded-l-lg px-2.5 text-base text-zinc-500 hover:bg-zinc-50 transition-colors" onClick={() => shift(-1)} aria-label="Previous period">
           ‹
         </button>
         <Dropdown
           button={
-            <button className="flex h-full items-center gap-2 border-x border-stone-200 px-4 text-base font-medium hover:bg-stone-50">
+            <button className="flex h-full items-center gap-1.5 border-x border-zinc-200 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 transition-colors">
               {label} <Chevron />
             </button>
           }
@@ -207,7 +207,7 @@ export function Toolbar({
 
       <Dropdown
         button={
-          <button className="btn h-11 px-4 text-base">
+          <button className="btn h-9 px-3 text-xs font-medium text-zinc-700">
             {GRANULARITIES.find((g) => g.value === currentGranularity)?.label ?? 'Daily'} <Chevron />
           </button>
         }
@@ -228,12 +228,12 @@ export function Toolbar({
         }
       </Dropdown>
 
-      <button className="btn h-11 px-4 text-base" onClick={onLive} title="Live map (M)">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" /> Live
+      <button className="btn h-9 px-3 text-xs font-medium text-zinc-700" onClick={onLive} title="Live map (M)">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Live
       </button>
 
-      <button className="btn h-11 w-11 px-0" onClick={onRefresh} aria-label="Refresh">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>
+      <button className="btn h-9 w-9 px-0 text-zinc-600" onClick={onRefresh} aria-label="Refresh">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={loading ? 'animate-spin' : ''}>
           <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
           <path d="M21 3v5h-5" />
         </svg>
