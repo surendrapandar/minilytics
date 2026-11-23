@@ -99,7 +99,7 @@ app.post('/api/auth/login', async (c) => {
     return c.json({ error: 'Too many wrong attempts. Try again in 15 minutes.' }, 429);
   }
   const { password } = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
-  if (!password || !passwordsMatch(password, c.env.ADMIN_PASSWORD)) {
+  if (!password || !(await passwordsMatch(password, c.env.ADMIN_PASSWORD))) {
     await new Promise((r) => setTimeout(r, 500));
     return c.json({ error: 'Wrong password' }, 401);
   }

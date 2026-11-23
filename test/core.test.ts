@@ -4,7 +4,7 @@ import { classify } from '../src/shared/sources';
 import { parseTiers, planInfo } from '../src/worker/billing';
 import { belongsTo, normalizePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
-import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
+import { passwordsMatch, verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
 import { bucketLabels, granularitiesForSpan, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
@@ -96,6 +96,14 @@ describe('time ranges', () => {
     expect(resolveRange({ period: '24h', granularity: 'day' }, 'UTC', 0, now).granularity).toBe('hour');
     expect(resolveRange({ period: '7d', granularity: 'week' }, 'UTC', 0, now).granularity).toBe('day');
     expect(resolveRange({ period: '30d', granularity: 'month' }, 'UTC', 0, now).granularity).toBe('day');
+  });
+});
+
+describe('password comparison', () => {
+  it('matches equal passwords and rejects different ones, any length', async () => {
+    expect(await passwordsMatch('correct-horse-battery', 'correct-horse-battery')).toBe(true);
+    expect(await passwordsMatch('short', 'a-lot-longer-than-that')).toBe(false);
+    expect(await passwordsMatch('', '')).toBe(true);
   });
 });
 
