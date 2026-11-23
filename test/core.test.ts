@@ -97,6 +97,19 @@ describe('time ranges', () => {
     expect(resolveRange({ period: '7d', granularity: 'week' }, 'UTC', 0, now).granularity).toBe('day');
     expect(resolveRange({ period: '30d', granularity: 'month' }, 'UTC', 0, now).granularity).toBe('day');
   });
+  it('last 24h includes the bucket for the current, still-open hour', () => {
+    // `now` is mid-hour (12:00 here lands exactly on the hour, so push it to :34 to force the point).
+    const mid = now + 34 * 60_000; // 23 Oct 2026 12:34 UTC
+    const r = resolveRange({ period: '24h' }, 'UTC', 0, mid);
+    const labels = bucketLabels(r, 0);
+    expect(labels.at(-1)).toBe('2026-10-23T12:00');
+  });
+  it('still excludes the next bucket when `to` lands exactly on a boundary', () => {
+    const r = resolveRange({ period: 'yesterday' }, 'UTC', 0, now);
+    const labels = bucketLabels(r, 0);
+    expect(labels).toHaveLength(24);
+    expect(labels.at(-1)).toBe('2026-10-22T23:00');
+  });
 });
 
 describe('Standard Webhooks (Dodo)', () => {
