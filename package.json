@@ -21,6 +21,8 @@
     "deploy": "vite build && wrangler d1 migrations apply minilytics --remote && wrangler deploy",
     "seed": "node scripts/seed-demo.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed.sql",
     "smoke": "node scripts/smoke.mjs",
+    "seed:bots": "node scripts/seed-bots.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed-bots.sql",
+    "smoke:bots": "node scripts/smoke-bots.mjs",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "import:datafast": "node scripts/import-datafast.mjs"
   },

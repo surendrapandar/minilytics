@@ -5,7 +5,7 @@ export interface ParsedUA {
 }
 
 const BOT_RE =
-  /bot|crawl|spider|slurp|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|discord|preview|headless|phantom|puppeteer|playwright|selenium|lighthouse|pingdom|uptime|monitor|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|httpclient|vercel|chatgpt-user|gptbot|claudebot|perplexity|bytespider|ahrefs|semrush|mj12|dotbot/i;
+  /bot|crawl|spider|slurp|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|discord|preview|headless|phantom|puppeteer|playwright|selenium|lighthouse|pingdom|uptime|monitor|curl|wget|python|axios|node-fetch|go-http|java\/|okhttp|httpclient|vercel|chatgpt-user|gptbot|claudebot|claude-user|perplexity|bytespider|ahrefs|semrush|mj12|dotbot/i;
 
 export function isBot(ua: string): boolean {
   return !ua || BOT_RE.test(ua);

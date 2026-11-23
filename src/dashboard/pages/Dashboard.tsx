@@ -1,3 +1,4 @@
+import { BotAnalytics } from '../components/BotAnalytics';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { navigate } from '../App';
 import { GoalsPanel } from '../components/GoalsPanel';
@@ -156,6 +157,8 @@ export function Dashboard({ siteId }: { siteId: string }) {
         <div className="mt-5">
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
         </div>
+
+        <BotAnalytics key={site.id} />
 
         <p className="mt-8 text-center text-xs text-stone-400">
           Times in {site.timezone} · Revenue in {site.currency} ·{' '}

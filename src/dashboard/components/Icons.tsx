@@ -42,6 +42,30 @@ export function SourceIcon({ source, domain, size }: { source: string | null; do
   return <Favicon domain={domainForSource(source) ?? domain ?? (source.includes('.') ? source : null)} size={size} />;
 }
 
+// Names match the grouped providers in BotAnalytics; unknown/aggregate bots keep initials.
+const CRAWLER_LOGOS: Readonly<Record<string, string>> = {
+  ChatGPT: 'openai.svg',
+  Claude: 'claude-color.svg',
+  Perplexity: 'perplexity-color.svg',
+  Google: 'google-color.svg',
+  Bing: 'bing-color.svg',
+  DuckDuckGo: 'duckduckgo.svg',
+  Bytespider: 'bytedance-color.svg',
+  Baiduspider: 'baidu-color.svg',
+  YandexBot: 'yandex.svg',
+};
+
+export function CrawlerIcon({ name, size = 22 }: { name: string; size?: number }) {
+  const logo = Object.hasOwn(CRAWLER_LOGOS, name) ? CRAWLER_LOGOS[name] : undefined;
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
+  if (!logo || failedLogo === logo) {
+    return <span aria-hidden="true" className="inline-flex shrink-0 items-center justify-center text-stone-400"
+      style={{ width: size, height: size, fontSize: size * 0.7 }}>{name.slice(0, 2)}</span>;
+  }
+  return <img src={`/crawlers/${logo}`} width={size} height={size} alt=""
+    className="shrink-0 object-contain" onError={() => setFailedLogo(logo)} />;
+}
+
 const CHANNEL_EMOJI: Record<string, string> = {
   Direct: '🔗',
   'Organic Search': '🔎',

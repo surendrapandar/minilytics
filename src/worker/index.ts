@@ -1,5 +1,6 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import { handleEvent } from './collect';
 import { forgetSite, type AppEnv, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
@@ -13,6 +14,8 @@ import { createPersonalToken, listTokens, revokeGrant } from './tokens';
 import { convertForeignPayments } from './fx';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 import { handleClearDatafastImport, handleImportBatch } from './importer';
+
+import { collectBot, botStats } from './bots';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -42,6 +45,7 @@ app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
+app.post('/api/v1/bots', bodyLimit({ maxSize: 4096, onError: c => c.json({ error: 'Payload too large' }, 413) }), collectBot);
 
 // ---------- AI assistants: MCP server + the OAuth flow that hands out its tokens
 // Bearer tokens only (no cookies), so any origin may call these: browser-based MCP clients need CORS.
@@ -277,14 +281,16 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
-    // Everything stored for the site, so deleting it really removes its visitors' data.
-    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products'].map((t) =>
+    // Everything stored for the site, including crawler requests and payment routing records.
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products', 'bot_requests'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );
   forgetSite(id);
   return c.json({ ok: true });
 });
+
+app.get('/api/sites/:id/bots', botStats);
 
 // Import historical data (DataFast / Plausible)
 app.post('/api/sites/:id/import/datafast', handleImportBatch);
