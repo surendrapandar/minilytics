@@ -1,3 +1,4 @@
+import { currencyDecimals } from '../../shared/currency';
 export function fmtNumber(n: number): string {
   if (n >= 10_000) return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n).toLowerCase();
   return new Intl.NumberFormat('en').format(Math.round(n));
@@ -16,6 +17,12 @@ export function fmtMoney(minor: number, currency: string, decimals: number, comp
   } catch {
     return `${v.toFixed(decimals)} ${currency}`;
   }
+}
+
+/** What the buyer actually paid, when it was in another currency than the site's (e.g. "€4.56"). */
+export function fmtPaidIn(p: { original_amount?: number | null; original_currency?: string | null }): string | null {
+  if (p.original_amount == null || !p.original_currency) return null;
+  return fmtMoney(Math.abs(p.original_amount), p.original_currency, currencyDecimals(p.original_currency));
 }
 
 export function fmtPct(n: number, digits = 0): string {

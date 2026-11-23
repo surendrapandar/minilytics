@@ -349,7 +349,7 @@ export async function customers(ctx: Ctx) {
   const join = hasFilters(ctx.filters) ? 'JOIN' : 'LEFT JOIN';
   const res = await db
     .prepare(
-      `SELECT p.id, p.ts, p.amount, p.currency, p.renewal, p.matched_by, p.email AS pay_email, p.name AS pay_name, p.visitor_id, p.session_id,
+      `SELECT p.id, p.ts, p.amount, p.currency, p.original_amount, p.original_currency, p.renewal, p.matched_by, p.email AS pay_email, p.name AS pay_name, p.visitor_id, p.session_id,
               v.first_seen, v.name, v.email, v.user_id,
               s.source, s.channel, s.referrer_domain, s.utm_campaign, s.ref, s.country, s.city, s.device, s.os, s.browser, s.entry_page,
               (SELECT COUNT(*) FROM sessions s2 WHERE s2.site_id = p.site_id AND s2.visitor_id = p.visitor_id AND s2.started_at <= p.ts) AS visits
