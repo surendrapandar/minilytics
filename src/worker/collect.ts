@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 import { classify } from '../shared/sources';
 import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
-import { isOwnerVisit } from './owner';
+import { cookielessIds, type VisitHints } from './cookieless';
+import { clientIp, isOwnerVisit } from './owner';
 import { isBot, parseUA } from './lib/ua';
 import { creditedSessionSql, dodoProductOfLink, learnDodoProducts } from './payments';
 
@@ -16,6 +17,8 @@ interface Payload {
   r?: string;
   vid: string;
   sid: string;
+  /** Cookieless mode: the tracker sends no ids, the server derives them (see cookieless.ts). */
+  ck?: number;
   sw?: number;
   n?: string;
   p?: Record<string, unknown>;
@@ -56,7 +59,9 @@ export async function handleEvent(c: Context<AppEnv>) {
   } catch {
     return c.body(null, 400);
   }
-  if (!body || !isId(body.w) || !TYPES.has(body.t) || !isId(body.vid) || !isId(body.sid)) return c.body(null, 400);
+  if (!body || !isId(body.w) || !TYPES.has(body.t)) return c.body(null, 400);
+  const cookieless = body.ck === 1;
+  if (!cookieless && (!isId(body.vid) || !isId(body.sid))) return c.body(null, 400);
 
   const ua = c.req.header('user-agent') ?? '';
   if (isBot(ua)) return c.body(null, 202);
@@ -77,8 +82,31 @@ export async function handleEvent(c: Context<AppEnv>) {
   // Owners checking their own site would otherwise show up as visitors and "online".
   if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
-  await ingest(c.env.DB, site, body, url, ua, geoOf(c), Date.now());
+  const now = Date.now();
+  const geo = geoOf(c);
+  if (cookieless) {
+    // The visitor id always comes from the daily hash; ids sent along only count if they match an open session.
+    Object.assign(body, await cookielessIds(c.env.DB, site.id, clientIp(c), ua, now, visitHints(body, site, ua, geo)));
+  }
+  await ingest(c.env.DB, site, body, url, ua, geo, now);
+  // The tracker keeps these in memory only, to tag checkouts (window.minilytics.attribution()).
+  if (cookieless) return c.json({ vid: body.vid, sid: body.sid }, 202);
   return c.body(null, 202);
+}
+
+/** What cookieless mode can use to keep a visit together when the IP changes (see cookieless.ts). */
+function visitHints(body: Payload, site: Site, ua: string, geo: Geo): VisitHints {
+  const hints: VisitHints = { sid: isId(body.sid) ? body.sid : undefined };
+  if (body.t === 'pageview' && body.r) {
+    try {
+      const r = new URL(body.r);
+      if (/^https?:$/.test(r.protocol) && belongsTo(r.hostname, site.domain)) {
+        const { browser, os, device } = parseUA(ua, Number(body.sw) || undefined);
+        hints.from = { path: normalizePath(r.pathname), browser, os, device, country: geo.country, city: geo.city };
+      }
+    } catch {}
+  }
+  return hints;
 }
 
 export interface Geo {
