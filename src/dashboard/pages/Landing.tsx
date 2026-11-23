@@ -183,15 +183,15 @@ export function Landing() {
 
       <section className="relative mx-auto max-w-6xl px-4">
         <Shot src="/landing/dashboard.png" alt="Minilytics dashboard: visitors, revenue and conversion rate" size={[2160, 1500]} eager />
-        <div className="absolute -left-1 top-[42%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
-          <div className="text-stone-500">Revenue from</div>
-          <div className="font-semibold">𝕏 launch-tweet</div>
-          <div className="text-xl font-semibold text-revenue">$497</div>
+        <div className="absolute -left-1 top-[42%] hidden rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-left-6">
+          <div className="text-zinc-500 text-xs">Revenue from</div>
+          <div className="font-semibold text-zinc-900">𝕏 launch-tweet</div>
+          <div className="text-xl font-bold text-emerald-600">$497</div>
         </div>
-        <div className="absolute -right-1 top-[18%] hidden rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-right-6">
-          <div className="text-stone-500">New customer</div>
-          <div className="font-semibold">came from ChatGPT</div>
-          <div className="text-stone-500">paid 8 days after first visit</div>
+        <div className="absolute -right-1 top-[18%] hidden rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-xl md:block lg:-right-6">
+          <div className="text-zinc-500 text-xs">New customer</div>
+          <div className="font-semibold text-zinc-900">came from ChatGPT</div>
+          <div className="text-xs text-zinc-500">paid 8 days after first visit</div>
         </div>
         <p className="mt-3 text-center text-xs text-stone-400">Demo data</p>
       </section>
@@ -235,7 +235,7 @@ export function Landing() {
         <div className="space-y-24">
           <Feature
             title="Revenue next to every source"
-            text="Blue is visitors, orange is money. See at a glance that X brings traffic and Indie Hackers brings customers, then click any source to filter the whole dashboard."
+            text="Indigo is visitors, emerald is revenue. See at a glance that X brings traffic and Indie Hackers brings customers, then click any source to filter the whole dashboard."
             points={['X, Google, ChatGPT, Reddit, YouTube… by name', 'Campaigns and keywords', 'Conversion rate and revenue per visitor']}
             image={<Shot src="/landing/referrers.png" alt="Referrers with revenue" size={[1029, 840]} />}
           />
@@ -270,7 +270,7 @@ export function Landing() {
       <Section
         id="compare"
         eyebrow="Compare"
-        title={lifetime ? <>Pay once. <span className="text-revenue">No limits.</span></> : <>Same price. <span className="text-revenue">No limits.</span></>}
+        title={lifetime ? <>Pay once. <span className="text-emerald-600">No limits.</span></> : <>Same price. <span className="text-emerald-600">No limits.</span></>}
         sub={lifetime ? 'Others charge every month, by traffic and by website. Minilytics is one payment.' : 'Most analytics tools charge by traffic and by website. Minilytics doesn’t.'}
       >
         <div className="card mx-auto max-w-3xl overflow-x-auto p-2">
@@ -278,7 +278,7 @@ export function Landing() {
             <thead>
               <tr className="text-sm text-stone-500">
                 <th className="p-4 font-medium" />
-                <th className="rounded-t-xl bg-revenueSoft/40 p-4 font-semibold text-ink">Minilytics</th>
+                <th className="rounded-t-xl bg-emerald-50/70 p-4 font-semibold text-zinc-900">Minilytics</th>
                 <th className="p-4 font-medium">DataFast Starter</th>
                 <th className="p-4 font-medium">Plausible Starter</th>
               </tr>
@@ -294,7 +294,7 @@ export function Landing() {
               ].map(([label, a, b, c], i) => (
                 <tr key={i} className="border-t border-stone-100">
                   <td className="p-4 text-stone-600">{label}</td>
-                  <td className="bg-revenueSoft/40 p-4 font-semibold">{a}</td>
+                  <td className="bg-emerald-50/70 p-4 font-semibold text-zinc-900">{a}</td>
                   <td className="p-4">{b}</td>
                   <td className="p-4">{c}</td>
                 </tr>
@@ -327,9 +327,9 @@ export function Landing() {
       {/* ---------- Pricing */}
       <Section id="pricing" eyebrow="Pricing" title={monthly ? 'Everything included. Pay once or monthly.' : 'One plan. Everything included.'}>
         <div className={`mx-auto grid items-start gap-6 ${monthly ? 'max-w-4xl md:grid-cols-[1.15fr_1fr]' : 'max-w-md'}`}>
-          <div className={`card relative p-8 ${monthly ? 'ring-2 ring-revenue' : ''}`}>
+          <div className={`card relative p-8 ${monthly ? 'ring-2 ring-emerald-500' : ''}`}>
             {spots && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-revenue px-3 py-1 text-xs font-semibold text-white">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
                 {lifetime ? (monthly ? 'Lifetime deal · Best value' : 'Lifetime deal') : 'Founding member price'}
               </div>
             )}
@@ -362,7 +362,7 @@ export function Landing() {
             {spots && (
               <div className="mt-5">
                 <div className="h-2 overflow-hidden rounded-full bg-stone-100">
-                  <div className="h-full bg-revenue" style={{ width: `${((spots.total - spots.left) / spots.total) * 100}%` }} />
+                  <div className="h-full bg-emerald-500" style={{ width: `${((spots.total - spots.left) / spots.total) * 100}%` }} />
                 </div>
                 <p className="mt-2 text-center text-sm text-stone-500">
                   <b className="text-ink">{spots.left}</b> of {spots.total} spots left at this price{next ? `, then ${next}` : ''}

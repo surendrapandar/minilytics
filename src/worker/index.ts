@@ -10,7 +10,9 @@ import { rememberOwnerDevice } from './owner';
 import { mcpOther, mcpPost } from './mcp';
 import { authorizePage, authorizeSubmit, authServerMetadata, protectedResourceMetadata, registerClient, revoke, token } from './oauth';
 import { createPersonalToken, listTokens, revokeGrant } from './tokens';
+import { convertForeignPayments } from './fx';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { handleClearDatafastImport, handleImportBatch } from './importer';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -261,6 +263,8 @@ app.patch('/api/sites/:id', async (c) => {
     )
     .run();
   forgetSite(site.id);
+  // Revenue is stored in the site's currency, so a new currency converts what's already there.
+  if (next.currency !== site.currency) c.executionCtx.waitUntil(convertForeignPayments(c.env.DB, next).catch(() => 0));
   return c.json(publicSite(next));
 });
 
@@ -282,9 +286,17 @@ app.delete('/api/sites/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// Import historical data (DataFast / Plausible)
+app.post('/api/sites/:id/import/datafast', handleImportBatch);
+app.delete('/api/sites/:id/import/datafast', handleClearDatafastImport);
+
 // ---------- stats
 
-app.get('/api/sites/:id/overview', async (c) => c.json(await overview(makeCtx(c))));
+app.get('/api/sites/:id/overview', async (c) => {
+  // Payments recorded before conversion existed, or while exchange rates were unreachable.
+  await convertForeignPayments(c.env.DB, c.get('site')).catch(() => 0);
+  return c.json(await overview(makeCtx(c)));
+});
 
 app.get('/api/sites/:id/breakdown', async (c) => {
   try {

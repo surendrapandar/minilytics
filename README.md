@@ -61,6 +61,7 @@ Cloudflare's free plan.
 - **Live globe** (press `M`): every visitor on your site right now, on a 3D globe or 2D map, with a live feed of page views, goals and payments, optional sounds, light/dark map and fullscreen. Map tiles from [OpenFreeMap](https://openfreemap.org), free with no API key
 - Anonymous visitors get friendly, stable names like "brown fox"
 - Click any row to filter the whole dashboard (for example "only visitors from the launch tweet")
+- **Import from DataFast / Plausible**: upload historical exports (.zip or .csv) from the web dashboard or CLI
 - Multiple websites, one login
 - **Ask your AI**: connect Claude, ChatGPT or Cursor over MCP and ask "which tweets made me money this month?" ([how](#use-it-from-ai-assistants-mcp))
 
@@ -256,6 +257,26 @@ Any other provider can use the generic API (the key is in site settings):
 ```bash
 curl -X POST https://YOUR-HOST/api/v1/payments -H "Authorization: Bearer ml_..." -H "Content-Type: application/json" \
   -d '{"transaction_id":"txn_1","amount":29.99,"currency":"USD","visitor_id":"<ml_vid cookie>","email":"jane@acme.com"}'
+```
+
+## Import from DataFast or Plausible
+
+You can import historical analytics and revenue attribution into Minilytics from DataFast or Plausible export archives (`.zip`) or individual report `.csv` files.
+
+### From the Dashboard UI
+1. Open your site's **Settings & install**.
+2. Scroll to the **Import data** section.
+3. Drag and drop your `.zip` export or `.csv` files.
+4. Inspect the summary card (visitors, pageviews, detected date range, revenue).
+5. Click **Start Import**. The dashboard will insert batches in real time with progress tracking.
+
+### From the CLI (ideal for massive histories)
+```bash
+# Local development D1 database:
+npm run import:datafast -- --site <site-id> ./datafast-export.zip
+
+# Production Cloudflare D1 database:
+npm run import:datafast -- --site <site-id> --remote ./datafast-export.zip
 ```
 
 ## Use it from AI assistants (MCP)

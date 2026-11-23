@@ -129,6 +129,14 @@
     });
     w.addEventListener('popstate', pageview);
   }
+  // Back/forward restores the page from the browser's cache without rerunning this script, so a visitor
+  // who went to a checkout and pressed Back would be invisible. Count the return as a pageview.
+  w.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    lastPage = null;
+    if (d.visibilityState === 'visible') visibleSince = Date.now();
+    pageview();
+  });
 
   // ---- goals, outbound links, Dodo / Stripe checkout links
   function goal(name, props) {

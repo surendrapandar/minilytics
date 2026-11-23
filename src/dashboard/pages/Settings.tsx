@@ -7,6 +7,7 @@ import { CurrencySelect, TimezoneSelect } from '../components/SiteFields';
 import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
 import { fmtMoney } from '../lib/format';
+import { DatafastImport } from '../components/DatafastImport';
 
 const DOCS = 'https://github.com/surendrapandar/minilytics#';
 
@@ -143,6 +144,13 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
       <Revenue site={site} origin={origin} form={form} set={set} save={save} onKeyRotated={(api_key) => setSite({ ...site, api_key })} />
 
       <LinkBuilder domain={site.domain} />
+
+      <Section
+        title="Import data"
+        desc="Import historical visitors, pageviews, sources, and revenue from DataFast or Plausible CSV / ZIP exports."
+      >
+        <DatafastImport site={site} onSuccess={() => setSaved('Data imported!')} />
+      </Section>
 
       <Section title="General">
         <div className="grid gap-4 sm:grid-cols-2">

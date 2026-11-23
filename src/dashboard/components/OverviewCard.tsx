@@ -39,33 +39,35 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
   const g = data?.range.granularity ?? 'day';
 
   return (
-    <div className="card overflow-hidden">
-      <div className="grid grid-cols-2 border-b border-stone-100 sm:grid-cols-4 lg:grid-cols-7">
+    <div className="card overflow-hidden border border-zinc-200/80 shadow-sm">
+      <div className="grid grid-cols-2 divide-y divide-zinc-100 border-b border-zinc-100 sm:grid-cols-4 sm:divide-y-0 lg:grid-cols-7 lg:divide-x lg:divide-zinc-100">
         {kpis.map((k) => (
           <button
             key={k.key}
-            className={`border-stone-100 px-5 py-4 text-left lg:border-r ${k.metric ? 'hover:bg-stone-50' : 'cursor-default'}`}
+            className={`p-4 text-left transition-colors ${k.metric ? 'hover:bg-zinc-50/80' : 'cursor-default'}`}
             onClick={() => k.metric && setHidden((h) => ({ ...h, [k.metric!]: !h[k.metric!] }))}
             title={k.metric ? 'Show/hide on chart' : undefined}
           >
-            <div className="flex items-center gap-1.5 text-sm text-stone-500">
-              {k.dot && <span className={`h-2.5 w-2.5 rounded-sm ${k.dot} ${hidden[k.metric!] ? 'opacity-25' : ''}`} />}
+            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
+              {k.dot && <span className={`h-2 w-2 rounded-full ${k.dot} ${hidden[k.metric!] ? 'opacity-25' : ''}`} />}
               {k.label}
             </div>
-            <div className="mt-1 text-[28px] font-semibold leading-tight tracking-tight">{k.value}</div>
-            <Change cur={c![k.key as keyof Kpis]} prev={p![k.key as keyof Kpis]} invert={k.invert} />
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">{k.value}</div>
+            <div className="mt-0.5">
+              <Change cur={c![k.key as keyof Kpis]} prev={p![k.key as keyof Kpis]} invert={k.invert} />
+            </div>
           </button>
         ))}
         {data && (
-          <button className="px-5 py-4 text-left hover:bg-stone-50" onClick={onLive} title="Open the live map (M)">
-            <div className="flex items-center gap-1.5 text-sm text-stone-500">
-              Online <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+          <button className="p-4 text-left transition-colors hover:bg-zinc-50/80" onClick={onLive} title="Open the live map (M)">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
+              Online <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
             </div>
-            <div className="mt-1 text-[28px] font-semibold leading-tight">{data.online}</div>
-            <div className="text-xs text-stone-400">View on map →</div>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">{data.online}</div>
+            <div className="mt-0.5 text-xs font-medium text-indigo-600">View map →</div>
           </button>
         )}
-        {!data && <div className="col-span-full h-[98px] animate-pulse bg-stone-50" />}
+        {!data && <div className="col-span-full h-[98px] animate-pulse bg-zinc-50" />}
       </div>
 
       <div className="h-[340px] px-2 pb-3 pt-6 sm:px-4">
@@ -74,69 +76,69 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
             <ComposedChart data={data.series} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="vis" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8dbdf0" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#8dbdf0" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0.0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#efedea" strokeDasharray="4 4" />
+              <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
               <XAxis
                 dataKey="bucket"
                 tickFormatter={(b) => bucketLabel(b, g)}
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: '#71717a', fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
-                minTickGap={24}
+                minTickGap={28}
               />
               <YAxis
                 yAxisId="v"
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: '#71717a', fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
-                width={44}
+                width={40}
                 allowDecimals={false}
                 tickFormatter={(v) => fmtNumber(v)}
               />
               <YAxis
                 yAxisId="r"
                 orientation="right"
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: '#71717a', fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
-                width={56}
+                width={50}
                 tickFormatter={(v) => money(v, true)}
                 hide={hidden.revenue}
                 // Headroom keeps revenue bars in the lower part of the chart, under the visitors line.
                 domain={[0, (max: number) => Math.max(1, Math.ceil(max * 1.6))]}
               />
               <Tooltip
-                cursor={{ fill: 'rgba(28,25,23,0.03)' }}
+                cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }}
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const d = payload[0].payload as Overview['series'][0];
                   return (
-                    <div className="card min-w-[180px] px-4 py-3 text-sm">
-                      <div className="mb-2 font-medium">{bucketLabel(d.bucket, g, true)}</div>
-                      <Row color="bg-visitors" label="Visitors" value={fmtNumber(d.visitors)} />
-                      <Row color="bg-stone-300" label="Pageviews" value={fmtNumber(d.pageviews)} />
-                      <Row color="bg-revenue" label="Revenue" value={money(d.revenue)} />
-                      {d.payments > 0 && <Row color="bg-revenueSoft" label="Payments" value={String(d.payments)} />}
+                    <div className="card min-w-[180px] border border-zinc-200 bg-white/95 px-3.5 py-2.5 text-xs shadow-lg backdrop-blur">
+                      <div className="mb-2 font-semibold text-zinc-900">{bucketLabel(d.bucket, g, true)}</div>
+                      <Row color="bg-indigo-500" label="Visitors" value={fmtNumber(d.visitors)} />
+                      <Row color="bg-zinc-300" label="Pageviews" value={fmtNumber(d.pageviews)} />
+                      <Row color="bg-emerald-500" label="Revenue" value={money(d.revenue)} />
+                      {d.payments > 0 && <Row color="bg-emerald-200" label="Payments" value={String(d.payments)} />}
                     </div>
                   );
                 }}
               />
               {!hidden.revenue && (
-                <Bar yAxisId="r" dataKey="revenue" fill="#e07b5f" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />
+                <Bar yAxisId="r" dataKey="revenue" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={32} isAnimationActive={false} />
               )}
               {!hidden.visitors && (
                 <Area
                   yAxisId="v"
                   type="monotone"
                   dataKey="visitors"
-                  stroke="#7cb1ea"
-                  strokeWidth={2.5}
+                  stroke="#6366f1"
+                  strokeWidth={2}
                   fill="url(#vis)"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#7cb1ea', stroke: '#fff', strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
                   isAnimationActive={false}
                 />
               )}
