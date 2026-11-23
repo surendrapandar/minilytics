@@ -13,6 +13,9 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     setError('');
     try {
       await api('/api/auth/login', { method: 'POST', json: { password } });
+      // Signed in to approve an AI app: go back to its consent page.
+      const next = new URLSearchParams(window.location.search).get('next');
+      if (next?.startsWith('/oauth/authorize?')) return window.location.assign(next);
       onLogin();
     } catch (err) {
       setError((err as Error).message);

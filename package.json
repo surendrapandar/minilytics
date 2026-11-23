@@ -22,9 +22,12 @@
     "seed": "node scripts/seed-demo.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed.sql",
     "smoke": "node scripts/smoke.mjs",
     "seed:bots": "node scripts/seed-bots.mjs && wrangler d1 execute minilytics --local --file .wrangler/seed-bots.sql",
-    "smoke:bots": "node scripts/smoke-bots.mjs"
+    "smoke:bots": "node scripts/smoke-bots.mjs",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "import:datafast": "node scripts/import-datafast.mjs"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "hono": "^4.13.13",
     "maplibre-gl": "^5.24.0"
   },

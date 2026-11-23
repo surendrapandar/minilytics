@@ -3,7 +3,7 @@ import { usePref } from '../lib/prefs';
 import { api, qs, type BreakdownRow } from '../lib/api';
 import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
-import { countryName, fmtAgo, fmtDateTime, fmtDuration, fmtNumber, fmtPct } from '../lib/format';
+import { countryName, fmtAgo, fmtDateTime, fmtDuration, fmtNumber, fmtPaidIn, fmtPct } from '../lib/format';
 import { useApi } from '../lib/useApi';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 
@@ -13,7 +13,7 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
   const [tab, setTab] = usePref<Tab>('ml_tab_goals', 'journey');
   const [search, setSearch] = useState('');
   return (
-    <div className="card p-3">
+    <div className="card p-4 border border-zinc-200/80 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
         <div className="tabs">
           {(['goal', 'funnel', 'user', 'journey'] as const).map((t) => (
@@ -23,7 +23,7 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
           ))}
         </div>
         {(tab === 'user' || tab === 'journey') && (
-          <input className="input max-w-[240px] py-1.5" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input max-w-[220px]" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
       </div>
       {tab === 'goal' && <Goals totalVisitors={totalVisitors} />}
@@ -367,7 +367,14 @@ function Journey({ search }: { search: string }) {
                     </span>
                   )}
                 </td>
-                <td className="py-4 font-medium">{money(r.amount)}</td>
+                <td className="py-4 font-medium">
+                  {money(r.amount)}
+                  {fmtPaidIn(r) && (
+                    <div className="text-xs font-normal text-stone-500" title={`Paid in ${r.original_currency}, converted at that day's exchange rate`}>
+                      paid {fmtPaidIn(r)}
+                    </div>
+                  )}
+                </td>
                 <td className="py-4">
                   {r.first_seen ? fmtAgo(r.ts - r.first_seen) : '—'}
                   {r.visits > 0 && <div className="text-xs text-stone-500">{r.visits} visit{r.visits > 1 ? 's' : ''}</div>}
