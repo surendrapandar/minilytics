@@ -378,4 +378,14 @@ app.all('*', async (c) => {
   return new Response(index.body, { status, headers });
 });
 
+// Unexpected failures answer in JSON so the dashboard can say what went wrong. The common one on the
+// free plan is D1's daily row-read limit: every query fails until it resets at midnight UTC.
+app.onError((err, c) => {
+  console.error(err);
+  if (/daily row (read|write) limit/i.test(err.message)) {
+    return c.json({ error: "The database hit Cloudflare's free daily limit. It resets at 00:00 UTC, or upgrade to Workers Paid." }, 503);
+  }
+  return c.json({ error: 'Something went wrong. Try again in a moment.' }, 500);
+});
+
 export default app;

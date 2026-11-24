@@ -128,10 +128,20 @@ export function Settings({ siteId }: { siteId: string }) {
 // then: <script defer data-website-id="${site.id}" data-api="/stats/event" src="/stats/script.js"></script>`}</Code>
           </div>
         </details>
-        <p className="mt-3 text-sm text-stone-500">
-          Your own visits aren't counted from any browser you've opened this dashboard in. For other devices (like your phone), open{' '}
-          <code>{site.domain}/?ml_ignore=true</code> once.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-stone-500">
+          <a
+            href={`https://${site.domain}/?ml_ignore=true`}
+            target="_blank"
+            rel="noopener"
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 font-medium text-stone-700 hover:bg-stone-50"
+          >
+            Stop tracking my visits on {site.domain}
+          </a>
+          <span>
+            Opens your site once and marks this browser, on any network. Do it on each browser and device you use (undo with{' '}
+            <code>?ml_ignore=false</code>).
+          </span>
+        </div>
       </Section>
 
       <Section title="2. Track goals" desc="Button clicks and key actions, shown in the Goals tab." docs="install-on-a-website">
