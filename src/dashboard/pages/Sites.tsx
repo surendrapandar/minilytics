@@ -24,9 +24,10 @@ export function Sites() {
   const [adding, setAdding] = useState(false);
   const [period, setPeriod] = usePref('ml_sites_period', '30d');
   const [reloadKey, setReloadKey] = useState(0);
-  const { data: sites, loading: loadingSites } = useApi<Site[]>('/api/sites', reloadKey);
-  const { data: sparks, loading: loadingSparks } = useApi<SiteSpark[]>(`/api/sites-overview?period=${period}`, reloadKey);
+  const { data: sites, loading: loadingSites, error: sitesError } = useApi<Site[]>('/api/sites', reloadKey);
+  const { data: sparks, loading: loadingSparks, error: sparksError } = useApi<SiteSpark[]>(`/api/sites-overview?period=${period}`, reloadKey);
   const loading = loadingSites || loadingSparks;
+  const loadError = sitesError ? `Couldn't load your websites: ${sitesError}` : sparksError ? `Couldn't load the latest numbers: ${sparksError}` : null;
 
   useEffect(() => {
     if (sites && !sites.length) setAdding(true);
@@ -83,6 +84,12 @@ export function Sites() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {loadError}
+        </p>
+      )}
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sites && sites.length > 1 && <AllSitesCard sites={sites} sparks={sparks} />}
