@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { classify } from '../shared/sources';
+import { polarCheckoutId } from '../shared/polar';
 import { siteOwnerActive } from './auth';
 import { getSite, type AppEnv, type Site } from './env';
 import { isOwnerVisit } from './owner';
@@ -205,15 +206,14 @@ export async function ingest(
   if (product || (paid && /^pay_[\w-]{4,64}$/.test(paid))) await learnDodoProducts(db, site, product ? [product] : [], paid);
 }
 
-/**
- * Dodo sends buyers back to your return URL with ?payment_id=pay_... and Stripe with ?session_id=cs_...
- * (when the success URL has {CHECKOUT_SESSION_ID}). Seeing that on a pageview tells us exactly which
- * visitor made the payment, even when the checkout had no metadata.
- */
+/** Match a checkout to the visitor who lands on the site's tracked success page. */
 function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now: number): D1PreparedStatement[] {
   const q = url.searchParams;
-  const paymentId = q.get('payment_id') ?? q.get('subscription_id') ?? q.get('session_id');
-  if (!paymentId || !/^(pay|sub)_[\w-]{4,64}$|^cs_(test|live)_\w{4,200}$/.test(paymentId)) return [];
+  const legacyId = q.get('payment_id') ?? q.get('subscription_id') ?? q.get('session_id');
+  const legacy = legacyId && /^(pay|sub)_[\w-]{4,64}$|^cs_(test|live)_\w{4,200}$/.test(legacyId);
+  const paymentId = legacy ? legacyId : polarCheckoutId(q.get('checkout_id'));
+  if (!paymentId) return [];
+  const match = legacy ? '? IN (id, subscription_id, checkout_id)' : "provider = 'polar' AND checkout_id = ?";
   return [
     db
       .prepare('INSERT OR IGNORE INTO payment_claims (site_id, payment_id, visitor_id, ts) VALUES (?, ?, ?, ?)')
@@ -223,13 +223,13 @@ function claimPayment(db: D1Database, siteId: string, vid: string, url: URL, now
       .prepare(
         `UPDATE payments SET visitor_id = ?, matched_by = 'return_page',
            session_id = (${creditedSessionSql()})
-         WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) AND visitor_id IS NULL`,
+         WHERE site_id = ? AND ${match} AND visitor_id IS NULL`,
       )
       .bind(vid, siteId, vid, now + 60_000, siteId, paymentId),
     db
       .prepare(
-        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1)),
-           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND ? IN (id, subscription_id, checkout_id) LIMIT 1))
+        `UPDATE visitors SET email = COALESCE(email, (SELECT email FROM payments WHERE site_id = ? AND ${match} LIMIT 1)),
+           name = COALESCE(name, (SELECT name FROM payments WHERE site_id = ? AND ${match} LIMIT 1))
          WHERE site_id = ? AND id = ?`,
       )
       .bind(siteId, paymentId, siteId, paymentId, siteId, vid),

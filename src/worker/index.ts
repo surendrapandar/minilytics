@@ -13,6 +13,8 @@ import { createPersonalToken, listTokens, revokeGrant } from './tokens';
 import { convertForeignPayments } from './fx';
 import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 import { handleClearDatafastImport, handleImportBatch } from './importer';
+import { handlePolarImport, handlePolarWebhook } from './polar';
+import { polarId } from '../shared/polar';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -40,6 +42,7 @@ app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], max
 app.post('/api/event', handleEvent);
 app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
+app.post('/api/webhooks/polar/:siteId', handlePolarWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
 app.post('/api/v1/goals', handleGoalApi);
 
@@ -164,7 +167,12 @@ function validTimezone(tz: string) {
 }
 
 const mask = (secret: string | null | undefined) => (secret ? '••••••••' : null);
-const publicSite = (s: Site) => ({ ...s, dodo_webhook_secret: mask(s.dodo_webhook_secret), stripe_webhook_secret: mask(s.stripe_webhook_secret) });
+const publicSite = (s: Site) => ({
+  ...s,
+  dodo_webhook_secret: mask(s.dodo_webhook_secret),
+  stripe_webhook_secret: mask(s.stripe_webhook_secret),
+  polar_webhook_secret: mask(s.polar_webhook_secret),
+});
 
 app.get('/api/sites', async (c) => {
   const now = Date.now();
@@ -244,12 +252,23 @@ app.patch('/api/sites/:id', async (c) => {
   if (typeof b.stripe_webhook_secret === 'string' && !b.stripe_webhook_secret.includes('•')) {
     next.stripe_webhook_secret = b.stripe_webhook_secret.trim() || null;
   }
+  if (typeof b.polar_webhook_secret === 'string' && !b.polar_webhook_secret.includes('•')) {
+    const secret = b.polar_webhook_secret.trim();
+    if (secret.length > 256 || /\s/.test(secret)) return c.json({ error: 'Enter a valid Polar webhook signing secret' }, 400);
+    next.polar_webhook_secret = secret || null;
+  }
+  if (typeof b.polar_product_ids === 'string') {
+    const ids = b.polar_product_ids.split(/[\s,]+/).filter(Boolean).map(polarId);
+    if (ids.some((id) => !id)) return c.json({ error: 'Enter Polar product IDs as UUIDs, separated by commas or spaces' }, 400);
+    next.polar_product_ids = [...new Set(ids)].join(',') || null;
+  }
   if (typeof b.dodo_product_ids === 'string') {
     const ids = b.dodo_product_ids.split(/[\s,]+/).filter((x) => /^pdt_[\w-]+$/.test(x));
     next.dodo_product_ids = ids.join(',') || null;
   }
   await c.env.DB.prepare(
-    'UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?, dodo_product_ids = ?, stripe_webhook_secret = ? WHERE id = ?',
+    `UPDATE sites SET name = ?, domain = ?, timezone = ?, currency = ?, dodo_webhook_secret = ?,
+     dodo_product_ids = ?, stripe_webhook_secret = ?, polar_webhook_secret = ?, polar_product_ids = ? WHERE id = ?`,
   )
     .bind(
       next.name,
@@ -259,6 +278,8 @@ app.patch('/api/sites/:id', async (c) => {
       next.dodo_webhook_secret,
       next.dodo_product_ids ?? null,
       next.stripe_webhook_secret ?? null,
+      next.polar_webhook_secret ?? null,
+      next.polar_product_ids ?? null,
       site.id,
     )
     .run();
@@ -288,6 +309,7 @@ app.delete('/api/sites/:id', async (c) => {
 
 // Import historical data (DataFast / Plausible)
 app.post('/api/sites/:id/import/datafast', handleImportBatch);
+app.post('/api/sites/:id/import/polar', handlePolarImport);
 app.delete('/api/sites/:id/import/datafast', handleClearDatafastImport);
 
 // ---------- stats

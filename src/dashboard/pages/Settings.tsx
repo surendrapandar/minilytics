@@ -8,6 +8,7 @@ import { buildAiPrompt } from '../lib/aiPrompt';
 import { api, type Site } from '../lib/api';
 import { fmtMoney } from '../lib/format';
 import { DatafastImport } from '../components/DatafastImport';
+import { POLAR_API_VERSION } from '../../shared/polar';
 
 const DOCS = 'https://github.com/surendrapandar/minilytics#';
 
@@ -80,6 +81,8 @@ export function Settings({ siteId }: { siteId: string }) {
         dodo_webhook_secret: s.dodo_webhook_secret ?? '',
         dodo_product_ids: s.dodo_product_ids ?? '',
         stripe_webhook_secret: s.stripe_webhook_secret ?? '',
+        polar_webhook_secret: s.polar_webhook_secret ?? '',
+        polar_product_ids: s.polar_product_ids ?? '',
       });
     });
   }, [siteId]);
@@ -89,6 +92,9 @@ export function Settings({ siteId }: { siteId: string }) {
     try {
       const s = await api<Site>(`/api/sites/${siteId}`, { method: 'PATCH', json: patch });
       setSite(s);
+      if ('polar_webhook_secret' in patch) {
+        setForm((current) => ({ ...current, polar_webhook_secret: s.polar_webhook_secret ?? '' }));
+      }
       setSaved(msg);
       setTimeout(() => setSaved(''), 2000);
     } catch (e) {
@@ -198,7 +204,7 @@ window.minilytics('identify', { email: user.email, name: user.name });`}</Code>
   );
 }
 
-type Provider = 'dodo' | 'stripe' | 'api';
+type Provider = 'dodo' | 'stripe' | 'polar' | 'api';
 
 interface RevenueProps {
   site: Site;
@@ -212,15 +218,20 @@ interface RevenueProps {
 /** Revenue attribution: pick the payment provider, see only its setup. */
 function Revenue(props: RevenueProps) {
   const { site } = props;
-  const [provider, setProvider] = useState<Provider>(site.stripe_webhook_secret && !site.dodo_webhook_secret ? 'stripe' : 'dodo');
+  const [provider, setProvider] = useState<Provider>(() => {
+    if (site.dodo_webhook_secret) return 'dodo';
+    if (site.stripe_webhook_secret) return 'stripe';
+    return site.polar_webhook_secret ? 'polar' : 'dodo';
+  });
   const tabs: { id: Provider; label: string; icon: ReactNode; connected?: boolean }[] = [
     { id: 'dodo', label: 'Dodo Payments', icon: <Favicon domain="dodopayments.com" size={18} />, connected: !!site.dodo_webhook_secret },
     { id: 'stripe', label: 'Stripe', icon: <Favicon domain="stripe.com" size={18} />, connected: !!site.stripe_webhook_secret },
+    { id: 'polar', label: 'Polar', icon: <Favicon domain="polar.sh" size={18} />, connected: !!site.polar_webhook_secret },
     { id: 'api', label: 'Other / API', icon: <span className="font-mono text-xs text-stone-500">{'{ }'}</span> },
   ];
   return (
     <Section title="3. Connect payments" desc="Each payment is linked to the visitor who paid and the source that brought them.">
-      <div className="mb-5 grid grid-cols-3 gap-2">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -237,6 +248,7 @@ function Revenue(props: RevenueProps) {
       </div>
       {provider === 'dodo' && <DodoSetup {...props} />}
       {provider === 'stripe' && <StripeSetup {...props} />}
+      {provider === 'polar' && <PolarSetup key={site.id} {...props} />}
       {provider === 'api' && <ApiSetup {...props} />}
     </Section>
   );
@@ -392,6 +404,94 @@ await stripe.checkout.sessions.create({
         </Step>
       </Steps>
       <ProviderFooter anchor="stripe" />
+    </>
+  );
+}
+
+function PolarSetup({ site, origin, form, set, save }: RevenueProps) {
+  const [token, setToken] = useState('');
+  const [sandbox, setSandbox] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [importError, setImportError] = useState('');
+  const successUrl = `https://${site.domain}/thanks?checkout_id={CHECKOUT_ID}`;
+
+  async function importOrders() {
+    setImporting(true);
+    setImportError('');
+    let page: number | null = 1;
+    let processed = 0;
+    try {
+      while (page !== null) {
+        setProgress(`Importing page ${page} · ${processed} eligible orders processed`);
+        const result: { processed: number; nextPage: number | null } = await api(`/api/sites/${site.id}/import/polar`, {
+          method: 'POST', json: { token: token.trim(), page, sandbox },
+        });
+        processed += result.processed;
+        page = result.nextPage;
+      }
+      setProgress(`Import complete · ${processed} eligible orders processed`);
+      setToken('');
+    } catch (e) {
+      setProgress(`${processed} eligible orders processed`);
+      setImportError((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <>
+      <Steps>
+        <Step n={1} title={<>In Polar → <b>Settings → Webhooks</b>, add a Raw endpoint. Select API version <code>{POLAR_API_VERSION}</code> and subscribe to <code>order.paid</code> and <code>order.refunded</code>.</>}>
+          <CopyField value={`${origin}/api/webhooks/polar/${site.id}`} />
+        </Step>
+        <Step n={2} title="Connect this site to Polar.">
+          <label className="block text-sm font-medium" htmlFor="polar-products">Product IDs</label>
+          <p className="text-stone-500">If this Polar organization sells for multiple sites, enter the product IDs that belong to {site.name}. A blank list accepts all products.</p>
+          <input id="polar-products" className="input font-mono" value={form.polar_product_ids ?? ''}
+            onChange={(e) => set({ polar_product_ids: e.target.value })} />
+          <p>Paste the webhook signing secret and save.</p>
+          <SecretField
+            value={form.polar_webhook_secret ?? ''}
+            configured={!!site.polar_webhook_secret}
+            onChange={(v) => set({ polar_webhook_secret: v })}
+            onSave={() => save({ polar_webhook_secret: form.polar_webhook_secret ?? '', polar_product_ids: form.polar_product_ids ?? '' }, 'Polar settings saved')}
+          />
+        </Step>
+        <Step n={3} title="Link orders to the visits that led to them.">
+          <p>Minilytics tags Polar Checkout Links automatically on pages that load the tracker. For server-created checkouts, pass the attribution cookies in the checkout metadata.</p>
+          <Code label="checkout.ts">{`const jar = await cookies(); // next/headers
+
+await polar.checkouts.create({
+  products: ['YOUR_POLAR_PRODUCT_ID'],
+  metadata: {
+    ml_visitor_id: jar.get('ml_vid')?.value ?? '',
+    ml_session_id: jar.get('ml_sid')?.value ?? '',
+  },
+  successUrl: '${successUrl}',
+});`}</Code>
+          <p className="text-stone-500">For either checkout type, send customers to this success URL with the tracker installed as a fallback.</p>
+          <CopyField value={successUrl} />
+        </Step>
+      </Steps>
+      <details className="mt-5 border-t border-stone-100 pt-4 text-sm">
+        <summary className="cursor-pointer font-medium text-stone-600">Import past Polar orders</summary>
+        <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); void importOrders(); }}>
+          <p className="text-stone-500">Use an organization access token with <code>orders:read</code>. Minilytics uses it for this import and merges orders it already has.</p>
+          <label className="block" htmlFor="polar-import-token">Polar access token</label>
+          <input id="polar-import-token" className="input font-mono" type="password" autoComplete="off" value={token}
+            onChange={(e) => setToken(e.target.value)} disabled={importing} required />
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={sandbox} onChange={(e) => setSandbox(e.target.checked)} disabled={importing} />
+            Use Polar Sandbox
+          </label>
+          <button className="btn-dark" disabled={importing || !token.trim()}>{importing ? 'Importing…' : 'Import orders'}</button>
+          {progress && <p role="status" className="text-stone-500">{progress}</p>}
+          {importError && <p role="alert" className="text-red-600">{importError}</p>}
+        </form>
+      </details>
+      <ProviderFooter anchor="polar" note="Orders without a visitor match still count toward site revenue." />
     </>
   );
 }

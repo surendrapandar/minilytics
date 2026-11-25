@@ -240,11 +240,21 @@ One Stripe account selling for several of your sites? Point each site's webhook 
 skipped by sites it clearly isn't for (the buyer was only seen on another site, or a renewal from a customer who only
 paid on another site). To make it explicit, add `ml_site_id: '<SITE_ID>'` to the checkout's `metadata`.
 
+### Polar
+
+1. Open **Settings & install → Connect payments → Polar** in Minilytics. If your Polar organization sells for multiple sites, save the product IDs for each site before connecting its webhook.
+2. In Polar **Settings → Webhooks**, add `https://YOUR-HOST/api/webhooks/polar/SITE_ID` with the **Raw** format and API version `2026-10`. Subscribe to `order.paid` and `order.refunded`, then save the endpoint's signing secret in Minilytics.
+3. On pages with the tracker, Polar Checkout Links carry the visitor and session in `reference_id` when that parameter is available. When creating a Checkout Session in your backend, merge `ml_visitor_id` and `ml_session_id` into its metadata from the `ml_vid` and `ml_sid` cookies. For either checkout type, set the success URL to a tracked page such as `https://yoursite.com/thanks?checkout_id={CHECKOUT_ID}`.
+
+Polar revenue includes paid orders after discounts and before tax, with full and partial refunds subtracted. Orders without a visitor match still contribute to site revenue.
+
+To backfill earlier payments, open **Import past Polar orders** in the same panel and enter a Polar organization access token with `orders:read`. Use a dedicated test site for Sandbox data. Imports merge orders already received by webhook. For historical orders, the import uses the order's creation date for the sale and its last-modified date for any cumulative refund without a matching webhook.
+
 ### How credit is given
 
 A payment goes to the paying visitor's last visit that came from a real source (last non-direct
 touch). So "clicked a tweet, came back directly 17 days later and paid" is credited to the tweet. If metadata is
-missing, Minilytics tries, in order: the return page (`?payment_id=` / `?session_id=`), an earlier payment by the same customer
+missing, Minilytics tries, in order: the return page (`?payment_id=` / `?session_id=` / `?checkout_id=`), an earlier payment by the same customer
 (renewals), an email you `identify()`'d, and finally checkout timing (used only when exactly one visitor clicked a Dodo or
 Stripe checkout link in the 3 hours before the payment). The Journey tab shows how each payment was matched, and **Try
 matching again** re-runs this for older payments.

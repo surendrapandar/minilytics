@@ -218,7 +218,7 @@ export function Landing() {
         <div className="grid gap-4 md:grid-cols-3">
           {[
             ['1', 'Add one script tag', 'Paste it in your site’s <head>, or copy the ready-made prompt and let Claude Code / Cursor install it for you.'],
-            ['2', 'Connect Stripe or Dodo', 'Add a webhook and every payment is linked to the visitor who made it, and the link that brought them.'],
+            ['2', 'Connect Stripe, Dodo or Polar', 'Add a webhook to see your revenue and which visits led to sales.'],
             ['3', 'See what makes money', 'Revenue next to every source, campaign and page. Post more of what pays, drop what doesn’t.'],
           ].map(([n, title, text]) => (
             <div key={n} className="card p-6">
@@ -347,7 +347,7 @@ export function Landing() {
               {[
                 'Unlimited websites',
                 'Unlimited events',
-                'Revenue attribution with Stripe & Dodo Payments',
+                'Revenue attribution with Stripe, Dodo Payments & Polar',
                 'Customer journeys, goals & funnels',
                 'Live globe & real-time feed',
                 'AI setup prompt for your codebase',
@@ -400,7 +400,7 @@ export function Landing() {
           {[
             ['Is it really unlimited?', 'Yes: unlimited websites and events, within fair use for normal websites.'],
             ['Will it slow down my site?', 'No. The script is about 3.5 KB gzipped and loads after your page.'],
-            ['Which payment providers work?', 'Stripe and Dodo Payments work out of the box (one webhook each). Any other provider can send payments with a simple API call.'],
+            ['Which payment providers work?', 'Stripe, Dodo Payments and Polar each connect with a webhook. Other providers can send payments through the API.'],
             ['What about ad blockers?', 'You can serve the script from your own domain with a one-line rewrite, so blockers don’t see it. Payments are always recorded either way, because they come from the webhook.'],
             ['Do I need a cookie banner?', 'It uses two first-party cookies and no IP storage. Whether you need a consent banner depends on your visitors’ country; in the EU you may.'],
             ...(monthly

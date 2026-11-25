@@ -22,13 +22,14 @@ interface PaymentInput {
   checkoutId?: string | null;
   productId?: string | null;
   renewal?: boolean;
+  settled?: boolean;
 }
 
 export type MatchedBy = 'metadata' | 'return_page' | 'customer' | 'email' | 'timing';
 
 /** The visit that gets the credit: the visitor's last visit that came from somewhere (last non-direct touch). */
-export function creditedSessionSql() {
-  return `SELECT id FROM sessions WHERE site_id = ? AND visitor_id = ? AND started_at <= ?
+export function creditedSessionSql(site = '?', visitor = '?', before = '?') {
+  return `SELECT id FROM sessions WHERE site_id = ${site} AND visitor_id = ${visitor} AND started_at <= ${before}
           ORDER BY (channel != 'Direct') DESC, started_at DESC LIMIT 1`;
 }
 
@@ -78,7 +79,7 @@ async function attribute(db: D1Database, site: Site, p: PaymentInput) {
     if (v) [visitorId, matchedBy] = [v.id, 'email'];
   }
   let reason: string | null = null;
-  if (!visitorId && p.kind === 'payment' && !renewal) {
+  if (!visitorId && p.kind === 'payment' && !renewal && p.provider !== 'polar') {
     const t = await matchByTiming(db, site, p);
     if (t.visitorId) [visitorId, matchedBy] = [t.visitorId, 'timing'];
     reason = t.reason;
@@ -143,19 +144,22 @@ async function matchByTiming(db: D1Database, site: Site, p: PaymentInput): Promi
   };
 }
 
-export async function recordPayment(db: D1Database, site: Site, p: PaymentInput) {
+export async function recordPayment(db: D1Database, site: Site, p: PaymentInput, ...related: D1PreparedStatement[]) {
   const { visitorId, sessionId, renewal, matchedBy } = await attribute(db, site, p);
   // Totals add up amounts, so every payment is stored in the site's currency (the original is kept alongside).
   const money = await toSiteMoney(db, site, p.amount, p.currency, p.ts);
   // Seen before (a retry, or Stripe's invoice.paid arriving before checkout.session.completed): fill in what
   // was missing, and let checkout metadata win over a weaker match.
   const better = `(payments.visitor_id IS NULL OR excluded.matched_by = 'metadata')`;
+  const settlement = p.settled ? `ts = excluded.ts, amount = excluded.amount, currency = excluded.currency,
+           original_amount = excluded.original_amount, original_currency = excluded.original_currency,` : '';
   const stmts = [
     db
       .prepare(
         `INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, renewal, matched_by, subscription_id, checkout_id, product_id, original_amount, original_currency)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
+           ${settlement}
            visitor_id = CASE WHEN ${better} THEN COALESCE(excluded.visitor_id, payments.visitor_id) ELSE payments.visitor_id END,
            session_id = CASE WHEN ${better} THEN COALESCE(excluded.session_id, payments.session_id) ELSE payments.session_id END,
            matched_by = CASE WHEN ${better} THEN COALESCE(excluded.matched_by, payments.matched_by) ELSE payments.matched_by END,
@@ -187,13 +191,15 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
   // A payment tells us who an anonymous visitor really is.
   if (visitorId && p.kind === 'payment' && (p.email || p.name)) {
     stmts.push(
-      db.prepare('INSERT OR IGNORE INTO visitors (site_id, id, first_seen) VALUES (?, ?, ?)').bind(site.id, visitorId, p.ts),
+      db.prepare('INSERT OR IGNORE INTO visitors (site_id, id, first_seen) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM payments WHERE id = ? AND site_id = ?)')
+        .bind(site.id, visitorId, p.ts, p.id, site.id),
       db
-        .prepare('UPDATE visitors SET email = COALESCE(email, ?), name = COALESCE(name, ?) WHERE site_id = ? AND id = ?')
-        .bind(p.email ?? null, p.name ?? null, site.id, visitorId),
+        .prepare(`UPDATE visitors SET email = COALESCE(email, ?), name = COALESCE(name, ?) WHERE site_id = ? AND id = ?
+                  AND EXISTS (SELECT 1 FROM payments WHERE id = ? AND site_id = ?)`)
+        .bind(p.email ?? null, p.name ?? null, site.id, visitorId, p.id, site.id),
     );
   }
-  await db.batch(stmts);
+  await db.batch(stmts.concat(related));
   return { visitorId, sessionId };
 }
 
@@ -223,7 +229,8 @@ export async function rematchPayments(db: D1Database, site: Site) {
   const rows = await db
     .prepare("SELECT * FROM payments WHERE site_id = ? AND kind = 'payment' AND visitor_id IS NULL ORDER BY ts LIMIT 500")
     .bind(site.id)
-    .all<{ id: string; ts: number; amount: number; currency: string; customer_id: string | null; email: string | null; name: string | null; provider: string; subscription_id: string | null }>();
+    .all<{ id: string; ts: number; amount: number; currency: string; customer_id: string | null; email: string | null;
+      name: string | null; provider: string; subscription_id: string | null; checkout_id: string | null; renewal: number }>();
   let matched = 0;
   const details: { id: string; name: string | null; matched: boolean; reason: string | null }[] = [];
   for (const r of rows.results) {
@@ -238,11 +245,13 @@ export async function rematchPayments(db: D1Database, site: Site) {
       email: r.email,
       name: r.name,
       subscriptionId: r.subscription_id,
+      checkoutId: r.checkout_id,
+      renewal: !!r.renewal,
     });
     details.push({ id: r.id, name: r.name, matched: !!a.visitorId, reason: a.reason });
     if (!a.visitorId) continue;
     matched++;
-    await db.batch([
+    const statements = [
       db
         .prepare('UPDATE payments SET visitor_id = ?, session_id = ?, matched_by = ?, renewal = ? WHERE site_id = ? AND id = ?')
         .bind(a.visitorId, a.sessionId, a.matchedBy, a.renewal ? 1 : 0, site.id, r.id),
@@ -250,7 +259,13 @@ export async function rematchPayments(db: D1Database, site: Site) {
       db
         .prepare('UPDATE visitors SET email = COALESCE(email, ?), name = COALESCE(name, ?) WHERE site_id = ? AND id = ?')
         .bind(r.email, r.name, site.id, a.visitorId),
-    ]);
+    ];
+    if (r.provider === 'polar') {
+      statements.push(db.prepare(`UPDATE payments SET visitor_id = ?, session_id = ?, matched_by = ? WHERE site_id = ?
+        AND id IN (SELECT order_id || ':refund:' || amount FROM polar_refunds WHERE order_id = ?)`)
+        .bind(a.visitorId, a.sessionId, a.matchedBy, site.id, r.id));
+    }
+    await db.batch(statements);
   }
   return { checked: rows.results.length, matched, details };
 }

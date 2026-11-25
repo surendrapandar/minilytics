@@ -39,22 +39,23 @@ export async function verifyStandardWebhook(
   headers: { id: string | null; timestamp: string | null; signature: string | null },
   body: string,
   now = Date.now(),
+  legacySecret = false,
 ): Promise<boolean> {
   const { id, timestamp, signature } = headers;
   if (!id || !timestamp || !signature) return false;
   const ts = Number(timestamp);
-  if (!Number.isFinite(ts) || Math.abs(now / 1000 - ts) > 5 * 60) return false;
+  if (!/^\d+$/.test(timestamp) || Math.abs(now / 1000 - ts) > 5 * 60) return false;
   let key: Uint8Array<ArrayBuffer>;
   try {
-    key = b64ToBytes(secret.startsWith('whsec_') ? secret.slice(6) : secret);
+    key = legacySecret ? enc.encode(secret) : b64ToBytes(secret.startsWith('whsec_') ? secret.slice(6) : secret);
   } catch {
     return false;
   }
+  if (!key.length) return false;
   const expected = bytesToB64(await hmac(key, `${id}.${timestamp}.${body}`));
   return signature
-    .split(' ')
-    .map((s) => s.split(',')[1] ?? '')
-    .some((sig) => safeEqual(sig, expected));
+    .split(/\s+/)
+    .some((sig) => sig.startsWith('v1,') && safeEqual(sig.slice(3), expected));
 }
 
 /**
