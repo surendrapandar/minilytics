@@ -138,7 +138,7 @@
     pageview();
   });
 
-  // ---- goals, outbound links, Dodo / Stripe checkout links
+  // ---- goals, outbound links, checkout links
   function goal(name, props) {
     if (!name) return;
     send('goal', { n: String(name).slice(0, 64), p: props || undefined }, true);
@@ -147,8 +147,8 @@
     var id = ids();
     return { ml_visitor_id: id.vid, ml_session_id: id.sid };
   }
-  // Checkout links carry the visitor: Dodo links as metadata, Stripe payment links (buy.stripe.com) in
-  // client_reference_id, unless the site already sets its own. They're tagged as soon as they appear on the
+  // Checkout links carry the visitor. Keep the merchant's own reference ID if it already exists.
+  // Links are tagged as soon as they appear on the
   // page, not just on click, because other scripts (e.g. Umami's click tracking) may copy the href and
   // navigate before our click handler runs.
   function tagCheckoutLink(a) {
@@ -163,13 +163,18 @@
         var ref = q.get('client_reference_id');
         if (ref && ref.indexOf('ml_') !== 0) return;
         q.set('client_reference_id', 'ml_' + att.ml_visitor_id + '__' + att.ml_session_id);
+      } else if ((u.hostname === 'buy.polar.sh' || u.hostname === 'sandbox.polar.sh') && /^\/polar_cl_/.test(u.pathname)) {
+        var polarRef = q.get('reference_id');
+        var prefix = 'ml_polar_' + siteId + '__';
+        if (polarRef && polarRef.indexOf(prefix) !== 0) return;
+        q.set('reference_id', prefix + att.ml_visitor_id + '__' + att.ml_session_id);
       } else return;
       var next = u.toString();
       if (a.href !== next) a.href = next;
     } catch (e) {}
   }
   function tagCheckoutLinks() {
-    var links = d.querySelectorAll('a[href*="dodopayments.com"], a[href*="buy.stripe.com"]');
+    var links = d.querySelectorAll('a[href*="dodopayments.com"], a[href*="buy.stripe.com"], a[href*="polar.sh"]');
     for (var i = 0; i < links.length; i++) tagCheckoutLink(links[i]);
   }
   var tagQueued = false;

@@ -113,6 +113,13 @@ describe('Standard Webhooks (Dodo)', () => {
     expect(await verifyStandardWebhook(secret, { id: 'msg_1', timestamp: ts, signature: `v1,${sig}` }, body + ' ')).toBe(false);
     expect(await verifyStandardWebhook(secret, { id: 'msg_1', timestamp: String(Number(ts) - 3600), signature: `v1,${sig}` }, body)).toBe(false);
   });
+  it('uses the complete Polar legacy secret and only accepts version 1 signatures', async () => {
+    const legacySignature = createHmac('sha256', secret).update(`msg_1.${ts}.${body}`).digest('base64');
+    const headers = { id: 'msg_1', timestamp: ts, signature: `v1,${legacySignature}` };
+    expect(await verifyStandardWebhook(secret, headers, body)).toBe(false);
+    expect(await verifyStandardWebhook(secret, headers, body, Date.now(), true)).toBe(true);
+    expect(await verifyStandardWebhook(secret, { ...headers, signature: `v2,${legacySignature}` }, body, Date.now(), true)).toBe(false);
+  });
 });
 
 describe('Stripe webhooks', () => {
