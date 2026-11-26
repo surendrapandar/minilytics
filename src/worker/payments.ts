@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { getSite, type AppEnv, type Site } from './env';
 import { verifyStandardWebhook, verifyStripeWebhook } from './lib/crypto';
 import { currencyDecimals } from '../shared/currency';
+import { dayOf, frankfurterRates, toSiteCurrency, type Money, type RateFn } from './lib/fx';
 
 export { currencyDecimals };
 
@@ -9,9 +10,13 @@ interface PaymentInput {
   id: string;
   provider: string;
   ts: number;
-  amount: number; // minor units; negative for refunds
+  amount: number; // minor units, as charged (tax included); negative for refunds
   kind: 'payment' | 'refund';
   currency: string;
+  tax?: number | null; // included in amount
+  settlementAmount?: number | null; // what the provider paid out, when known
+  settlementCurrency?: string | null;
+  refundOf?: string | null; // a refund's payment id, so it uses that payment's rate
   visitorId?: string | null;
   sessionId?: string | null;
   customerId?: string | null;
@@ -142,7 +147,96 @@ async function matchByTiming(db: D1Database, site: Site, p: PaymentInput): Promi
   };
 }
 
+/**
+ * The site-currency amount (tax included) stored in payments.amount (all revenue totals sum it), with the
+ * charge kept as orig_amount/orig_currency. Pending when the day's rate isn't available yet.
+ */
+async function siteAmount(db: D1Database, site: Site, m: Money, ts: number, rate: RateFn = frankfurterRates(db)) {
+  const amount = await toSiteCurrency(m, site.currency, dayOf(ts), rate);
+  return {
+    amount: amount ?? 0,
+    pending: amount === null ? 1 : 0,
+    origAmount: m.amount,
+    origCurrency: m.currency.toUpperCase(),
+    origTax: m.tax ?? null,
+    settlementAmount: m.settlementAmount ?? null,
+    settlementCurrency: m.settlementCurrency?.toUpperCase() ?? null,
+    fxTs: ts,
+  };
+}
+
+/** A refund in the site currency at its payment's rate; refunds of unconverted payments convert on their own. */
+async function refundAmount(
+  db: D1Database,
+  site: Site,
+  original: RefundOriginal,
+  refund: { amount: number; currency: string; ts: number },
+) {
+  const charged = -Math.abs(refund.amount);
+  const cur = refund.currency.toUpperCase();
+  if (!original.orig_amount || original.orig_currency !== cur) return siteAmount(db, site, { amount: charged, currency: cur }, refund.ts);
+  const part = Math.abs(charged) / Math.abs(original.orig_amount);
+  if (!original.fx_pending) {
+    const share = Math.round(part * Math.abs(original.amount));
+    return { amount: -share, pending: 0, origAmount: charged, origCurrency: cur, origTax: null, settlementAmount: null, settlementCurrency: null, fxTs: original.ts };
+  }
+  // Its payment still waits for a rate: take the same share of its settlement (and tax, kept for the record), converted on its day.
+  return siteAmount(
+    db,
+    site,
+    {
+      amount: charged,
+      currency: cur,
+      tax: original.orig_tax != null ? Math.round(part * original.orig_tax) : null,
+      settlementAmount: original.settlement_amount != null ? -Math.round(part * original.settlement_amount) : null,
+      settlementCurrency: original.settlement_currency,
+    },
+    original.ts,
+  );
+}
+
+type RefundOriginal = {
+  ts: number;
+  amount: number;
+  orig_amount: number | null;
+  orig_currency: string | null;
+  orig_tax: number | null;
+  settlement_amount: number | null;
+  settlement_currency: string | null;
+  fx_pending: number;
+};
+
+/** A payment waiting for a rate that still has none after this long is given up on (fx_pending = 2). */
+const FX_GIVE_UP_MS = 7 * 86_400_000;
+
+/** Convert payments stored before their day's rate was available. */
+export async function convertPendingPayments(db: D1Database, site: Site) {
+  const rows = await db
+    .prepare('SELECT id, COALESCE(fx_ts, ts) AS ts, orig_amount, orig_currency, orig_tax, settlement_amount, settlement_currency FROM payments WHERE site_id = ? AND fx_pending = 1 ORDER BY ts DESC LIMIT 20')
+    .bind(site.id)
+    .all<{ id: string; ts: number; orig_amount: number; orig_currency: string; orig_tax: number | null; settlement_amount: number | null; settlement_currency: string | null }>();
+  const rate = frankfurterRates(db);
+  for (const r of rows.results) {
+    const m = await siteAmount(
+      db,
+      site,
+      { amount: r.orig_amount, currency: r.orig_currency, tax: r.orig_tax, settlementAmount: r.settlement_amount, settlementCurrency: r.settlement_currency },
+      r.ts,
+      rate,
+    );
+    if (!m.pending) await db.prepare('UPDATE payments SET amount = ?, fx_pending = 0 WHERE id = ? AND site_id = ?').bind(m.amount, r.id, site.id).run();
+    else if (Date.now() - r.ts > FX_GIVE_UP_MS) await db.prepare('UPDATE payments SET fx_pending = 2 WHERE id = ? AND site_id = ?').bind(r.id, site.id).run();
+  }
+}
+
 export async function recordPayment(db: D1Database, site: Site, p: PaymentInput) {
+  // A free order (100% discount) isn't a purchase: it would count as a customer with no revenue.
+  if (p.kind === 'payment' && !p.amount) return { visitorId: null, sessionId: null };
+  const original =
+    p.kind === 'refund' && p.refundOf
+      ? await db.prepare('SELECT * FROM payments WHERE id = ? AND site_id = ?').bind(p.refundOf, site.id).first<RefundOriginal>()
+      : null;
+  const money = original ? await refundAmount(db, site, original, { amount: p.amount, currency: p.currency, ts: p.ts }) : await siteAmount(db, site, p, p.ts);
   const { visitorId, sessionId, renewal, matchedBy } = await attribute(db, site, p);
   // Seen before (a retry, or Stripe's invoice.paid arriving before checkout.session.completed): fill in what
   // was missing, and let checkout metadata win over a weaker match.
@@ -150,8 +244,8 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
   const stmts = [
     db
       .prepare(
-        `INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, renewal, matched_by, subscription_id, checkout_id, product_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, renewal, matched_by, subscription_id, checkout_id, product_id, orig_amount, orig_currency, fx_pending, orig_tax, settlement_amount, settlement_currency, fx_ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            visitor_id = CASE WHEN ${better} THEN COALESCE(excluded.visitor_id, payments.visitor_id) ELSE payments.visitor_id END,
            session_id = CASE WHEN ${better} THEN COALESCE(excluded.session_id, payments.session_id) ELSE payments.session_id END,
@@ -164,9 +258,9 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
         site.id,
         p.provider,
         p.ts,
-        p.amount,
+        money.amount,
         p.kind,
-        p.currency.toUpperCase(),
+        site.currency,
         visitorId,
         sessionId,
         p.customerId ?? null,
@@ -177,6 +271,13 @@ export async function recordPayment(db: D1Database, site: Site, p: PaymentInput)
         p.subscriptionId ?? null,
         p.checkoutId ?? null,
         p.productId ?? null,
+        money.origAmount,
+        money.origCurrency,
+        money.pending,
+        money.origTax,
+        money.settlementAmount,
+        money.settlementCurrency,
+        money.fxTs,
       ),
   ];
   // A payment tells us who an anonymous visitor really is.
@@ -340,12 +441,8 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
   const products: string[] = Array.isArray(data.product_cart) ? data.product_cart.map((p: any) => p?.product_id).filter(Boolean) : [];
 
   if (event.type === 'payment.succeeded') {
-    let amount = Number(data.total_amount) || 0;
-    let currency = String(data.currency ?? site.currency);
-    if (currency.toUpperCase() !== site.currency && str(data.settlement_currency)?.toUpperCase() === site.currency) {
-      amount = Number(data.settlement_amount) || amount;
-      currency = data.settlement_currency;
-    }
+    const amount = Number(data.total_amount) || 0;
+    const currency = String(data.currency ?? site.currency);
     const payment: PaymentInput = {
       id: String(data.payment_id),
       provider: 'dodo',
@@ -353,6 +450,9 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
       amount,
       kind: 'payment',
       currency,
+      tax: Number(data.tax) || 0,
+      settlementAmount: Number(data.settlement_amount) || null,
+      settlementCurrency: str(data.settlement_currency),
       visitorId: pickMeta(meta, ['ml_visitor_id', 'visitor_id', 'minilytics_visitor_id']),
       sessionId: pickMeta(meta, ['ml_session_id', 'session_id', 'minilytics_session_id']),
       customerId: str(customer.customer_id) ?? str(data.customer_id),
@@ -374,31 +474,43 @@ export async function handleDodoWebhook(c: Context<AppEnv>) {
   } else if (event.type === 'refund.succeeded') {
     const original = await c.env.DB.prepare('SELECT * FROM payments WHERE id = ? AND site_id = ?')
       .bind(String(data.payment_id), site.id)
-      .first<{ visitor_id: string | null; session_id: string | null; currency: string; amount: number }>();
+      .first<RefundOriginal & { visitor_id: string | null; session_id: string | null; currency: string }>();
     // A refund of a payment this site never recorded (another product, or before tracking) isn't this site's.
     if (!original) {
       await c.env.DB.prepare('DELETE FROM pending_payments WHERE site_id = ? AND payment_id = ?').bind(site.id, String(data.payment_id)).run();
       return c.json({ ok: true, ignored: 'unknown payment' });
     }
-    const amount = Number(data.amount) || original.amount || 0;
+    const m = await refundAmount(c.env.DB, site, original, {
+      amount: Number(data.amount) || original.orig_amount || original.amount || 0,
+      currency: String(data.currency ?? original.orig_currency ?? site.currency),
+      ts,
+    });
     await c.env.DB.prepare(
-      `INSERT OR IGNORE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name)
-       VALUES (?, ?, 'dodo', ?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, orig_amount, orig_currency, fx_pending, orig_tax, settlement_amount, settlement_currency, fx_ts)
+       VALUES (?, ?, 'dodo', ?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         String(data.refund_id ?? `refund_${data.payment_id}`),
         site.id,
         ts,
-        -Math.abs(amount),
-        String(data.currency ?? original.currency ?? site.currency).toUpperCase(),
+        m.amount,
+        site.currency,
         original.visitor_id ?? null,
         original.session_id ?? null,
         str(customer.customer_id),
         str(customer.email)?.toLowerCase() ?? null,
         str(customer.name),
+        m.origAmount,
+        m.origCurrency,
+        m.pending,
+        m.origTax,
+        m.settlementAmount,
+        m.settlementCurrency,
+        m.fxTs,
       )
       .run();
   }
+  await convertPendingPayments(c.env.DB, site);
   // Every other event type is acknowledged so Dodo doesn't retry it.
   return c.json({ ok: true });
 }
@@ -431,6 +543,8 @@ export async function stripePaymentIsElsewhere(
   }
   return false;
 }
+
+type StripeOriginal = RefundOriginal & { id: string; visitor_id: string | null; session_id: string | null };
 
 /** Stripe webhook: POST /api/webhooks/stripe/:siteId */
 export async function handleStripeWebhook(c: Context<AppEnv>) {
@@ -468,6 +582,7 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
       amount: Number(o.amount_total) || 0,
       kind: 'payment',
       currency: String(o.currency ?? site.currency),
+      tax: Number(o.total_details?.amount_tax) || 0,
       visitorId,
       sessionId: pickMeta(o.metadata, ['ml_session_id', 'session_id']) ?? ref?.[2],
       customerId: str(o.customer),
@@ -492,6 +607,7 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
       amount: Number(o.amount_paid),
       kind: 'payment',
       currency: String(o.currency ?? site.currency),
+      tax: Number(o.tax) || (Array.isArray(o.total_taxes) ? o.total_taxes.reduce((t: number, x: any) => t + (Number(x?.amount) || 0), 0) : 0),
       customerId: str(o.customer),
       email: str(o.customer_email)?.toLowerCase() ?? null,
       name: str(o.customer_name),
@@ -502,31 +618,40 @@ export async function handleStripeWebhook(c: Context<AppEnv>) {
     const original =
       (await c.env.DB.prepare('SELECT * FROM payments WHERE site_id = ? AND id IN (?, ?)')
         .bind(site.id, str(o.payment_intent) ?? '', str(o.invoice) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>()) ??
+        .first<StripeOriginal>()) ??
       // Newer API versions don't link a charge to its invoice; fall back to the customer's latest payment.
       (await c.env.DB.prepare("SELECT * FROM payments WHERE site_id = ? AND customer_id = ? AND kind = 'payment' ORDER BY ts DESC LIMIT 1")
         .bind(site.id, str(o.customer) ?? '')
-        .first<{ id: string; visitor_id: string | null; session_id: string | null }>());
+        .first<StripeOriginal>());
     if (!original) return c.json({ ok: true, ignored: 'unknown payment' });
     // amount_refunded is the running total, so a second partial refund replaces the row.
+    const m = await refundAmount(c.env.DB, site, original, { amount: Number(o.amount_refunded) || 0, currency: String(o.currency ?? site.currency), ts: Date.now() });
     await c.env.DB.prepare(
-      `INSERT OR REPLACE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name)
-       VALUES (?, ?, 'stripe', ?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO payments (id, site_id, provider, ts, amount, kind, currency, visitor_id, session_id, customer_id, email, name, orig_amount, orig_currency, fx_pending, orig_tax, settlement_amount, settlement_currency, fx_ts)
+       VALUES (?, ?, 'stripe', ?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         `${o.id}:refund`,
         site.id,
         Date.now(),
-        -Math.abs(Number(o.amount_refunded) || 0),
-        String(o.currency ?? site.currency).toUpperCase(),
+        m.amount,
+        site.currency,
         original.visitor_id,
         original.session_id,
         str(o.customer),
         str(o.billing_details?.email)?.toLowerCase() ?? null,
         str(o.billing_details?.name),
+        m.origAmount,
+        m.origCurrency,
+        m.pending,
+        m.origTax,
+        m.settlementAmount,
+        m.settlementCurrency,
+        m.fxTs,
       )
       .run();
   }
+  await convertPendingPayments(c.env.DB, site);
   // Every other event type is acknowledged so Stripe doesn't retry it.
   return c.json({ ok: true });
 }
@@ -559,6 +684,7 @@ export async function handlePaymentApi(c: Context<AppEnv>) {
     amount: refunded ? -Math.abs(minor) : minor,
     kind: refunded ? 'refund' : 'payment',
     currency,
+    refundOf: refunded ? `${site.id}:${b.transaction_id}` : null,
     visitorId: str(b.visitor_id),
     sessionId: str(b.session_id),
     customerId: str(b.customer_id),
@@ -566,6 +692,7 @@ export async function handlePaymentApi(c: Context<AppEnv>) {
     name: str(b.name),
     renewal: b.renewal === true,
   });
+  await convertPendingPayments(c.env.DB, site);
   return c.json({ ok: true, attributed: !!res.sessionId, visitor_id: res.visitorId });
 }
 

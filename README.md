@@ -266,7 +266,7 @@ No analytics tool is 100% accurate. These are the main gaps and how this project
 - **Safari** keeps cookies set by JavaScript for at most 7 days. A Safari visitor who returns after more than a week counts as new. The
   email fallback above recovers most of these payments.
 - **Bots** are filtered by user agent and the `navigator.webdriver` flag.
-- Revenue in a different currency than the site's is converted only when Dodo gives a settlement amount in the site's currency.
+- Revenue includes tax (like your payment provider's gross volume), minus refunds, and is shown in the site's currency. Provider fees aren't subtracted. A payment in another currency is converted from what the customer was charged at that day's ECB reference rate ([Frankfurter](https://frankfurter.dev), free, no key, fetched once per day and cached); for a currency the ECB doesn't publish, Dodo's settlement is converted instead. Totals land close to Dodo's Gross Volume, within a little for the provider's own rates. If no rate is available yet, the payment waits and is converted on a later webhook instead of being counted at face value. Free (100% discount) orders aren't counted as purchases.
 
 ## Local development
 

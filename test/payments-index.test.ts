@@ -1,7 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import type { Site } from '../src/worker/env';
+import { d1, schemaDb, type Plan } from './helpers/sqlite-d1';
 import { breakdown, parseFilters, realtime, visitorProfile, visitors } from '../src/worker/stats';
 
 /**
@@ -10,34 +9,6 @@ import { breakdown, parseFilters, realtime, visitorProfile, visitors } from '../
  * (73k rows per dashboard load on a site with under 2k events). Every per-visitor payments lookup
  * must be an index search on (site_id, visitor_id). Needs Node 22.5+ for node:sqlite.
  */
-
-type Plan = { sql: string; plan: string[] };
-
-/** The real schema, applied in migration order to an in-memory SQLite. */
-function schemaDb() {
-  const db = new DatabaseSync(':memory:');
-  const dir = new URL('../migrations/', import.meta.url);
-  for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(f, dir), 'utf8'));
-  return db;
-}
-
-/** A minimal D1 stand-in over node:sqlite that records the query plan of every statement run. */
-function d1(db: DatabaseSync, plans: Plan[]): D1Database {
-  const stmt = (sql: string, params: any[] = []) => {
-    const exec = () => {
-      plans.push({ sql, plan: db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map((r) => String(r.detail)) });
-      return db.prepare(sql).all(...params);
-    };
-    return {
-      bind: (...p: any[]) => stmt(sql, p),
-      all: async () => ({ results: exec() }),
-      first: async () => exec()[0] ?? null,
-      run: async () => ({ results: exec() }),
-      _all: () => ({ results: exec() }),
-    };
-  };
-  return { prepare: (sql: string) => stmt(sql), batch: async (list: any[]) => list.map((s) => s._all()) } as unknown as D1Database;
-}
 
 /** For each statement that looks payments up by visitor, the plan steps that read payments (under its alias). */
 function paymentsLookups(plans: Plan[]) {
