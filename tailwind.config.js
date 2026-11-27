@@ -11,6 +11,8 @@ export default {
         revenue: '#e07b5f',
         revenueSoft: '#fadbd1',
         visitorsSoft: '#e4f0fc',
+        chartVisitors: '#7b6ff0',
+        chartRevenue: '#e2a24f',
       },
       boxShadow: { card: '0 1px 2px rgba(28,25,23,0.04), 0 1px 1px rgba(28,25,23,0.02)' },
     },

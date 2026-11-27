@@ -1,10 +1,53 @@
+import { useState, type MouseEvent } from 'react';
 import { usePref } from '../lib/prefs';
-import { Area, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Kpis, Overview } from '../lib/api';
 import { useDash } from '../lib/context';
 import { bucketLabel, fmtDuration, fmtNumber, fmtPct } from '../lib/format';
 
 type Metric = 'visitors' | 'revenue';
+
+// Keep in sync with chartVisitors / chartRevenue in tailwind.config.js.
+const VISITORS = '#7b6ff0';
+const REVENUE = '#e2a24f';
+
+// Hover spotlight on the visitors line: full strength near the cursor, dimmed elsewhere.
+const SPOT_HALF = 70; // px of full-strength line on each side of the cursor
+const SPOT_FADE = 35; // px over which it fades to the dimmed strength
+const SPOT_DIM = 0.3;
+
+type Spot = { x: number; width: number };
+
+function SpotlightDefs({ spot }: { spot: Spot }) {
+  const at = (px: number) => `${Math.min(100, Math.max(0, (px / spot.width) * 100))}%`;
+  const stops: [number, number][] = [
+    [0, SPOT_DIM],
+    [spot.x - SPOT_HALF - SPOT_FADE, SPOT_DIM],
+    [spot.x - SPOT_HALF, 1],
+    [spot.x + SPOT_HALF, 1],
+    [spot.x + SPOT_HALF + SPOT_FADE, SPOT_DIM],
+    [spot.width, SPOT_DIM],
+  ];
+  return (
+    <>
+      <linearGradient id="spot-grad" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={spot.width} y2={0}>
+        {stops.map(([px, o], i) => (
+          <stop key={i} offset={at(px)} stopColor="white" stopOpacity={o} />
+        ))}
+      </linearGradient>
+      <mask id="spot-mask" maskUnits="userSpaceOnUse" x={0} y={0} width="100%" height="100%">
+        <rect width="100%" height="100%" fill="url(#spot-grad)" />
+      </mask>
+      <filter id="spot-glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation={4} result="glow" />
+        <feMerge>
+          <feMergeNode in="glow" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </>
+  );
+}
 
 function Change({ cur, prev, invert = false }: { cur: number; prev: number; invert?: boolean }) {
   if (!prev) return <span className="text-xs text-stone-400">—</span>;
@@ -13,8 +56,8 @@ function Change({ cur, prev, invert = false }: { cur: number; prev: number; inve
   const up = pct >= 0;
   const good = invert ? !up : up;
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs ${good ? 'text-emerald-600' : 'text-red-500'}`}>
-      {Math.abs(Math.round(pct * 100))}% {up ? '↑' : '↓'}
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${good ? 'text-emerald-600' : 'text-red-500'}`}>
+      {up ? '↑' : '↓'} {Math.abs(pct * 100).toFixed(1)}%
     </span>
   );
 }
@@ -27,8 +70,8 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
 
   const kpis: { key: keyof Kpis | 'online'; label: string; value: string; invert?: boolean; metric?: Metric; dot?: string }[] = c
     ? [
-        { key: 'visitors', label: 'Visitors', value: fmtNumber(c.visitors), metric: 'visitors', dot: 'bg-visitors' },
-        { key: 'revenue', label: 'Revenue', value: money(c.revenue, true), metric: 'revenue', dot: 'bg-revenue' },
+        { key: 'visitors', label: 'Visitors', value: fmtNumber(c.visitors), metric: 'visitors', dot: 'bg-chartVisitors' },
+        { key: 'revenue', label: 'Revenue', value: money(c.revenue, true), metric: 'revenue', dot: 'bg-chartRevenue' },
         { key: 'conversionRate', label: 'Conversion rate', value: fmtPct(c.conversionRate, c.conversionRate >= 0.1 ? 0 : 2) },
         { key: 'revenuePerVisitor', label: 'Revenue/visitor', value: money(c.revenuePerVisitor) },
         { key: 'bounceRate', label: 'Bounce rate', value: fmtPct(c.bounceRate), invert: true },
@@ -37,48 +80,88 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
     : [];
 
   const g = data?.range.granularity ?? 'day';
+  const [spot, setSpot] = useState<Spot | null>(null);
+  const moveSpot = (e: MouseEvent<HTMLDivElement>) => {
+    const svg = e.currentTarget.querySelector('svg.recharts-surface');
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    setSpot({ x: e.clientX - r.left, width: r.width });
+  };
 
   return (
-    <div className="card overflow-hidden">
-      <div className="grid grid-cols-2 border-b border-stone-100 sm:grid-cols-4 lg:grid-cols-7">
-        {kpis.map((k) => (
-          <button
-            key={k.key}
-            className={`border-stone-100 px-5 py-4 text-left lg:border-r ${k.metric ? 'hover:bg-stone-50' : 'cursor-default'}`}
-            onClick={() => k.metric && setHidden((h) => ({ ...h, [k.metric!]: !h[k.metric!] }))}
-            title={k.metric ? 'Show/hide on chart' : undefined}
-          >
-            <div className="flex items-center gap-1.5 text-sm text-stone-500">
-              {k.dot && <span className={`h-2.5 w-2.5 rounded-sm ${k.dot} ${hidden[k.metric!] ? 'opacity-25' : ''}`} />}
-              {k.label}
-            </div>
-            <div className="mt-1 text-[28px] font-semibold leading-tight tracking-tight">{k.value}</div>
-            <Change cur={c![k.key as keyof Kpis]} prev={p![k.key as keyof Kpis]} invert={k.invert} />
-          </button>
-        ))}
+    <div className="card overflow-hidden p-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        {kpis.map((k) => {
+          const on = k.metric && !hidden[k.metric];
+          return (
+            <button
+              key={k.key}
+              className={`flex min-h-[132px] flex-col rounded-xl border border-stone-200/80 bg-white px-4 py-4 text-left transition ${
+                k.metric ? 'hover:border-stone-300' : 'cursor-default'
+              }`}
+              onClick={() => k.metric && setHidden((h) => ({ ...h, [k.metric!]: !h[k.metric!] }))}
+              title={k.metric ? 'Show/hide on chart' : undefined}
+            >
+              {k.metric ? (
+                <span
+                  className={`inline-flex items-center gap-2 self-start rounded-lg border-2 px-2 py-1 text-sm font-semibold transition ${
+                    on ? 'border-chartVisitors/70 text-ink' : 'border-stone-200 text-stone-400'
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded border ${
+                      on ? 'border-chartVisitors bg-chartVisitors text-white' : 'border-stone-300 bg-white'
+                    }`}
+                  >
+                    {on && (
+                      <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M2.5 6.5l2.5 2.5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                  {k.label}
+                  <span className={`h-2 w-2 rounded-full ${k.dot}`} />
+                </span>
+              ) : (
+                <span className="text-sm font-medium text-stone-500">{k.label}</span>
+              )}
+              <div className="mt-auto pt-4 text-[26px] font-semibold leading-tight tracking-tight">{k.value}</div>
+              <Change cur={c![k.key as keyof Kpis]} prev={p![k.key as keyof Kpis]} invert={k.invert} />
+            </button>
+          );
+        })}
         {data && (
-          <button className="px-5 py-4 text-left hover:bg-stone-50" onClick={onLive} title="Open the live map (M)">
-            <div className="flex items-center gap-1.5 text-sm text-stone-500">
+          <button
+            className="flex min-h-[132px] flex-col rounded-xl border border-stone-200/80 bg-white px-4 py-4 text-left transition hover:border-stone-300"
+            onClick={onLive}
+            title="Open the live map (M)"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-medium text-stone-500">
               Online <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-            </div>
-            <div className="mt-1 text-[28px] font-semibold leading-tight">{data.online}</div>
+            </span>
+            <div className="mt-auto pt-4 text-[26px] font-semibold leading-tight tracking-tight">{data.online}</div>
             <div className="text-xs text-stone-400">View on map →</div>
           </button>
         )}
-        {!data && <div className="col-span-full h-[98px] animate-pulse bg-stone-50" />}
+        {!data && <div className="col-span-full h-[132px] animate-pulse rounded-xl bg-stone-50" />}
       </div>
 
-      <div className="h-[340px] px-2 pb-3 pt-6 sm:px-4">
+      <div
+        className="mt-3 h-[360px] rounded-xl border border-stone-200/80 bg-white px-2 pb-3 pt-6 sm:px-4"
+        onMouseMove={moveSpot}
+        onMouseLeave={() => setSpot(null)}
+      >
         {data && (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data.series} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+            <ComposedChart data={data.series} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barCategoryGap="12%">
               <defs>
-                <linearGradient id="vis" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8dbdf0" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#8dbdf0" stopOpacity={0.02} />
+                <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={REVENUE} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={REVENUE} stopOpacity={0.35} />
                 </linearGradient>
+                {spot && <SpotlightDefs spot={spot} />}
               </defs>
-              <CartesianGrid vertical={false} stroke="#efedea" strokeDasharray="4 4" />
+              <CartesianGrid vertical={false} stroke="#e7e5e4" strokeDasharray="2 5" />
               <XAxis
                 dataKey="bucket"
                 tickFormatter={(b) => bucketLabel(b, g)}
@@ -109,35 +192,37 @@ export function OverviewCard({ data, onLive }: { data: Overview | null; onLive: 
                 domain={[0, (max: number) => Math.max(1, Math.ceil(max * 1.6))]}
               />
               <Tooltip
-                cursor={{ fill: 'rgba(28,25,23,0.03)' }}
+                cursor={{ fill: 'rgba(28,25,23,0.04)' }}
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const d = payload[0].payload as Overview['series'][0];
                   return (
                     <div className="card min-w-[180px] px-4 py-3 text-sm">
                       <div className="mb-2 font-medium">{bucketLabel(d.bucket, g, true)}</div>
-                      <Row color="bg-visitors" label="Visitors" value={fmtNumber(d.visitors)} />
+                      <Row color="bg-chartVisitors" label="Visitors" value={fmtNumber(d.visitors)} />
                       <Row color="bg-stone-300" label="Pageviews" value={fmtNumber(d.pageviews)} />
-                      <Row color="bg-revenue" label="Revenue" value={money(d.revenue)} />
-                      {d.payments > 0 && <Row color="bg-revenueSoft" label="Payments" value={String(d.payments)} />}
+                      <Row color="bg-chartRevenue" label="Revenue" value={money(d.revenue)} />
+                      {d.payments > 0 && <Row color="bg-chartRevenue/40" label="Payments" value={String(d.payments)} />}
                     </div>
                   );
                 }}
               />
               {!hidden.revenue && (
-                <Bar yAxisId="r" dataKey="revenue" fill="#e07b5f" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />
+                <Bar yAxisId="r" dataKey="revenue" fill="url(#rev)" radius={[3, 3, 0, 0]} maxBarSize={32} isAnimationActive={false} />
               )}
               {!hidden.visitors && (
-                <Area
+                <Line
                   yAxisId="v"
                   type="monotone"
                   dataKey="visitors"
-                  stroke="#7cb1ea"
+                  stroke={VISITORS}
                   strokeWidth={2.5}
-                  fill="url(#vis)"
+                  strokeLinecap="round"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#7cb1ea', stroke: '#fff', strokeWidth: 2 }}
+                  activeDot={{ r: 4.5, fill: VISITORS, stroke: '#fff', strokeWidth: 2 }}
                   isAnimationActive={false}
+                  mask={spot ? 'url(#spot-mask)' : undefined}
+                  filter={spot ? 'url(#spot-glow)' : undefined}
                 />
               )}
             </ComposedChart>
